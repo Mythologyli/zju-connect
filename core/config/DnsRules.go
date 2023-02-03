@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/cornelk/hashmap"
 	"log"
+
+	"github.com/cornelk/hashmap"
 )
 
 // domain[ip]

@@ -3,7 +3,6 @@ package parser
 import (
 	"EasierConnect/core/config"
 	"fmt"
-	"github.com/dlclark/regexp2"
 	"log"
 	"math"
 	"net"
@@ -12,6 +11,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/dlclark/regexp2"
 )
 
 var domainRegExp *regexp.Regexp

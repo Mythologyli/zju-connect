@@ -11,10 +11,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// local socks5 binding
 var SocksBind string
+var HttpBind string
 var DebugDump bool
 var ParseServConfig bool
+var ParseZjuConfig bool
+var ProxyAll bool
+var UseZjuDns bool
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -56,20 +59,18 @@ func StartClient(host string, port int, username string, password string, twfId 
 			_, err := fmt.Scan(&smsCode)
 			if err != nil {
 				panic(err)
-				return
 			}
 
-			ip, err = client.AuthSMSCode(smsCode)
+			ip, _ = client.AuthSMSCode(smsCode)
 		} else if err == ERR_NEXT_AUTH_TOTP {
 			fmt.Print(">>>Please enter your TOTP Auth code<<<:")
 			TOTPCode := ""
 			_, err := fmt.Scan(&TOTPCode)
 			if err != nil {
 				panic(err)
-				return
 			}
 
-			ip, err = client.AuthTOTP(TOTPCode)
+			ip, _ = client.AuthTOTP(TOTPCode)
 		}
 	}
 
@@ -78,7 +79,8 @@ func StartClient(host string, port int, username string, password string, twfId 
 	}
 	log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
-	client.ServeSocks5(SocksBind, DebugDump)
+	go client.ServeSocks5(SocksBind, DebugDump)
+	ServeHttp()
 
 	runtime.KeepAlive(client)
 }
@@ -137,9 +139,15 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 		parser.ParseConfLists(client.server, twfId, DebugDump)
 	}
 
+	// Parse ZJU config
+	if ParseZjuConfig {
+		parser.ParseZjuDnsRules(DebugDump)
+		parser.ParseZjuForceProxyRules(DebugDump)
+	}
+
 	client.token = (*[48]byte)([]byte(agentToken + twfId))
 
-	// Query IP (keep the connection used so it's not closed too early, otherwise i/o stream will be closed)
+	// Query IP (keep the connection used, so it's not closed too early, otherwise i/o stream will be closed)
 	client.clientIp, client.queryConn, err = QueryIp(client.server, client.token)
 	if err != nil {
 		return nil, err

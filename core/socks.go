@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -20,6 +19,17 @@ import (
 )
 
 func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
+	var remoteResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return gonet.DialContextTCP(ctx, ipStack, tcpip.FullAddress{
+				NIC:  defaultNIC,
+				Port: uint16(53),
+				Addr: tcpip.Address(net.ParseIP("10.10.0.21").To4()),
+			}, header.IPv4ProtocolNumber)
+		},
+	}
+
 	server := socks5.Server{
 		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
 
@@ -27,42 +37,72 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 
 			parts := strings.Split(addr, ":")
 
-			ip := parts[0]
+			host := parts[0]
 			port, err := strconv.Atoi(parts[1])
 			if err != nil {
 				return nil, errors.New("invalid port: " + parts[1])
 			}
 
-			var allowedPorts = []int{1, 65535} // [0] -> Min, [1] -> Max
-			var useL3transport = true
 			var hasDnsRule = false
+			var isInZjuForceProxyRule = false
+			var useProxy = false
 
 			var target *net.IPAddr
 
-			if config.IsDomainRuleAvailable() {
-				allowedPorts, useL3transport = config.GetSingleDomainRule(ip)
+			if ProxyAll {
+				useProxy = true
+			}
+
+			if !useProxy && config.IsDomainRuleAvailable() {
+				_, useProxy = config.GetSingleDomainRule(host)
 			}
 
 			if config.IsDnsRuleAvailable() {
-				var dnsRules string
-				dnsRules, hasDnsRule = config.GetSingleDnsRule(ip)
+				var ip string
+				ip, hasDnsRule = config.GetSingleDnsRule(host)
 
 				if hasDnsRule {
-					ip = dnsRules
+					host = ip
+					useProxy = true
 				}
 			}
 
-			target, err = net.ResolveIPAddr("ip", ip)
-			if err != nil {
-				return nil, errors.New("resolve ip addr failed: " + ip)
+			if !useProxy && config.IsZjuForceProxyRuleAvailable() {
+				isInZjuForceProxyRule = config.IsInZjuForceProxyRule(host)
+
+				if isInZjuForceProxyRule {
+					useProxy = true
+				}
 			}
 
-			if !useL3transport && config.IsDomainRuleAvailable() {
-				log.Printf("final ip: %s", target.IP.String())
-				allowedPorts, useL3transport = config.GetSingleDomainRule(target.IP.String())
+			if UseZjuDns {
+				targets, err := remoteResolver.LookupIP(context.Background(), "ip4", host)
+				if err != nil {
+					return nil, errors.New("resolve ip addr failed: " + host)
+
+					//////////////////////Use Local
+				}
+				target = &net.IPAddr{IP: targets[0]}
+			} else {
+				target, err = net.ResolveIPAddr("ip", host)
+				if err != nil {
+					return nil, errors.New("resolve ip addr failed: " + host)
+				}
 			}
 
-			if !useL3transport && config.IsIpv4RuleAvailable() {
+			if !useProxy && config.IsDomainRuleAvailable() {
+				_, useProxy = config.GetSingleDomainRule(target.IP.String())
+			}
+
+			if !useProxy && config.IsZjuForceProxyRuleAvailable() {
+				isInZjuForceProxyRule = config.IsInZjuForceProxyRule(target.IP.String())
+
+				if isInZjuForceProxyRule {
+					useProxy = true
+				}
+			}
+
+			if !useProxy && config.IsIpv4RuleAvailable() {
 				if DebugDump {
 					log.Printf("Ipv4Rule is available ")
 				}
@@ -78,8 +118,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 								log.Printf("Cidr matched: %s %s", target.IP, rule.Rule)
 							}
 
-							useL3transport = true
-							allowedPorts = rule.Ports
+							useProxy = true
 						}
 					} else {
 						if DebugDump {
@@ -94,29 +133,21 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 								log.Printf("raw matched: %s %s", ip1, ip2)
 							}
 
-							useL3transport = true
-							allowedPorts = rule.Ports
+							useProxy = true
 						}
 					}
 				}
 			}
 
-			if config.IsDomainRuleAvailable() {
-				allowAllWebSitesPorts, allowAllWebSites := config.GetSingleDomainRule("*")
+			// if !useProxy && config.IsDomainRuleAvailable() {
+			// 	_, allowAllWebSites := config.GetSingleDomainRule("*")
 
-				if allowAllWebSites {
-					if allowAllWebSitesPorts[0] > 0 && allowAllWebSitesPorts[1] > 0 {
-						allowedPorts[0] = int(math.Min(float64(allowedPorts[0]), float64(allowAllWebSitesPorts[0])))
-						allowedPorts[1] = int(math.Max(float64(allowedPorts[1]), float64(allowAllWebSitesPorts[1])))
+			// 	if allowAllWebSites {
+			// 		useProxy = true
+			// 	}
+			// }
 
-						useL3transport = true
-					}
-				}
-			}
-
-			log.Printf("Addr: %s, AllowedPorts: %v, useL3transport: %v, useCustomDns: %v, ResolvedIp: %s", addr, allowedPorts, useL3transport, hasDnsRule, ip)
-
-			if (!useL3transport && hasDnsRule) || (useL3transport && port >= allowedPorts[0] && port <= allowedPorts[1]) {
+			if useProxy {
 				if network != "tcp" {
 					return nil, errors.New("only support tcp")
 				}
@@ -132,14 +163,25 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					Addr: tcpip.Address(selfIp),
 				}
 
+				log.Printf("Addr: %s, useProxy: %v, useCustomDns: %v, isForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
+
 				return gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
 			}
+
+			if UseZjuDns {
+				// Use local DNS Server now
+				target, err = net.ResolveIPAddr("ip", host)
+				if err != nil {
+					return nil, errors.New("resolve ip addr failed: " + host)
+				}
+			}
+
 			goDialer := &net.Dialer{}
 			goDial := goDialer.DialContext
 
-			log.Printf("skip: %s", addr)
+			log.Printf("Addr: %s, useProxy: %v, useCustomDns: %v, isForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
 
-			return goDial(ctx, network, addr)
+			return goDial(ctx, network, target.IP.String()+":"+parts[1])
 		},
 	}
 
