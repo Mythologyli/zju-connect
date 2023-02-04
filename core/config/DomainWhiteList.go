@@ -1,17 +1,22 @@
 package config
 
 import (
-	"log"
-
+	"github.com/bobesa/go-domain-util/domainutil"
 	"github.com/cornelk/hashmap"
+	"log"
 )
 
 // domain[[]int {min, max}]
 var domainRules *hashmap.Map[string, []int]
 
-func AppendSingleDomainRule(domain string, ports []int, debug bool) {
+func AppendSingleDomainRule(host string, ports []int, debug bool) {
 	if domainRules == nil {
 		domainRules = hashmap.New[string, []int]()
+	}
+
+	var domain = domainutil.Domain(host)
+	if domain == "" {
+		domain = host
 	}
 
 	if debug {
@@ -21,7 +26,12 @@ func AppendSingleDomainRule(domain string, ports []int, debug bool) {
 	domainRules.Set(domain, ports)
 }
 
-func GetSingleDomainRule(domain string) ([]int, bool) {
+func GetSingleDomainRule(host string) ([]int, bool) {
+	var domain = domainutil.Domain(host)
+	if domain == "" {
+		domain = host
+	}
+
 	return domainRules.Get(domain)
 }
 
