@@ -20,7 +20,7 @@ func main() {
 	flag.BoolVar(&core.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.BoolVar(&core.ParseServConfig, "parse", false, "Parse server config")
 	flag.BoolVar(&core.ParseZjuConfig, "parse-zju", false, "Parse ZJU config")
-	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all traffic")
+	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
 	flag.BoolVar(&core.UseZjuDns, "use-zju-dns", false, "Use ZJU DNS")
 	flag.Parse()
 

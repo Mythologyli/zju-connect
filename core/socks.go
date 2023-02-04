@@ -18,6 +18,15 @@ import (
 	"tailscale.com/net/socks5"
 )
 
+func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
+	goDialer := &net.Dialer{}
+	goDial := goDialer.DialContext
+
+	log.Printf("Addr: %s, useProxy: false", addr)
+
+	return goDial(ctx, network, addr)
+}
+
 func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 	var remoteResolver = &net.Resolver{
 		PreferGo: true,
@@ -33,14 +42,14 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 	server := socks5.Server{
 		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
 
-			log.Printf("socks dial: %s", addr)
+			log.Printf("Socks dial: %s", addr)
 
 			parts := strings.Split(addr, ":")
 
 			host := parts[0]
 			port, err := strconv.Atoi(parts[1])
 			if err != nil {
-				return nil, errors.New("invalid port: " + parts[1])
+				return nil, errors.New("Invalid port: " + parts[1])
 			}
 
 			var hasDnsRule = false
@@ -78,15 +87,21 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 			if UseZjuDns {
 				targets, err := remoteResolver.LookupIP(context.Background(), "ip4", host)
 				if err != nil {
-					return nil, errors.New("resolve ip addr failed: " + host)
+					log.Printf("Resolve IPv4 addr failed using ZJU DNS: " + host + ", using local DNS instead.")
 
-					//////////////////////Use Local
+					target, err = net.ResolveIPAddr("ip4", host)
+					if err != nil {
+						log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
+						return dialDirect(ctx, network, addr)
+					}
+				} else {
+					target = &net.IPAddr{IP: targets[0]}
 				}
-				target = &net.IPAddr{IP: targets[0]}
 			} else {
-				target, err = net.ResolveIPAddr("ip", host)
+				target, err = net.ResolveIPAddr("ip4", host)
 				if err != nil {
-					return nil, errors.New("resolve ip addr failed: " + host)
+					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
+					return dialDirect(ctx, network, addr)
 				}
 			}
 
@@ -104,7 +119,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 
 			if !useProxy && config.IsIpv4RuleAvailable() {
 				if DebugDump {
-					log.Printf("Ipv4Rule is available ")
+					log.Printf("IPv4 rule is available ")
 				}
 				for _, rule := range *config.GetIpv4Rules() {
 					if rule.CIDR {
@@ -139,17 +154,11 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 				}
 			}
 
-			// if !useProxy && config.IsDomainRuleAvailable() {
-			// 	_, allowAllWebSites := config.GetSingleDomainRule("*")
-
-			// 	if allowAllWebSites {
-			// 		useProxy = true
-			// 	}
-			// }
-
 			if useProxy {
 				if network != "tcp" {
-					return nil, errors.New("only support tcp")
+					log.Printf("Proxy only support TCP. Use direct connection.")
+
+					return dialDirect(ctx, network, addr)
 				}
 
 				addrTarget := tcpip.FullAddress{
@@ -163,25 +172,12 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					Addr: tcpip.Address(selfIp),
 				}
 
-				log.Printf("Addr: %s, useProxy: %v, useCustomDns: %v, isForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
+				log.Printf("Addr: %s, UseProxy: %v, UseCustomDns: %v, IsForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
 
 				return gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
+			} else {
+				return dialDirect(ctx, network, addr)
 			}
-
-			if UseZjuDns {
-				// Use local DNS Server now
-				target, err = net.ResolveIPAddr("ip", host)
-				if err != nil {
-					return nil, errors.New("resolve ip addr failed: " + host)
-				}
-			}
-
-			goDialer := &net.Dialer{}
-			goDial := goDialer.DialContext
-
-			log.Printf("Addr: %s, useProxy: %v, useCustomDns: %v, isForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
-
-			return goDial(ctx, network, target.IP.String()+":"+parts[1])
 		},
 	}
 
