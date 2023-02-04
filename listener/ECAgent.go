@@ -1,9 +1,9 @@
 package listener
 
 import (
-	"EasierConnect/core"
-	"EasierConnect/core/config"
-	"EasierConnect/parser"
+	"ZJUConnect/core"
+	"ZJUConnect/core/config"
+	"ZJUConnect/parser"
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"

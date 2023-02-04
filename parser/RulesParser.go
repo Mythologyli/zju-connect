@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"EasierConnect/core/config"
+	"ZJUConnect/core/config"
 	"fmt"
 	"log"
 	"math"

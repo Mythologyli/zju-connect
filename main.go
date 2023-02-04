@@ -1,8 +1,8 @@
 package main
 
 import (
-	"EasierConnect/core"
-	"EasierConnect/listener"
+	"ZJUConnect/core"
+	"ZJUConnect/listener"
 	"flag"
 	"log"
 )
@@ -25,7 +25,7 @@ func main() {
 	flag.Parse()
 
 	if host == "" || ((username == "" || password == "") && twfId == "") {
-		log.Printf("Starting as ECAgent mode. For more infomations: `EasierConnect --help`.\n")
+		log.Printf("Starting as ECAgent mode. For more infomations: `ZJUConnect --help`.\n")
 		listener.StartECAgent()
 	} else {
 		core.StartClient(host, port, username, password, twfId)

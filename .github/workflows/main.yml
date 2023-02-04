@@ -95,16 +95,16 @@ jobs:
       - name: Build
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/EasierConnect -trimpath -ldflags "-s -w -buildid=" .
-      - name: Rename Windows EasierConnect
+          go build -v -o build_assets/ZJUConnect -trimpath -ldflags "-s -w -buildid=" .
+      - name: Rename Windows ZJUConnect
         if: matrix.goos == 'windows'
         run: |
           cd ./build_assets || exit 1
-          mv EasierConnect EasierConnect.exe
+          mv ZJUConnect ZJUConnect.exe
       - name: Create ZIP archive
         run: |
           pushd build_assets || exit 1
-          zip -9vr ../EasierConnect-$ASSET_NAME.zip .
+          zip -9vr ../ZJUConnect-$ASSET_NAME.zip .
           popd || exit 1
       
       - name: Upload release binary
@@ -112,5 +112,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} EasierConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          gh release upload ${{ github.event.release.tag_name }} ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
 

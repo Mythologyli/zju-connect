@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"EasierConnect/core/config"
+	"ZJUConnect/core/config"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -125,19 +125,19 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					if rule.CIDR {
 						_, cidr, _ := net.ParseCIDR(rule.Rule)
 						if DebugDump {
-							log.Printf("Cidr test: %s %s %v", target.IP, rule.Rule, cidr.Contains(target.IP))
+							log.Printf("CIDR test: %s %s %v", target.IP, rule.Rule, cidr.Contains(target.IP))
 						}
 
 						if cidr.Contains(target.IP) {
 							if DebugDump {
-								log.Printf("Cidr matched: %s %s", target.IP, rule.Rule)
+								log.Printf("CIDR matched: %s %s", target.IP, rule.Rule)
 							}
 
 							useProxy = true
 						}
 					} else {
 						if DebugDump {
-							log.Printf("raw match test: %s %s", target.IP, rule.Rule)
+							log.Printf("Raw match test: %s %s", target.IP, rule.Rule)
 						}
 
 						ip1 := net.ParseIP(strings.Split(rule.Rule, "~")[0])
@@ -145,7 +145,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 
 						if bytes.Compare(target.IP, ip1) >= 0 && bytes.Compare(target.IP, ip2) <= 0 {
 							if DebugDump {
-								log.Printf("raw matched: %s %s", ip1, ip2)
+								log.Printf("Raw matched: %s %s", ip1, ip2)
 							}
 
 							useProxy = true

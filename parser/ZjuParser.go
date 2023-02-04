@@ -1,6 +1,6 @@
 package parser
 
-import "EasierConnect/core/config"
+import "ZJUConnect/core/config"
 
 func ParseZjuDnsRules(debug bool) {
 

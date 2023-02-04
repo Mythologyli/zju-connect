@@ -1,7 +1,7 @@
 package core
 
 import (
-	"EasierConnect/parser"
+	"ZJUConnect/parser"
 	"errors"
 	"fmt"
 	"log"
