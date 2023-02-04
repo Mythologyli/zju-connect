@@ -1,10 +1,11 @@
 package main
 
 import (
-	"ZJUConnect/core"
-	"ZJUConnect/listener"
 	"flag"
 	"log"
+
+	"ZJUConnect/core"
+	"ZJUConnect/listener"
 )
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	flag.BoolVar(&core.ParseZjuConfig, "parse-zju", false, "Parse ZJU config")
 	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
 	flag.BoolVar(&core.UseZjuDns, "use-zju-dns", false, "Use ZJU DNS")
+	flag.Uint64Var(&core.DnsTTL, "dns-ttl", 3600, "Dns record time to live, unit is second")
 	flag.Parse()
 
 	if host == "" || ((username == "" || password == "") && twfId == "") {

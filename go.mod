@@ -7,6 +7,7 @@ require github.com/refraction-networking/utls v1.2.0
 require (
 	github.com/cornelk/hashmap v1.0.8
 	github.com/dlclark/regexp2 v1.8.0
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	golang.org/x/net v0.5.0
 	gvisor.dev/gvisor v0.0.0-20230128000341-b7014294633b
 	tailscale.com v1.36.0

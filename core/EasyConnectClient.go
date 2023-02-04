@@ -1,12 +1,13 @@
 package core
 
 import (
-	"ZJUConnect/parser"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"runtime"
+
+	"ZJUConnect/parser"
 
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -18,6 +19,7 @@ var ParseServConfig bool
 var ParseZjuConfig bool
 var ProxyAll bool
 var UseZjuDns bool
+var DnsTTL uint64
 
 type EasyConnectClient struct {
 	queryConn net.Conn
