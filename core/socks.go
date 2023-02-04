@@ -231,6 +231,20 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 
 	log.Printf(">>>SOCKS5 SERVER listening on<<<: " + bindAddr)
 
+	if SocksUser != "" && SocksPasswd != "" {
+		var Red = "\033[31m"
+		var Yellow = "\033[33m"
+		var Blue = "\033[34m"
+		var Reset = "\033[0m"
+
+		log.Printf(Red + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Red + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
+		log.Printf(Yellow + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Yellow + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
+		log.Printf(Blue + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Blue + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
+
+	}
 	if err = server.ListenAndServe("tcp", bindAddr); err != nil {
 		panic("socks listen failed: " + err.Error())
 	}
