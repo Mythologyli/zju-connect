@@ -1,8 +1,8 @@
 # ZJU Connect
 
-> 🚫 **[Disclaimer]**
+> 🚫 **免责声明**
 > 
-> 本程序**按原样提供**, 作者**不对程序的正确性或可靠性提供保证**, 请使用者自行判断具体场景是否适合使用该程序, **使用该程序造成的问题或后果由使用者自行承担**.
+> 本程序**按原样提供**，作者**不对程序的正确性或可靠性提供保证**，请使用者自行判断具体场景是否适合使用该程序，**使用该程序造成的问题或后果由使用者自行承担**！
 
 ---
 
@@ -33,6 +33,12 @@
 
 - [ ] DNS 缓存加速
 - [ ] 代理 UDP 流量
+
+### 贡献者
+
+<a href="https://github.com/Mythologyli/ZJU-Connect/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Mythologyli/ZJU-Connect" />
+</a>
 
 ### 感谢
 
