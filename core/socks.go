@@ -83,25 +83,38 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					useProxy = true
 				}
 			}
+			if pureIp := net.ParseIP(host); pureIp != nil {
+				// host is pure IP format, e.g.: "10.10.10.10"
+				target = &net.IPAddr{IP: pureIp}
+			} else {
+				// host is domain, e.g.: "mail.zju.edu.cn"
+				if UseZjuDns {
+					if cachedIP, found := GetDnsCache(host); found {
+						target = &net.IPAddr{IP: cachedIP}
+					} else {
+						targets, err := remoteResolver.LookupIP(context.Background(), "ip4", host)
+						if err != nil {
+							log.Printf("Resolve IPv4 addr failed using ZJU DNS: " + host + ", using local DNS instead.")
 
-			if UseZjuDns {
-				targets, err := remoteResolver.LookupIP(context.Background(), "ip4", host)
-				if err != nil {
-					log.Printf("Resolve IPv4 addr failed using ZJU DNS: " + host + ", using local DNS instead.")
+							target, err = net.ResolveIPAddr("ip4", host)
+							if err != nil {
+								log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
+								return dialDirect(ctx, network, addr)
+							}
+						} else {
+							target = &net.IPAddr{IP: targets[0]}
+							//TODO: whether need all dns records? or only 10.0.0.0/8 ?
+							SetDnsCache(host, targets[0])
+						}
+					}
 
+				} else {
+					// because of OS cache, don't need extra dns memory cache
 					target, err = net.ResolveIPAddr("ip4", host)
 					if err != nil {
 						log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
 						return dialDirect(ctx, network, addr)
 					}
-				} else {
-					target = &net.IPAddr{IP: targets[0]}
-				}
-			} else {
-				target, err = net.ResolveIPAddr("ip4", host)
-				if err != nil {
-					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
-					return dialDirect(ctx, network, addr)
 				}
 			}
 
