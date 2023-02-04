@@ -98,10 +98,17 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		},
 	}
 
+	var authMethods []socks5.Authenticator
+	if SocksUser != "" && SocksPasswd != "" {
+		authMethods = append(authMethods, socks5.UserPassAuthenticator{
+			Credentials: socks5.StaticCredentials{SocksUser: SocksPasswd},
+		})
+	} else {
+		authMethods = append(authMethods, socks5.NoAuthAuthenticator{})
+	}
+
 	conf := socks5.Config{
-		AuthMethods: []socks5.Authenticator{
-			socks5.NoAuthAuthenticator{},
-		},
+		AuthMethods: authMethods,
 		Resolver: ZJUDnsResolve{
 			remoteResolver: remoteResolver,
 		},

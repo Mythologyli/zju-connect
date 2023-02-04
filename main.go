@@ -24,6 +24,8 @@ func main() {
 	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
 	flag.BoolVar(&core.UseZjuDns, "use-zju-dns", false, "Use ZJU DNS")
 	flag.Uint64Var(&core.DnsTTL, "dns-ttl", 3600, "Dns record time to live, unit is second")
+	flag.StringVar(&core.SocksUser, "socks-user", "", "Socks5 username, default is don't use auth")
+	flag.StringVar(&core.SocksPasswd, "socks-passwd", "", "Socks5 password, default is don't use auth")
 	flag.Parse()
 
 	if host == "" || ((username == "" || password == "") && twfId == "") {

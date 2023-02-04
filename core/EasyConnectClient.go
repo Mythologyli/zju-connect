@@ -20,6 +20,8 @@ var ParseZjuConfig bool
 var ProxyAll bool
 var UseZjuDns bool
 var DnsTTL uint64
+var SocksUser string
+var SocksPasswd string
 
 type EasyConnectClient struct {
 	queryConn net.Conn
