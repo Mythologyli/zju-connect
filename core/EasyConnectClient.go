@@ -142,6 +142,7 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 	// Parse ZJU config
 	if ParseZjuConfig {
 		parser.ParseZjuDnsRules(DebugDump)
+		parser.ParseZjuIpv4Rules(DebugDump)
 		parser.ParseZjuForceProxyRules(DebugDump)
 	}
 
