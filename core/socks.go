@@ -11,12 +11,71 @@ import (
 
 	"ZJUConnect/core/config"
 
+	"github.com/armon/go-socks5"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"tailscale.com/net/socks5"
 )
+
+type ZJUDnsResolve struct {
+	remoteResolver *net.Resolver
+}
+
+func (resolve ZJUDnsResolve) Resolve(ctx context.Context, host string) (context.Context, net.IP, error) {
+	if config.IsDnsRuleAvailable() {
+		if ip, hasDnsRule := config.GetSingleDnsRule(host); hasDnsRule {
+			ctx = context.WithValue(ctx, "USE_PROXY", true)
+			return ctx, net.ParseIP(ip), nil
+		}
+	}
+	var useProxy = false
+	if config.IsZjuForceProxyRuleAvailable() {
+		if isInZjuForceProxyRule := config.IsInZjuForceProxyRule(host); isInZjuForceProxyRule {
+			useProxy = true
+		}
+	}
+	if !useProxy && config.IsDomainRuleAvailable() {
+		if _, found := config.GetSingleDomainRule(host); found {
+			useProxy = true
+		}
+	}
+
+	ctx = context.WithValue(ctx, "USE_PROXY", useProxy)
+
+	if UseZjuDns {
+		if cachedIP, found := GetDnsCache(host); found {
+			return ctx, cachedIP, nil
+		} else {
+			targets, err := resolve.remoteResolver.LookupIP(context.Background(), "ip4", host)
+			if err != nil {
+				log.Printf("Resolve IPv4 addr failed using ZJU DNS: " + host + ", using local DNS instead.")
+
+				target, err := net.ResolveIPAddr("ip4", host)
+				if err != nil {
+					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Reject connection.")
+					return ctx, nil, err
+				} else {
+					return ctx, target.IP, nil
+				}
+			} else {
+				//TODO: whether need all dns records? or only 10.0.0.0/8 ?
+				SetDnsCache(host, targets[0])
+				return ctx, targets[0], nil
+			}
+		}
+
+	} else {
+		// because of OS cache, don't need extra dns memory cache
+		target, err := net.ResolveIPAddr("ip4", host)
+		if err != nil {
+			log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Reject connection.")
+			return ctx, nil, err
+		} else {
+			return ctx, target.IP, nil
+		}
+	}
+}
 
 func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
 	goDialer := &net.Dialer{}
@@ -39,83 +98,47 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		},
 	}
 
-	server := socks5.Server{
-		Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
+	conf := socks5.Config{
+		AuthMethods: []socks5.Authenticator{
+			socks5.NoAuthAuthenticator{},
+		},
+		Resolver: ZJUDnsResolve{
+			remoteResolver: remoteResolver,
+		},
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 
 			log.Printf("Socks dial: %s", addr)
 
 			parts := strings.Split(addr, ":")
 
+			// in normal situation, addr must be a pure valid IP
+			// because we use `ZJUDnsResolve` to resolve domain name before call `Dial`
 			host := parts[0]
 			port, err := strconv.Atoi(parts[1])
 			if err != nil {
 				return nil, errors.New("Invalid port: " + parts[1])
 			}
 
-			var hasDnsRule = false
 			var isInZjuForceProxyRule = false
 			var useProxy = false
 
 			var target *net.IPAddr
 
-			if ProxyAll {
-				useProxy = true
-			}
-
-			if !useProxy && config.IsDomainRuleAvailable() {
-				_, useProxy = config.GetSingleDomainRule(host)
-			}
-
-			if config.IsDnsRuleAvailable() {
-				var ip string
-				ip, hasDnsRule = config.GetSingleDnsRule(host)
-
-				if hasDnsRule {
-					host = ip
-					useProxy = true
-				}
-			}
-
-			if !useProxy && config.IsZjuForceProxyRuleAvailable() {
-				isInZjuForceProxyRule = config.IsInZjuForceProxyRule(host)
-
-				if isInZjuForceProxyRule {
-					useProxy = true
-				}
-			}
 			if pureIp := net.ParseIP(host); pureIp != nil {
 				// host is pure IP format, e.g.: "10.10.10.10"
 				target = &net.IPAddr{IP: pureIp}
 			} else {
-				// host is domain, e.g.: "mail.zju.edu.cn"
-				if UseZjuDns {
-					if cachedIP, found := GetDnsCache(host); found {
-						target = &net.IPAddr{IP: cachedIP}
-					} else {
-						targets, err := remoteResolver.LookupIP(context.Background(), "ip4", host)
-						if err != nil {
-							log.Printf("Resolve IPv4 addr failed using ZJU DNS: " + host + ", using local DNS instead.")
+				// illegal situation
+				log.Printf("Illegal situation, host is not pure IP format: %s", host)
+				return dialDirect(ctx, network, addr)
+			}
 
-							target, err = net.ResolveIPAddr("ip4", host)
-							if err != nil {
-								log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
-								return dialDirect(ctx, network, addr)
-							}
-						} else {
-							target = &net.IPAddr{IP: targets[0]}
-							//TODO: whether need all dns records? or only 10.0.0.0/8 ?
-							SetDnsCache(host, targets[0])
-						}
-					}
+			if ProxyAll {
+				useProxy = true
+			}
 
-				} else {
-					// because of OS cache, don't need extra dns memory cache
-					target, err = net.ResolveIPAddr("ip4", host)
-					if err != nil {
-						log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Use direct connection.")
-						return dialDirect(ctx, network, addr)
-					}
-				}
+			if res := ctx.Value("USE_PROXY"); res != nil && res.(bool) {
+				useProxy = true
 			}
 
 			if !useProxy && config.IsDomainRuleAvailable() {
@@ -185,7 +208,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					Addr: tcpip.Address(selfIp),
 				}
 
-				log.Printf("Addr: %s, UseProxy: %v, UseCustomDns: %v, IsForceProxy: %v, ResolvedIp: %s", addr, useProxy, hasDnsRule, isInZjuForceProxyRule, target.IP.String())
+				log.Printf("Addr: %s, UseProxy: %v, IsForceProxy: %v, ResolvedIp: %s", addr, useProxy, isInZjuForceProxyRule, target.IP.String())
 
 				return gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
 			} else {
@@ -194,13 +217,14 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		},
 	}
 
-	listener, err := net.Listen("tcp", bindAddr)
+	server, err := socks5.New(&conf)
 	if err != nil {
-		panic("socks listen failed: " + err.Error())
+		panic(err)
 	}
 
 	log.Printf(">>>SOCKS5 SERVER listening on<<<: " + bindAddr)
 
-	err = server.Serve(listener)
-	panic(err)
+	if err = server.ListenAndServe("tcp", bindAddr); err != nil {
+		panic("socks listen failed: " + err.Error())
+	}
 }
