@@ -103,11 +103,18 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 	var remoteResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return gonet.DialContextTCP(ctx, ipStack, tcpip.FullAddress{
+			addrDns := tcpip.FullAddress{
 				NIC:  defaultNIC,
 				Port: uint16(53),
 				Addr: tcpip.Address(net.ParseIP("10.10.0.21").To4()),
-			}, header.IPv4ProtocolNumber)
+			}
+
+			bind := tcpip.FullAddress{
+				NIC:  defaultNIC,
+				Addr: tcpip.Address(selfIp),
+			}
+
+			return gonet.DialUDP(ipStack, &bind, &addrDns, header.IPv4ProtocolNumber)
 		},
 	}
 
