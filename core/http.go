@@ -1,11 +1,12 @@
 package core
 
 import (
-	"golang.org/x/net/proxy"
 	"io"
 	"log"
 	"net"
 	"net/http"
+
+	"golang.org/x/net/proxy"
 )
 
 // The MIT License (MIT)
@@ -47,7 +48,16 @@ func newClient() *http.Client {
 func ServeHttp() {
 	var err error
 
-	socks5proxy, err = proxy.SOCKS5("tcp", SocksBind, nil, proxy.Direct)
+	var auth *proxy.Auth
+	if SocksUser == "" || SocksPasswd == "" {
+		auth = nil
+	} else {
+		auth = &proxy.Auth{
+			User:     SocksUser,
+			Password: SocksPasswd,
+		}
+	}
+	socks5proxy, err = proxy.SOCKS5("tcp", SocksBind, auth, proxy.Direct)
 	if err != nil {
 		panic(err)
 	}

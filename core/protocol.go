@@ -67,7 +67,7 @@ func TLSConn(server string) (*tls.UConn, error) {
 	return conn, nil
 }
 
-func QueryIp(server string, token *[48]byte) ([]byte, *tls.UConn, error) {
+func QueryIp(server string, token *[48]byte, debugDump bool) ([]byte, *tls.UConn, error) {
 	conn, err := TLSConn(server)
 	if err != nil {
 		debug.PrintStack()
@@ -87,8 +87,10 @@ func QueryIp(server string, token *[48]byte) ([]byte, *tls.UConn, error) {
 		return nil, nil, err
 	}
 
-	log.Printf("query ip: wrote %d bytes", n)
-	DumpHex(message[:n])
+	if debugDump {
+		log.Printf("query ip: wrote %d bytes", n)
+		DumpHex(message[:n])
+	}
 
 	reply := make([]byte, 0x80)
 	n, err = conn.Read(reply)
@@ -97,8 +99,10 @@ func QueryIp(server string, token *[48]byte) ([]byte, *tls.UConn, error) {
 		return nil, nil, err
 	}
 
-	log.Printf("query ip: read %d bytes", n)
-	DumpHex(reply[:n])
+	if debugDump {
+		log.Printf("query ip: read %d bytes", n)
+		DumpHex(reply[:n])
+	}
 
 	if reply[0] != 0x00 {
 		debug.PrintStack()
@@ -125,16 +129,20 @@ func BlockRXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConne
 	if err != nil {
 		return err
 	}
-	log.Printf("recv handshake: wrote %d bytes", n)
-	DumpHex(message[:n])
+	if debug {
+		log.Printf("recv handshake: wrote %d bytes", n)
+		DumpHex(message[:n])
+	}
 
 	reply := make([]byte, 1500)
 	n, err = conn.Read(reply)
 	if err != nil {
 		return err
 	}
-	log.Printf("recv handshake: read %d bytes", n)
-	DumpHex(reply[:n])
+	if debug {
+		log.Printf("recv handshake: read %d bytes", n)
+		DumpHex(reply[:n])
+	}
 
 	if reply[0] != 0x01 {
 		return errors.New("unexpected recv handshake reply")
@@ -173,16 +181,20 @@ func BlockTXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConne
 	if err != nil {
 		return err
 	}
-	log.Printf("send handshake: wrote %d bytes", n)
-	DumpHex(message[:n])
+	if debug {
+		log.Printf("send handshake: wrote %d bytes", n)
+		DumpHex(message[:n])
+	}
 
 	reply := make([]byte, 1500)
 	n, err = conn.Read(reply)
 	if err != nil {
 		return err
 	}
-	log.Printf("send handshake: read %d bytes", n)
-	DumpHex(reply[:n])
+	if debug {
+		log.Printf("send handshake: read %d bytes", n)
+		DumpHex(reply[:n])
+	}
 
 	if reply[0] != 0x02 {
 		return errors.New("unexpected send handshake reply")

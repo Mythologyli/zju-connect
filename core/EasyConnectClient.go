@@ -20,6 +20,8 @@ var ParseZjuConfig bool
 var ProxyAll bool
 var UseZjuDns bool
 var DnsTTL uint64
+var SocksUser string
+var SocksPasswd string
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -151,7 +153,7 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 	client.token = (*[48]byte)([]byte(agentToken + twfId))
 
 	// Query IP (keep the connection used, so it's not closed too early, otherwise i/o stream will be closed)
-	client.clientIp, client.queryConn, err = QueryIp(client.server, client.token)
+	client.clientIp, client.queryConn, err = QueryIp(client.server, client.token, DebugDump)
 	if err != nil {
 		return nil, err
 	}
