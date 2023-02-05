@@ -26,6 +26,7 @@ func (resolve ZJUDnsResolve) Resolve(ctx context.Context, host string) (context.
 	if config.IsDnsRuleAvailable() {
 		if ip, hasDnsRule := config.GetSingleDnsRule(host); hasDnsRule {
 			ctx = context.WithValue(ctx, "USE_PROXY", true)
+			log.Printf("%s -> %s", host, ip)
 			return ctx, net.ParseIP(ip), nil
 		}
 	}
@@ -56,11 +57,13 @@ func (resolve ZJUDnsResolve) Resolve(ctx context.Context, host string) (context.
 					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Reject connection.")
 					return ctx, nil, err
 				} else {
+					log.Printf("%s -> %s", host, target.IP.String())
 					return ctx, target.IP, nil
 				}
 			} else {
 				//TODO: whether need all dns records? or only 10.0.0.0/8 ?
 				SetDnsCache(host, targets[0])
+				log.Printf("%s -> %s", host, targets[0].String())
 				return ctx, targets[0], nil
 			}
 		}
@@ -81,7 +84,7 @@ func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
 	goDialer := &net.Dialer{}
 	goDial := goDialer.DialContext
 
-	log.Printf("Addr: %s, useProxy: false", addr)
+	log.Printf("%s -> DIRECT", addr)
 
 	return goDial(ctx, network, addr)
 }
@@ -114,8 +117,6 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		},
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 
-			log.Printf("Socks dial: %s", addr)
-
 			parts := strings.Split(addr, ":")
 
 			// in normal situation, addr must be a pure valid IP
@@ -123,7 +124,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 			host := parts[0]
 			port, err := strconv.Atoi(parts[1])
 			if err != nil {
-				return nil, errors.New("Invalid port: " + parts[1])
+				return nil, errors.New("Invalid port in address: " + addr)
 			}
 
 			var isInZjuForceProxyRule = false
@@ -199,7 +200,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 
 			if useProxy {
 				if network != "tcp" {
-					log.Printf("Proxy only support TCP. Use direct connection.")
+					log.Printf("Proxy only support TCP. Connection to %s will use direct connection.", addr)
 
 					return dialDirect(ctx, network, addr)
 				}
@@ -215,7 +216,7 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 					Addr: tcpip.Address(selfIp),
 				}
 
-				log.Printf("Addr: %s, UseProxy: %v, IsForceProxy: %v, ResolvedIp: %s", addr, useProxy, isInZjuForceProxyRule, target.IP.String())
+				log.Printf("%s -> PROXY", addr)
 
 				return gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
 			} else {
@@ -237,13 +238,12 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		var Blue = "\033[34m"
 		var Reset = "\033[0m"
 
-		log.Printf(Red + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Red + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
 		log.Printf(Red + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
-		log.Printf(Yellow + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Yellow + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
 		log.Printf(Yellow + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
-		log.Printf(Blue + ">>>RFC 1928所规定的socks5只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
+		log.Printf(Blue + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
 		log.Printf(Blue + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
-
 	}
 	if err = server.ListenAndServe("tcp", bindAddr); err != nil {
 		panic("socks listen failed: " + err.Error())
