@@ -46,6 +46,7 @@ func (resolve ZJUDnsResolve) Resolve(ctx context.Context, host string) (context.
 
 	if UseZjuDns {
 		if cachedIP, found := GetDnsCache(host); found {
+			log.Printf("%s -> %s", host, cachedIP.String())
 			return ctx, cachedIP, nil
 		} else {
 			targets, err := resolve.remoteResolver.LookupIP(context.Background(), "ip4", host)
@@ -54,14 +55,22 @@ func (resolve ZJUDnsResolve) Resolve(ctx context.Context, host string) (context.
 
 				target, err := net.ResolveIPAddr("ip4", host)
 				if err != nil {
-					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Reject connection.")
-					return ctx, nil, err
+					log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Try IPv6 addr.")
+
+					target, err := net.ResolveIPAddr("ip6", host)
+					if err != nil {
+						log.Printf("Resolve IPv6 addr failed using local DNS: " + host + ". Reject connection.")
+						return ctx, nil, err
+					} else {
+						log.Printf("%s -> %s", host, target.IP.String())
+						return ctx, target.IP, nil
+					}
 				} else {
 					log.Printf("%s -> %s", host, target.IP.String())
 					return ctx, target.IP, nil
 				}
 			} else {
-				//TODO: whether need all dns records? or only 10.0.0.0/8 ?
+				//TODO: whether we need all dns records? or only 10.0.0.0/8 ?
 				SetDnsCache(host, targets[0])
 				log.Printf("%s -> %s", host, targets[0].String())
 				return ctx, targets[0], nil
@@ -116,6 +125,11 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 			remoteResolver: remoteResolver,
 		},
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+
+			// Check if is IPv6
+			if strings.Count(addr, ":") > 1 {
+				return dialDirect(ctx, network, addr)
+			}
 
 			parts := strings.Split(addr, ":")
 
