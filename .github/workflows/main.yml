@@ -2,7 +2,7 @@ name: Release
 
 on:
   release:
-    types: [prereleased]
+    types: [published]
   push:
     branches:
       - main
