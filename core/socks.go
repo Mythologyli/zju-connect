@@ -220,10 +220,11 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 				Addr: tcpip.Address(selfIp),
 			}
 
-			log.Printf("%s -> PROXY", addr)
 			if network == "tcp" {
+				log.Printf("%s -> PROXY", addr)
 				return gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
 			} else if network == "udp" {
+				log.Printf("%s -> PROXY", addr)
 				return gonet.DialUDP(ipStack, &bind, &addrTarget, header.IPv4ProtocolNumber)
 			} else {
 				log.Printf("Proxy only support TCP/UDP. Connection to %s will use direct connection.", addr)
