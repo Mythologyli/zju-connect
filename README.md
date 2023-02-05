@@ -8,6 +8,8 @@
 
 **本程序基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)（现已停止维护）完成，感谢原作者 [lyc8503](https://github.com/lyc8503)。**
 
+**[电报交流群](https://t.me/zjuers)**，欢迎来自 ZJU 的使用者加入交流。
+
 ### 使用方法
 
 1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本。Windows x64 用户请下载 `ZJUConnect-windows-amd64.zip`。
