@@ -18,7 +18,7 @@
 
 2. 以 Linux 平台为例，解压出可执行文件 `ZJUConnect`。
 
-3. 命令行运行：`./ZJUConnect -username <上网账户> -password <密码> -parse -parse-zju -use-zju-dns`。
+3. 命令行运行：`./ZJUConnect -username <上网账户> -password <密码>`。
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
 
@@ -32,11 +32,11 @@
 
 + `password`: 网络账户密码
 
-+ `parse`: 是否解析服务端配置，一般需要加此参数
++ `disable-server-config`: 禁用服务端配置，一般不需要加此参数
 
-+ `parse-zju`: 是否使用 ZJU 相关配置，一般需要加此参数
++ `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数
 
-+ `use-zju-dns`: 是否使用 ZJU DNS 服务器，一般需要加此参数
++ `disable-zju-dns`: 禁用 ZJU DNS 改用本地 DNS，一般不需要加此参数
 
 + `proxy-all`: 是否代理所有流量，一般不需要加此参数
 
