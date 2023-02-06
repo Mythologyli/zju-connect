@@ -22,6 +22,29 @@
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
 
+对于Ubuntu/Debian、RHEL系、Arch等基于Systemd的Linux发行版，除按照上述方法运行外，亦可通过以下步骤将ZJU-Connect安装为系统服务以实现自启：
+
+1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应硬件平台的最新版本，将可执行文件放置于`/opt`并赋予可执行权限。
+
+2. 在`/etc`下创建一个`zju-connect`目录，并在其中创建一个配置文件`config.toml`,内容参照仓库中的`config.toml.example`。
+
+3. 在`/lib/systemd/system`下创建一个`zju-connect.service`文件，内容如下：
+```
+[Unit] 
+Description=ZJU-Connect
+After=network.target
+[Service] 
+ExecStart=/opt/ZJUConnect -config /etc/zju-connect/config.toml
+[Install] 
+WantedBy=multi-user.target 
+```
+
+4. 执行以下命令启用服务：
+```
+$ sudo systemctl start zju-connect // 启动服务
+$ sudo systemctl enable zju-connect // 设置自启
+```
+
 ### 参数说明
 
 + `server`: SSL VPN 服务端地址，默认为 `rvpn.zju.edu.cn`
@@ -54,6 +77,8 @@
 
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
++ `config`: 指定配置文件，内容参考config.toml.example  
+
 ### 计划表
 
 #### 已完成
@@ -66,11 +91,11 @@
 - [x] ZJU 规则添加
 - [x] 支持 IPv6 直连
 - [x] DNS 缓存加速
+- [x] 通过配置文件启动
 
 #### To Do
 
 - [ ] 自动选择线路
-- [ ] 通过配置文件启动
 - [ ] 内置端口转发功能
 
 ### 贡献者

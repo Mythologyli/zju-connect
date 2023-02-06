@@ -20,3 +20,6 @@
 # Go workspace file
 go.work
 .idea/
+
+# Config file
+config.toml

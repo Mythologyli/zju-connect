@@ -3,13 +3,31 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/BurntSushi/toml"
 	"github.com/mythologyli/zju-connect/core"
 	"os"
 )
 
+type Config struct {
+	ServerAddress       string
+	ServerPort          int
+	Username            string
+	Password            string
+	DisableServerConfig bool
+	DisableZjuConfig    bool
+	DisableZjuDns       bool
+	ProxyAll            bool
+	SocksBind           string
+	SocksUser           string
+	SocksPasswd         string
+	HttpBind            string
+	DnsTTL              uint64
+	DebugDump           bool
+}
+
 func main() {
 	// CLI args
-	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, twfId := "", 0, "", "", false, false, false, ""
+	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, twfId, configFile := "", 0, "", "", false, false, false, "", ""
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address")
 	flag.StringVar(&username, "username", "", "Your username")
@@ -25,34 +43,53 @@ func main() {
 	flag.Uint64Var(&core.DnsTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&core.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.StringVar(&twfId, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
+	flag.StringVar(&configFile, "config", "", "Config file")
 
 	flag.Parse()
 
-	if disableServerConfig {
-		core.ParseServConfig = false
+	if configFile != "" {
+		var conf Config
+		if _, err := toml.DecodeFile(configFile, &conf); err != nil {
+			fmt.Println("ZJU Connect: error parsing the config file")
+			return
+		}
+
+		host = conf.ServerAddress
+		port = conf.ServerPort
+		username = conf.Username
+		password = conf.Password
+		core.ParseServConfig = !conf.DisableServerConfig
+		core.ParseZjuConfig = !conf.DisableZjuConfig
+		core.UseZjuDns = !conf.DisableZjuDns
+		core.ProxyAll = conf.ProxyAll
+		core.SocksBind = conf.SocksBind
+		core.SocksUser = conf.SocksUser
+		core.SocksPasswd = conf.SocksPasswd
+		core.HttpBind = conf.HttpBind
+		core.DnsTTL = conf.DnsTTL
+		core.DebugDump = conf.DebugDump
+
+		if host == "" || (username == "" || password == "") {
+			fmt.Println("ZJU Connect: host, username and password are required in config file")
+
+			return
+		}
 	} else {
-		core.ParseServConfig = true
+		core.ParseServConfig = !disableServerConfig
+		core.ParseZjuConfig = !disableZjuConfig
+		core.UseZjuDns = !disableZjuDns
+
+		if host == "" || ((username == "" || password == "") && twfId == "") {
+			fmt.Println("ZJU Connect")
+			fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
+			fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
+			fmt.Println("\nFull usage:")
+			flag.PrintDefaults()
+
+			return
+		}
+
 	}
 
-	if disableZjuConfig {
-		core.ParseZjuConfig = false
-	} else {
-		core.ParseZjuConfig = true
-	}
-
-	if disableZjuDns {
-		core.UseZjuDns = false
-	} else {
-		core.UseZjuDns = true
-	}
-
-	if host == "" || ((username == "" || password == "") && twfId == "") {
-		fmt.Println("ZJU Connect")
-		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
-		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
-		fmt.Println("\nFull usage:")
-		flag.PrintDefaults()
-	} else {
-		core.StartClient(host, port, username, password, twfId)
-	}
+	core.StartClient(host, port, username, password, twfId)
 }
