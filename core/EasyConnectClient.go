@@ -13,15 +13,15 @@ import (
 )
 
 var SocksBind string
+var SocksUser string
+var SocksPasswd string
 var HttpBind string
 var DebugDump bool
 var ParseServConfig bool
 var ParseZjuConfig bool
-var ProxyAll bool
 var UseZjuDns bool
 var DnsTTL uint64
-var SocksUser string
-var SocksPasswd string
+var ProxyAll bool
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -84,7 +84,10 @@ func StartClient(host string, port int, username string, password string, twfId 
 	log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
 	go client.ServeSocks5(SocksBind, DebugDump)
-	ServeHttp()
+
+	if HttpBind != "" {
+		go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
+	}
 
 	runtime.KeepAlive(client)
 }
@@ -172,4 +175,8 @@ func (client *EasyConnectClient) ServeSocks5(socksBind string, debugDump bool) {
 
 	// Socks5 server
 	ServeSocks5(client.ipStack, client.clientIp, socksBind)
+}
+
+func (client *EasyConnectClient) ServeHttp(httpBind string, socksBind string, socksUser string, socksPasswd string) {
+	ServeHttp(httpBind, socksBind, socksUser, socksPasswd)
 }

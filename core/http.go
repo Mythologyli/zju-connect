@@ -45,20 +45,20 @@ func newClient() *http.Client {
 	}
 }
 
-func ServeHttp() {
+func ServeHttp(bindAddr string, socksAddr string, socksUser string, socksPasswd string) {
 	var err error
 
 	var auth *proxy.Auth
-	if SocksUser == "" || SocksPasswd == "" {
+	if socksUser == "" || socksPasswd == "" {
 		auth = nil
 	} else {
 		auth = &proxy.Auth{
-			User:     SocksUser,
-			Password: SocksPasswd,
+			User:     socksUser,
+			Password: socksPasswd,
 		}
 	}
 
-	socks5proxy, err = proxy.SOCKS5("tcp", SocksBind, auth, proxy.Direct)
+	socks5proxy, err = proxy.SOCKS5("tcp", socksAddr, auth, proxy.Direct)
 	if err != nil {
 		panic(err)
 	}
@@ -116,9 +116,9 @@ func ServeHttp() {
 		}
 	})
 
-	log.Printf("HTTP server listening on " + HttpBind)
+	log.Printf("HTTP server listening on " + bindAddr)
 
-	if err := http.ListenAndServe(HttpBind, handlerFunc); err != nil {
+	if err := http.ListenAndServe(bindAddr, handlerFunc); err != nil {
 		panic("HTTP listen failed: " + err.Error())
 	}
 }
