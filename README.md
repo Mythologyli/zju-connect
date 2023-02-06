@@ -14,21 +14,23 @@
 
 *Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/Mythologyli/ZJU-Connect-for-Windows)。*
 
-1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本。Windows x64 用户请下载 `ZJUConnect-windows-amd64.zip`。
+1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本。
 
-2. 以 Windows 平台为例，解压出可执行文件 `ZJUConnect.exe`。
+2. 以 Linux 平台为例，解压出可执行文件 `ZJUConnect`。
 
-3. 在命令行运行：`./ZJUConnect.exe -username 学号 -password 密码 -server rvpn.zju.edu.cn -parse -parse-zju -use-zju-dns`。
+3. 命令行运行：`./ZJUConnect -username <上网账户> -password <密码> -parse -parse-zju -use-zju-dns`。
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
 
 ### 参数说明
 
-+ `username`: 学号
++ `server`: SSL VPN 服务端地址，默认为 `rvpn.zju.edu.cn`
+
++ `port`: SSL VPN 服务端端口，默认为 `443`
+
++ `username`: 网络账户。例如：学号
 
 + `password`: 网络账户密码
-
-+ `server`: rvpn.zju.edu.cn
 
 + `parse`: 是否解析服务端配置，一般需要加此参数
 
@@ -38,9 +40,19 @@
 
 + `proxy-all`: 是否代理所有流量，一般不需要加此参数
 
-+ `socks-user`: Socks5 代理用户名，不填则不需要认证
++ `socks-bind`: SOCKS5 代理监听地址，默认为 `:1080`
 
-+ `socks-passwd`: Socks5 代理密码，不填则不需要认证
++ `socks-user`: SOCKS5 代理用户名，不填则不需要认证
+
++ `socks-passwd`: SOCKS5 代理密码，不填则不需要认证
+
++ `http-bind`: HTTP 代理监听地址，默认为 `:1081`
+
++ `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
+
++ `debug-dump`: 是否开启调试，一般不需要加此参数
+
++ `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
 ### 计划表
 
@@ -48,7 +60,7 @@
 
 - [x] 代理 TCP 流量
 - [x] 代理 UDP 流量
-- [x] Socks5 代理服务
+- [x] SOCKS5 代理服务
 - [x] HTTP 代理服务
 - [x] ZJU DNS 解析
 - [x] ZJU 规则添加
