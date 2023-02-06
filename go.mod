@@ -5,9 +5,9 @@ go 1.19
 require github.com/refraction-networking/utls v1.2.0
 
 require (
-	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89
 	github.com/cornelk/hashmap v1.0.8
+	github.com/cxz66666/go-socks5 v0.0.3
 	github.com/dlclark/regexp2 v1.8.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	golang.org/x/net v0.5.0
