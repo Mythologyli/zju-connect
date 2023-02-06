@@ -2,15 +2,15 @@ Username = "username"
 Password = "password"
 
 # Advanced settings
-Server = "rvpn.zju.edu.cn"
+ServerAddress = "rvpn.zju.edu.cn"
 ServerPort = 443
-Parse = true 
-ParseZju = false
-UseZJUDns = false
+DisableServerConfig = false
+DisableZjuConfig = false
+DisableZjuDns = false
 ProxyAll = false
 SocksBind = ":1080"
 SocksUser = ""
 SocksPasswd = ""
-HTTPBind = ":1081"
+HttpBind = ":1081"
 DnsTTL = 3600
 DebugDump = false

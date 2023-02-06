@@ -7,7 +7,7 @@ import (
 	"net"
 	"runtime"
 
-	"ZJUConnect/parser"
+	"github.com/mythologyli/zju-connect/parser"
 
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )

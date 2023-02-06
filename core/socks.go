@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ZJUConnect/core/config"
+	"github.com/mythologyli/zju-connect/core/config"
 
 	"github.com/cxz66666/go-socks5"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -251,22 +251,14 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
 		socks5.WithLogger(socks5.NewLogger(log.New(os.Stdout, "", log.LstdFlags))),
 	)
 
-	log.Printf(">>>SOCKS5 SERVER listening on<<<: " + bindAddr)
+	log.Printf("SOCKS5 server listening on " + bindAddr)
 
 	if SocksUser != "" && SocksPasswd != "" {
-		var Red = "\033[31m"
-		var Yellow = "\033[33m"
-		var Blue = "\033[34m"
-		var Reset = "\033[0m"
-
-		log.Printf(Red + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
-		log.Printf(Red + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
-		log.Printf(Yellow + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
-		log.Printf(Yellow + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
-		log.Printf(Blue + ">>>RFC 1928 所规定的 SOCKS5 只提供流量转发功能，不提供任何加密的手段，数据均为明文传输，安全性极差<<<" + Reset)
-		log.Printf(Blue + ">>>请勿将其部署至公网提供公开服务，造成的一切后果、责任与开发者无关<<<" + Reset)
+		log.Printf("\u001B[31mNeither traffic nor credentials are encrypted in the SOCKS5 protocol!\u001B[0m")
+		log.Printf("\u001B[31mDO NOT deploy it to the public network. All consequences and responsibilities have nothing to do with the developer.\u001B[0m")
 	}
+
 	if err := server.ListenAndServe("tcp", bindAddr); err != nil {
-		panic("socks listen failed: " + err.Error())
+		panic("SOCKS5 listen failed: " + err.Error())
 	}
 }

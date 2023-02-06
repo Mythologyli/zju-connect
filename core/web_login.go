@@ -260,7 +260,7 @@ func ECAgentToken(server string, twfId string) (string, error) {
 		panic(err)
 	}
 
-	log.Printf("Server Session ID: %q", conn.HandshakeState.ServerHello.SessionId)
+	log.Printf("Server Session ID: %s", hex.EncodeToString(conn.HandshakeState.ServerHello.SessionId))
 
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
