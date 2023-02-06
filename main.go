@@ -9,14 +9,14 @@ import (
 
 func main() {
 	// CLI args
-	host, port, username, password, twfId := "", 0, "", "", ""
+	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, twfId := "", 0, "", "", false, false, false, ""
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address")
 	flag.StringVar(&username, "username", "", "Your username")
 	flag.StringVar(&password, "password", "", "Your password")
-	flag.BoolVar(&core.ParseServConfig, "parse", false, "Parse server config. Typically set")
-	flag.BoolVar(&core.ParseZjuConfig, "parse-zju", false, "Parse ZJU config. Typically set")
-	flag.BoolVar(&core.UseZjuDns, "use-zju-dns", false, "Use ZJU DNS. Typically set")
+	flag.BoolVar(&disableServerConfig, "disable-server-config", false, "Don't parse server config")
+	flag.BoolVar(&disableZjuConfig, "disable-zju-config", false, "Don't use ZJU config")
+	flag.BoolVar(&disableZjuDns, "disable-zju-dns", false, "Use local DNS instead of ZJU DNS")
 	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
 	flag.StringVar(&core.SocksBind, "socks-bind", ":1080", "The address SOCKS5 server listens on (e.g. 127.0.0.1:1080)")
 	flag.StringVar(&core.SocksUser, "socks-user", "", "SOCKS5 username, default is don't use auth")
@@ -28,10 +28,28 @@ func main() {
 
 	flag.Parse()
 
+	if disableServerConfig {
+		core.ParseServConfig = false
+	} else {
+		core.ParseServConfig = true
+	}
+
+	if disableZjuConfig {
+		core.ParseZjuConfig = false
+	} else {
+		core.ParseZjuConfig = true
+	}
+
+	if disableZjuDns {
+		core.UseZjuDns = false
+	} else {
+		core.UseZjuDns = true
+	}
+
 	if host == "" || ((username == "" || password == "") && twfId == "") {
 		fmt.Println("ZJU Connect")
 		fmt.Println("Please see: https://github.com/Mythologyli/ZJU-Connect")
-		fmt.Printf("\nUsage: %s -username <username> -password <password> -parse -parse-zju -use-zju-dns\n", os.Args[0])
+		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
 		fmt.Println("\nFull usage:")
 		flag.PrintDefaults()
 	} else {
