@@ -84,6 +84,7 @@ jobs:
           echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $_NAME"
           echo "::set-output name=ASSET_NAME::$_NAME"
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
+
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
@@ -96,24 +97,27 @@ jobs:
         run: |
           mkdir -p build_assets
           go build -v -o build_assets/ZJUConnect -trimpath -ldflags "-s -w -buildid=" .
+
       - name: Rename Windows ZJUConnect
         if: matrix.goos == 'windows'
         run: |
           cd ./build_assets || exit 1
           mv ZJUConnect ZJUConnect.exe
-      - name: Create ZIP archive
-        run: |
-          pushd build_assets || exit 1
-          zip -9vr ../ZJUConnect-$ASSET_NAME.zip .
-          popd || exit 1
 
       - name: Upload artifact
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v2
         with:
-          name: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}
-          path: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
-      
+          name: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          path: build_assets/*
+
+      - name: Create ZIP archive
+        if: github.event_name == 'release'
+        run: |
+          pushd build_assets || exit 1
+          zip -9vr ../ZJUConnect-$ASSET_NAME.zip .
+          popd || exit 1
+
       - name: Upload release binary
         if: github.event_name == 'release'
         env:
