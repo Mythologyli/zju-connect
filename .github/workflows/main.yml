@@ -106,6 +106,13 @@ jobs:
           pushd build_assets || exit 1
           zip -9vr ../ZJUConnect-$ASSET_NAME.zip .
           popd || exit 1
+
+      - name: Upload artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}
+          path: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
       
       - name: Upload release binary
         if: github.event_name == 'release'
