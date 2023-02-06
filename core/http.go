@@ -57,6 +57,7 @@ func ServeHttp() {
 			Password: SocksPasswd,
 		}
 	}
+
 	socks5proxy, err = proxy.SOCKS5("tcp", SocksBind, auth, proxy.Direct)
 	if err != nil {
 		panic(err)
@@ -115,5 +116,9 @@ func ServeHttp() {
 		}
 	})
 
-	log.Fatal(http.ListenAndServe(HttpBind, handlerFunc))
+	log.Printf("HTTP server listening on " + HttpBind)
+
+	if err := http.ListenAndServe(HttpBind, handlerFunc); err != nil {
+		panic("HTTP listen failed: " + err.Error())
+	}
 }

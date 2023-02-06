@@ -267,27 +267,27 @@ func ParseResourceLists(host, twfID string, debug bool) {
 
 			processRcsData(ResourceList, debug, &waitChan, &cpuNumber)
 
-			log.Printf("Parsed %v Domain rules", config.GetDomainRuleLen())
-			log.Printf("Parsed %v Ipv4 rules", config.GetIpv4RuleLen())
+			log.Printf("Parsed %v domain rules", config.GetDomainRuleLen())
+			log.Printf("Parsed %v IPv4 rules", config.GetIpv4RuleLen())
 
 			DnsDataRegexp := regexp2.MustCompile("(?<=<Dns dnsserver=\"\" data=\")[0-9A-Za-z:;.-]*?(?=\")", 0)
 			DnsDataRegexpMatches, _ := DnsDataRegexp.FindStringMatch(resUrlDecodedValue)
 
 			processDnsData(DnsDataRegexpMatches.String(), debug)
 
-			log.Printf("Parsed %v Dns rules", config.GetDnsRuleLen())
+			log.Printf("Parsed %v DNS rules", config.GetDnsRuleLen())
 		}
 	} else {
 		log.Printf("try parsing by goXml")
 
 		processRcsData(ResourceList, debug, &waitChan, &cpuNumber)
 
-		log.Printf("Parsed %v Domain rules", config.GetDomainRuleLen())
-		log.Printf("Parsed %v Ipv4 rules", config.GetIpv4RuleLen())
+		log.Printf("Parsed %v domain rules", config.GetDomainRuleLen())
+		log.Printf("Parsed %v IPv4 rules", config.GetIpv4RuleLen())
 
 		processDnsData(ResourceList.Dns.Data, debug)
 
-		log.Printf("Parsed %v Dns rules", config.GetDnsRuleLen())
+		log.Printf("Parsed %v DNS rules", config.GetDnsRuleLen())
 	}
 }
 
