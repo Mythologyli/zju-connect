@@ -12,13 +12,13 @@
 
 ### 使用方法
 
-*Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/Mythologyli/ZJU-Connect-for-Windows)。*
+*Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
 
-1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本。
+1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
 
-2. 以 Linux 平台为例，解压出可执行文件 `ZJUConnect`。
+2. 以 Linux 平台为例，解压出可执行文件 `zju-connect`。
 
-3. 命令行运行：`./ZJUConnect -username <上网账户> -password <密码>`。
+3. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
 
@@ -75,8 +75,8 @@
 
 ### 贡献者
 
-<a href="https://github.com/Mythologyli/ZJU-Connect/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Mythologyli/ZJU-Connect" />
+<a href="https://github.com/mythologyli/zju-connect/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=mythologyli/zju-connect" />
 </a>
 
 ### 感谢

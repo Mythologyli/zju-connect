@@ -1,4 +1,4 @@
-module ZJUConnect
+module github.com/mythologyli/zju-connect
 
 go 1.19
 

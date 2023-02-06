@@ -96,26 +96,26 @@ jobs:
       - name: Build
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/ZJUConnect -trimpath -ldflags "-s -w -buildid=" .
+          go build -v -o build_assets/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
-      - name: Rename Windows ZJUConnect
+      - name: Rename Windows zju-connect
         if: matrix.goos == 'windows'
         run: |
           cd ./build_assets || exit 1
-          mv ZJUConnect ZJUConnect.exe
+          mv zju-connect zju-connect.exe
 
       - name: Upload artifact
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v2
         with:
-          name: ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          name: zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
           path: build_assets/*
 
       - name: Create ZIP archive
         if: github.event_name == 'release'
         run: |
           pushd build_assets || exit 1
-          zip -9vr ../ZJUConnect-$ASSET_NAME.zip .
+          zip -9vr ../zju-connect-$ASSET_NAME.zip .
           popd || exit 1
 
       - name: Upload release binary
@@ -123,5 +123,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} ZJUConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          gh release upload ${{ github.event.release.tag_name }} zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
 

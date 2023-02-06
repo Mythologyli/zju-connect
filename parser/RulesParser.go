@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"ZJUConnect/core/config"
 	"fmt"
+	"github.com/mythologyli/zju-connect/core/config"
 	"log"
 	"math"
 	"net"

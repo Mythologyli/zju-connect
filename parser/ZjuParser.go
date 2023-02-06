@@ -1,6 +1,6 @@
 package parser
 
-import "ZJUConnect/core/config"
+import "github.com/mythologyli/zju-connect/core/config"
 
 func ParseZjuDnsRules(debug bool) {
 

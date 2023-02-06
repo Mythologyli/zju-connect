@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ZJUConnect/core/config"
+	"github.com/mythologyli/zju-connect/core/config"
 
 	"github.com/cxz66666/go-socks5"
 	"gvisor.dev/gvisor/pkg/tcpip"

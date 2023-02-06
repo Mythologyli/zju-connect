@@ -1,9 +1,9 @@
 package main
 
 import (
-	"ZJUConnect/core"
 	"flag"
 	"fmt"
+	"github.com/mythologyli/zju-connect/core"
 	"os"
 )
 
@@ -48,7 +48,7 @@ func main() {
 
 	if host == "" || ((username == "" || password == "") && twfId == "") {
 		fmt.Println("ZJU Connect")
-		fmt.Println("Please see: https://github.com/Mythologyli/ZJU-Connect")
+		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
 		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
 		fmt.Println("\nFull usage:")
 		flag.PrintDefaults()
