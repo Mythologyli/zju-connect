@@ -70,7 +70,7 @@
 
 + `socks-passwd`: SOCKS5 代理密码，不填则不需要认证
 
-+ `http-bind`: HTTP 代理监听地址，默认为 `:1081`
++ `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
 
 + `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
 
@@ -78,7 +78,7 @@
 
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
-+ `config`: 指定配置文件，内容参考config.toml.example  
++ `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
 
 ### 计划表
 
