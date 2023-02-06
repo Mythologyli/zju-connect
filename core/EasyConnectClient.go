@@ -83,10 +83,11 @@ func StartClient(host string, port int, username string, password string, twfId 
 	}
 	log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
-	go client.ServeSocks5(SocksBind, DebugDump)
-
-	if HttpBind != "" {
-		go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
+	if HttpBind == "" {
+		client.ServeSocks5(SocksBind, DebugDump)
+	} else {
+		go client.ServeSocks5(SocksBind, DebugDump)
+		client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
 	}
 
 	runtime.KeepAlive(client)
