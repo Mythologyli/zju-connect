@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mythologyli/zju-connect/core/config"
+	"github.com/mythologyli/zju-connect/parser"
 	"log"
 	"net"
 	"runtime"
-
-	"github.com/mythologyli/zju-connect/parser"
+	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -87,7 +88,17 @@ func StartClient(host string, port int, username string, password string, twfId 
 
 		if server != "" {
 			log.Printf("Find best server: %s", server)
-			client.server = server
+
+			TestMultiLine = false
+
+			parts := strings.Split(server, ":")
+			host := parts[0]
+			port, _ := strconv.Atoi(parts[1])
+
+			log.Printf("Login again...")
+
+			StartClient(host, port, username, password, twfId)
+			return
 		} else {
 			log.Printf("Find best server failed. Connect %s", client.server)
 		}
