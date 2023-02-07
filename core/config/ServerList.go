@@ -1,21 +1,24 @@
 package config
 
 import (
-	"github.com/cloverstd/tcping/ping"
 	"log"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cloverstd/tcping/ping"
 )
 
-var ServerList []string
+var serverList []string
+
+const tcpPingNum = 3
 
 func AppendSingleServer(server string, debug bool) {
 	if debug {
 		log.Printf("AppendSingleServer: %s", server)
 	}
 
-	ServerList = append(ServerList, server)
+	serverList = append(serverList, server)
 }
 
 func GetBestServer() string {
@@ -25,7 +28,7 @@ func GetBestServer() string {
 	var tcpingList []ping.TCPing
 	var chList []<-chan struct{}
 
-	for _, server := range ServerList {
+	for _, server := range serverList {
 		parts := strings.Split(server, ":")
 		host := parts[0]
 		port, err := strconv.Atoi(parts[1])
@@ -38,7 +41,7 @@ func GetBestServer() string {
 			Protocol: ping.TCP,
 			Host:     host,
 			Port:     port,
-			Counter:  1,
+			Counter:  tcpPingNum,
 			Interval: time.Duration(0.5 * float64(time.Second)),
 			Timeout:  time.Duration(1 * float64(time.Second)),
 		}
@@ -55,11 +58,11 @@ func GetBestServer() string {
 
 	for i, tcping := range tcpingList {
 		result := tcping.Result()
-		if result.SuccessCounter > 0 {
+		if result.SuccessCounter == tcpPingNum {
 			latency := result.Avg().Milliseconds()
 
-			if i == 0 || latency < bestLatency {
-				bestServer = ServerList[i]
+			if bestLatency == 0 || latency < bestLatency {
+				bestServer = serverList[i]
 				bestLatency = latency
 			}
 		}
@@ -69,12 +72,12 @@ func GetBestServer() string {
 }
 
 func IsServerListAvailable() bool {
-	return ServerList != nil
+	return serverList != nil
 }
 
 func GetServerListLen() int {
 	if IsServerListAvailable() {
-		return len(ServerList)
+		return len(serverList)
 	} else {
 		return 0
 	}
