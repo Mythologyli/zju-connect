@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+
 	"github.com/BurntSushi/toml"
 	"github.com/mythologyli/zju-connect/core"
-	"os"
 )
 
 type (
