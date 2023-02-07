@@ -15,7 +15,8 @@ import (
 
 func ServeForwarding(networkType string, bindAddress string, remoteAddress string, ipStack *stack.Stack, selfIp []byte) {
 	if networkType != "tcp" {
-		log.Println("Only TCP forwarding not supported yet. Aborting.")
+		log.Println("Only TCP forwarding is supported yet. Aborting.")
+		return
 	}
 
 	ln, err := net.Listen(networkType, bindAddress)
