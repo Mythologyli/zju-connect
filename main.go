@@ -8,23 +8,26 @@ import (
 	"os"
 )
 
-type Config struct {
-	ServerAddress       string
-	ServerPort          int
-	Username            string
-	Password            string
-	DisableServerConfig bool
-	DisableZjuConfig    bool
-	DisableZjuDns       bool
-	DisableMultiLine    bool
-	ProxyAll            bool
-	SocksBind           string
-	SocksUser           string
-	SocksPasswd         string
-	HttpBind            string
-	DnsTTL              uint64
-	DebugDump           bool
-}
+type (
+	Config struct {
+		ServerAddress       string
+		ServerPort          int
+		Username            string
+		Password            string
+		DisableServerConfig bool
+		DisableZjuConfig    bool
+		DisableZjuDns       bool
+		DisableMultiLine    bool
+		ProxyAll            bool
+		SocksBind           string
+		SocksUser           string
+		SocksPasswd         string
+		HttpBind            string
+		DnsTTL              uint64
+		DebugDump           bool
+		PortForwarding      []core.SingleForwarding
+	}
+)
 
 func main() {
 	// CLI args
@@ -71,6 +74,7 @@ func main() {
 		core.HttpBind = conf.HttpBind
 		core.DnsTTL = conf.DnsTTL
 		core.DebugDump = conf.DebugDump
+		core.PortForwarding = conf.PortForwarding
 
 		if host == "" || (username == "" || password == "") {
 			fmt.Println("ZJU Connect: host, username and password are required in config file")

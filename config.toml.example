@@ -15,3 +15,9 @@ SocksPasswd = ""
 HttpBind = ":1081"
 DnsTTL = 3600
 DebugDump = false
+
+# Port forwarding
+PortForwarding = [
+    { NetworkType = "tcp", BindAddress = "127.0.0.1:9898", RemoteAddress = "10.10.98.98:80" },
+    { NetworkType = "tcp", BindAddress = "127.0.0.1:9899", RemoteAddress = "10.10.98.98:80" }
+]

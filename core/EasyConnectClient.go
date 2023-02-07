@@ -14,6 +14,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+type (
+	SingleForwarding struct {
+		NetworkType   string
+		BindAddress   string
+		RemoteAddress string
+	}
+)
+
 var SocksBind string
 var SocksUser string
 var SocksPasswd string
@@ -25,6 +33,7 @@ var UseZjuDns bool
 var TestMultiLine bool
 var DnsTTL uint64
 var ProxyAll bool
+var PortForwarding []SingleForwarding
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -109,12 +118,22 @@ func StartClient(host string, port int, username string, password string, twfId 
 	}
 	log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
-	if HttpBind == "" {
-		client.ServeSocks5(SocksBind, DebugDump)
-	} else {
-		go client.ServeSocks5(SocksBind, DebugDump)
-		client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
+	// Link-level endpoint used in gvisor netstack
+	client.endpoint = &EasyConnectEndpoint{}
+	client.ipStack = SetupStack(client.clientIp, client.endpoint)
+
+	// Sangfor Easyconnect protocol
+	StartProtocol(client.endpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
+
+	if HttpBind != "" {
+		go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
 	}
+
+	for _, singleForward := range PortForwarding {
+		go client.ServeForwarding(strings.ToLower(singleForward.NetworkType), singleForward.BindAddress, singleForward.RemoteAddress)
+	}
+
+	client.ServeSocks5(SocksBind, DebugDump)
 
 	runtime.KeepAlive(client)
 }
@@ -193,18 +212,13 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 }
 
 func (client *EasyConnectClient) ServeSocks5(socksBind string, debugDump bool) {
-	// Link-level endpoint used in gvisor netstack
-	client.endpoint = &EasyConnectEndpoint{}
-	client.ipStack = SetupStack(client.clientIp, client.endpoint)
-
-	// Sangfor Easyconnect protocol
-	StartProtocol(client.endpoint, client.server, client.token,
-		&[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, debugDump)
-
-	// Socks5 server
 	ServeSocks5(client.ipStack, client.clientIp, socksBind)
 }
 
 func (client *EasyConnectClient) ServeHttp(httpBind string, socksBind string, socksUser string, socksPasswd string) {
 	ServeHttp(httpBind, socksBind, socksUser, socksPasswd)
+}
+
+func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress string, remoteAddress string) {
+	ServeForwarding(networkType, bindAddress, remoteAddress, client.ipStack, client.clientIp)
 }
