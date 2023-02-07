@@ -71,7 +71,6 @@ func WebLogin(server string, username string, password string) (string, error) {
 	} else {
 		log.Printf("WARNING: No CSRF Code Match. Maybe you're connecting to an older server? Continue anyway...")
 	}
-	log.Printf("Password to encrypt: %s", password)
 
 	pubKey := rsa.PublicKey{}
 	pubKey.E, _ = strconv.Atoi(rsaExp)
@@ -85,7 +84,6 @@ func WebLogin(server string, username string, password string) (string, error) {
 		return "", err
 	}
 	encryptedPasswordHex := hex.EncodeToString(encryptedPassword)
-	log.Printf("Encrypted Password: %s", encryptedPasswordHex)
 
 	addr = server + "/por/login_psw.csp?anti_replay=1&encrypt=1&type=cs"
 	log.Printf("Login Request: %s", addr)
