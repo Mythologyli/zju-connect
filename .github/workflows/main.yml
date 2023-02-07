@@ -108,7 +108,7 @@ jobs:
         if: github.event_name != 'release'
         uses: actions/upload-artifact@v3
         with:
-          name: zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          name: zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: build_assets/*
 
       - name: Create ZIP archive
