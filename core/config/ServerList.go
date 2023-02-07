@@ -1,11 +1,12 @@
 package config
 
 import (
-	"github.com/cloverstd/tcping/ping"
 	"log"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cloverstd/tcping/ping"
 )
 
 var ServerList []string
@@ -58,7 +59,7 @@ func GetBestServer() string {
 		if result.SuccessCounter > 0 {
 			latency := result.Avg().Milliseconds()
 
-			if i == 0 || latency < bestLatency {
+			if bestLatency == 0 || latency < bestLatency {
 				bestServer = ServerList[i]
 				bestLatency = latency
 			}
