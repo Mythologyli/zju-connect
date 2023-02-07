@@ -2,15 +2,16 @@ name: Build
 
 on:
   release:
-    types: [published]
+    types: [ published ]
   push:
-    branches:
-      - main
     paths:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/*.yml"
+  pull_request:
+    types:
+      - opened
 
 permissions: write-all
 
@@ -19,8 +20,8 @@ jobs:
     strategy:
       matrix:
         # Include amd64 on all platforms.
-        goos: [windows, linux, darwin]
-        goarch: [amd64, 386]
+        goos: [ windows, linux, darwin ]
+        goarch: [ amd64, 386 ]
         exclude:
           # Exclude i386 on darwin.
           - goarch: 386
