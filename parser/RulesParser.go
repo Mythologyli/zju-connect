@@ -293,5 +293,17 @@ func ParseResourceLists(host, twfID string, debug bool) {
 
 func ParseConfLists(host, twfID string, debug bool) {
 	conf := config.Conf{}
-	_, _ = ParseXml(&conf, host, config.PathConf, twfID)
+	_, ok := ParseXml(&conf, host, config.PathConf, twfID)
+
+	if !ok {
+		log.Printf("Parse conf failed")
+		return
+	}
+
+	serverList := strings.Split(conf.Mline.List, ";")
+	for _, server := range serverList {
+		if server != "" {
+			config.AppendSingleServer(server, debug)
+		}
+	}
 }

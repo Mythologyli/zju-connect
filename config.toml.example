@@ -7,6 +7,7 @@ ServerPort = 443
 DisableServerConfig = false
 DisableZjuConfig = false
 DisableZjuDns = false
+DisableMultiLine = false
 ProxyAll = false
 SocksBind = ":1080"
 SocksUser = ""

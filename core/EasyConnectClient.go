@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/mythologyli/zju-connect/core/config"
 	"log"
 	"net"
 	"runtime"
@@ -20,6 +21,7 @@ var DebugDump bool
 var ParseServConfig bool
 var ParseZjuConfig bool
 var UseZjuDns bool
+var TestMultiLine bool
 var DnsTTL uint64
 var ProxyAll bool
 
@@ -75,6 +77,19 @@ func StartClient(host string, port int, username string, password string, twfId 
 			}
 
 			ip, _ = client.AuthTOTP(TOTPCode)
+		}
+	}
+
+	if TestMultiLine && config.IsServerListAvailable() {
+		log.Printf("Testing %d servers...", config.GetServerListLen())
+
+		server := config.GetBestServer()
+
+		if server != "" {
+			log.Printf("Find best server: %s", server)
+			client.server = server
+		} else {
+			log.Printf("Find best server failed. Connect %s", client.server)
 		}
 	}
 
@@ -141,10 +156,11 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 		return nil, err
 	}
 
+	parser.ParseConfLists(client.server, twfId, DebugDump)
+
 	// Parse Server config
 	if ParseServConfig {
 		parser.ParseResourceLists(client.server, twfId, DebugDump)
-		parser.ParseConfLists(client.server, twfId, DebugDump)
 	}
 
 	// Parse ZJU config

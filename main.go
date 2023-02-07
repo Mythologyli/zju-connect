@@ -16,6 +16,7 @@ type Config struct {
 	DisableServerConfig bool
 	DisableZjuConfig    bool
 	DisableZjuDns       bool
+	DisableMultiLine    bool
 	ProxyAll            bool
 	SocksBind           string
 	SocksUser           string
@@ -27,7 +28,7 @@ type Config struct {
 
 func main() {
 	// CLI args
-	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, twfId, configFile := "", 0, "", "", false, false, false, "", ""
+	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine, twfId, configFile := "", 0, "", "", false, false, false, false, "", ""
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address")
 	flag.StringVar(&username, "username", "", "Your username")
@@ -35,6 +36,7 @@ func main() {
 	flag.BoolVar(&disableServerConfig, "disable-server-config", false, "Don't parse server config")
 	flag.BoolVar(&disableZjuConfig, "disable-zju-config", false, "Don't use ZJU config")
 	flag.BoolVar(&disableZjuDns, "disable-zju-dns", false, "Use local DNS instead of ZJU DNS")
+	flag.BoolVar(&disableMultiLine, "disable-multi-line", false, "Disable multi line auto select")
 	flag.BoolVar(&core.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
 	flag.StringVar(&core.SocksBind, "socks-bind", ":1080", "The address SOCKS5 server listens on (e.g. 127.0.0.1:1080)")
 	flag.StringVar(&core.SocksUser, "socks-user", "", "SOCKS5 username, default is don't use auth")
@@ -61,6 +63,7 @@ func main() {
 		core.ParseServConfig = !conf.DisableServerConfig
 		core.ParseZjuConfig = !conf.DisableZjuConfig
 		core.UseZjuDns = !conf.DisableZjuDns
+		core.TestMultiLine = !conf.DisableMultiLine
 		core.ProxyAll = conf.ProxyAll
 		core.SocksBind = conf.SocksBind
 		core.SocksUser = conf.SocksUser
@@ -78,6 +81,7 @@ func main() {
 		core.ParseServConfig = !disableServerConfig
 		core.ParseZjuConfig = !disableZjuConfig
 		core.UseZjuDns = !disableZjuDns
+		core.TestMultiLine = !disableMultiLine
 
 		if host == "" || ((username == "" || password == "") && twfId == "") {
 			fmt.Println("ZJU Connect")
