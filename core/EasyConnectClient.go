@@ -3,13 +3,14 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/mythologyli/zju-connect/core/config"
-	"github.com/mythologyli/zju-connect/parser"
 	"log"
 	"net"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/core/config"
+	"github.com/mythologyli/zju-connect/parser"
 
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -66,9 +67,9 @@ func StartClient(host string, port int, username string, password string, twfId 
 		if len(twfId) != 16 {
 			panic("len(twfid) should be 16!")
 		}
-		ip, err = client.LoginByTwfId(twfId)
+		err = client.LoginByTwfId(twfId)
 	} else {
-		ip, err = client.Login(username, password)
+		err = client.Login(username, password)
 		if err == ERR_NEXT_AUTH_SMS {
 			fmt.Print(">>>Please enter your sms code<<<:")
 			smsCode := ""
@@ -77,7 +78,7 @@ func StartClient(host string, port int, username string, password string, twfId 
 				panic(err)
 			}
 
-			ip, _ = client.AuthSMSCode(smsCode)
+			_ = client.AuthSMSCode(smsCode)
 		} else if err == ERR_NEXT_AUTH_TOTP {
 			fmt.Print(">>>Please enter your TOTP Auth code<<<:")
 			TOTPCode := ""
@@ -86,7 +87,7 @@ func StartClient(host string, port int, username string, password string, twfId 
 				panic(err)
 			}
 
-			ip, _ = client.AuthTOTP(TOTPCode)
+			_ = client.AuthTOTP(TOTPCode)
 		}
 	}
 
@@ -112,11 +113,17 @@ func StartClient(host string, port int, username string, password string, twfId 
 			log.Printf("Find best server failed. Connect %s", client.server)
 		}
 	}
-
+	// check error after trying best server
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
+
+	client.ParseAllConfig()
+	if ip, err = client.GetClientIp(); err != nil {
+		log.Fatal(err.Error())
+	} else {
+		log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
+	}
 
 	// Link-level endpoint used in gvisor netstack
 	client.endpoint = &EasyConnectEndpoint{}
@@ -138,7 +145,7 @@ func StartClient(host string, port int, username string, password string, twfId 
 	runtime.KeepAlive(client)
 }
 
-func (client *EasyConnectClient) Login(username string, password string) ([]byte, error) {
+func (client *EasyConnectClient) Login(username string, password string) error {
 	client.username = username
 	client.password = password
 
@@ -148,49 +155,54 @@ func (client *EasyConnectClient) Login(username string, password string) ([]byte
 	// Store TWFID for AuthSMS
 	client.twfId = twfId
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	return client.LoginByTwfId(twfId)
 }
 
-func (client *EasyConnectClient) AuthSMSCode(code string) ([]byte, error) {
+func (client *EasyConnectClient) AuthSMSCode(code string) error {
 	if client.twfId == "" {
-		return nil, errors.New("SMS Auth not required")
+		return errors.New("SMS Auth not required")
 	}
 
 	twfId, err := AuthSms(client.server, client.username, client.password, client.twfId, code)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	return client.LoginByTwfId(twfId)
 }
 
-func (client *EasyConnectClient) AuthTOTP(code string) ([]byte, error) {
+func (client *EasyConnectClient) AuthTOTP(code string) error {
 	if client.twfId == "" {
-		return nil, errors.New("TOTP Auth not required")
+		return errors.New("TOTP Auth not required")
 	}
 
 	twfId, err := TOTPAuth(client.server, client.username, client.password, client.twfId, code)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	return client.LoginByTwfId(twfId)
 }
 
-func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
+func (client *EasyConnectClient) LoginByTwfId(twfId string) error {
 	agentToken, err := ECAgentToken(client.server, twfId)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	parser.ParseConfLists(client.server, twfId, DebugDump)
 
+	client.token = (*[48]byte)([]byte(agentToken + twfId))
+	return nil
+}
+
+func (client *EasyConnectClient) ParseAllConfig() {
 	// Parse Server config
 	if ParseServConfig {
-		parser.ParseResourceLists(client.server, twfId, DebugDump)
+		parser.ParseResourceLists(client.server, client.twfId, DebugDump)
 	}
 
 	// Parse ZJU config
@@ -199,9 +211,10 @@ func (client *EasyConnectClient) LoginByTwfId(twfId string) ([]byte, error) {
 		parser.ParseZjuIpv4Rules(DebugDump)
 		parser.ParseZjuForceProxyRules(DebugDump)
 	}
+}
 
-	client.token = (*[48]byte)([]byte(agentToken + twfId))
-
+func (client *EasyConnectClient) GetClientIp() ([]byte, error) {
+	var err error
 	// Query IP (keep the connection used, so it's not closed too early, otherwise i/o stream will be closed)
 	client.clientIp, client.queryConn, err = QueryIp(client.server, client.token, DebugDump)
 	if err != nil {
