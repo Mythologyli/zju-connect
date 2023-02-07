@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"runtime/debug"
 	"strconv"
@@ -48,6 +49,15 @@ func WebLogin(server string, username string, password string) (string, error) {
 
 	twfId := string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("Twf Id: %s", twfId)
+
+	rndImg := string(regexp.MustCompile(`<RndImg>(.*)</RndImg>`).FindSubmatch(buf.Bytes())[1])
+	if rndImg == "1" {
+		log.Print("\u001B[31mDue to too many login failures, the server has activated risk control for this IP.\u001B[0m")
+		log.Print("\u001B[31mContinuing to log in may cause this IP to be banned. The program has stopped the login process.\u001B[0m")
+		log.Print("\u001B[31mYou can wait a minute and try again.\u001B[0m")
+
+		os.Exit(1)
+	}
 
 	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("RSA Key: %s", rsaKey)
