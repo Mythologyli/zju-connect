@@ -10,6 +10,8 @@
 
 **[电报交流群](https://t.me/zjuers)**，欢迎来自 ZJU 的使用者加入交流。
 
+**项目处于早期开发中，可能发生不兼容更改！**
+
 ### 使用方法
 
 *Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
