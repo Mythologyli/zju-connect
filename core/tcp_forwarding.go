@@ -1,7 +1,7 @@
 package core
 
 import (
-	"context"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -13,18 +13,12 @@ import (
 	"strings"
 )
 
-func ServeForwarding(networkType string, bindAddress string, remoteAddress string, ipStack *stack.Stack, selfIp []byte) {
-	if networkType != "tcp" {
-		log.Println("Only TCP forwarding is supported yet. Aborting.")
-		return
-	}
+func ServeTcpForwarding(bindAddress string, remoteAddress string, ipStack *stack.Stack, selfIp []byte) {
 
-	ln, err := net.Listen(networkType, bindAddress)
+	ln, err := net.Listen("tcp", bindAddress)
 	if err != nil {
 		panic(err)
 	}
-
-	log.Printf("Port forwarding (%s): %s <- %s", networkType, bindAddress, remoteAddress)
 
 	for {
 		conn, err := ln.Accept()
@@ -37,7 +31,7 @@ func ServeForwarding(networkType string, bindAddress string, remoteAddress strin
 }
 
 func handleRequest(conn net.Conn, remoteAddress string, ipStack *stack.Stack, selfIp []byte) {
-	log.Printf("Port forwarding (%s): %s -> %s -> %s", conn.LocalAddr().Network(), conn.RemoteAddr(), conn.LocalAddr(), remoteAddress)
+	log.Printf("Port forwarding (tcp): %s -> %s -> %s", conn.RemoteAddr(), conn.LocalAddr(), remoteAddress)
 
 	parts := strings.Split(remoteAddress, ":")
 	host := parts[0]

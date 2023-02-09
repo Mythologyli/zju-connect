@@ -231,5 +231,15 @@ func (client *EasyConnectClient) ServeHttp(httpBind string, socksBind string, so
 }
 
 func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress string, remoteAddress string) {
-	ServeForwarding(networkType, bindAddress, remoteAddress, client.ipStack, client.clientIp)
+	if networkType == "tcp" {
+		log.Printf("Port forwarding (tcp): %s <- %s", bindAddress, remoteAddress)
+
+		ServeTcpForwarding(bindAddress, remoteAddress, client.ipStack, client.clientIp)
+	} else if networkType == "udp" {
+		log.Printf("Port forwarding (udp): %s <- %s", bindAddress, remoteAddress)
+
+		ServeUdpForwarding(bindAddress, remoteAddress, client.ipStack)
+	} else {
+		log.Println("Only TCP/UDP forwarding is supported yet. Aborting.")
+	}
 }
