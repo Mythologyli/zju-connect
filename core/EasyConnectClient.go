@@ -138,7 +138,7 @@ func StartClient(host string, port int, username string, password string, twfId 
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
 
-	client.ServeSocks5(SocksBind, DebugDump)
+	client.ServeSocks5(SocksBind)
 
 	runtime.KeepAlive(client)
 }
@@ -222,7 +222,7 @@ func (client *EasyConnectClient) GetClientIp() ([]byte, error) {
 	return client.clientIp, nil
 }
 
-func (client *EasyConnectClient) ServeSocks5(socksBind string, debugDump bool) {
+func (client *EasyConnectClient) ServeSocks5(socksBind string) {
 	ServeSocks5(client.ipStack, client.clientIp, socksBind)
 }
 
