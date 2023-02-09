@@ -1,23 +1,23 @@
-Username = "username"
-Password = "password"
+username = "username"
+password = "password"
 
 # Advanced settings
-ServerAddress = "rvpn.zju.edu.cn"
-ServerPort = 443
-DisableServerConfig = false
-DisableZjuConfig = false
-DisableZjuDns = false
-DisableMultiLine = false
-ProxyAll = false
-SocksBind = ":1080"
-SocksUser = ""
-SocksPasswd = ""
-HttpBind = ":1081"
-DnsTTL = 3600
-DebugDump = false
+server_address = "rvpn.zju.edu.cn"
+server_port = 443
+disable_server_config = false
+disable_zju_config = false
+disable_zju_dns = false
+disable_multi_line = false
+proxy_all = false
+socks_bind = ":1080"
+socks_user = ""
+socks_passwd = ""
+http_bind = ":1081"
+dns_ttl = 3600
+debug_dump = false
 
 # Port forwarding
-PortForwarding = [
-    { NetworkType = "tcp", BindAddress = "127.0.0.1:9898", RemoteAddress = "10.10.98.98:80" },
-    { NetworkType = "tcp", BindAddress = "127.0.0.1:9899", RemoteAddress = "10.10.98.98:80" }
+port_forwarding = [
+    { network_type = "tcp", bind_address = "127.0.0.1:9898", remote_address = "10.10.98.98:80" },
+    { network_type = "tcp", bind_address = "127.0.0.1:9899", remote_address = "10.10.98.98:80" }
 ]

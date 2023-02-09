@@ -11,24 +11,38 @@ import (
 
 type (
 	Config struct {
-		ServerAddress       string
-		ServerPort          int
-		Username            string
-		Password            string
-		DisableServerConfig bool
-		DisableZjuConfig    bool
-		DisableZjuDns       bool
-		DisableMultiLine    bool
-		ProxyAll            bool
-		SocksBind           string
-		SocksUser           string
-		SocksPasswd         string
-		HttpBind            string
-		DnsTTL              uint64
-		DebugDump           bool
-		PortForwarding      []core.SingleForwarding
+		ServerAddress       *string                `toml:"server_address"`
+		ServerPort          *int                   `toml:"server_port"`
+		Username            *string                `toml:"username"`
+		Password            *string                `toml:"password"`
+		DisableServerConfig *bool                  `toml:"disable_server_config"`
+		DisableZjuConfig    *bool                  `toml:"disable_zju_config"`
+		DisableZjuDns       *bool                  `toml:"disable_zju_dns"`
+		DisableMultiLine    *bool                  `toml:"disable_multi_line"`
+		ProxyAll            *bool                  `toml:"proxy_all"`
+		SocksBind           *string                `toml:"socks_bind"`
+		SocksUser           *string                `toml:"socks_user"`
+		SocksPasswd         *string                `toml:"socks_passwd"`
+		HttpBind            *string                `toml:"http_bind"`
+		DnsTTL              *uint64                `toml:"dns_ttl"`
+		DebugDump           *bool                  `toml:"debug_dump"`
+		PortForwarding      []SinglePortForwarding `toml:"port_forwarding"`
+	}
+
+	SinglePortForwarding struct {
+		NetworkType   *string `toml:"network_type"`
+		BindAddress   *string `toml:"bind_address"`
+		RemoteAddress *string `toml:"remote_address"`
 	}
 )
+
+func getTomlVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
+	if valPointer == nil {
+		return defaultVal
+	} else {
+		return *valPointer
+	}
+}
 
 func main() {
 	// CLI args
@@ -55,31 +69,67 @@ func main() {
 
 	if configFile != "" {
 		var conf Config
-		if _, err := toml.DecodeFile(configFile, &conf); err != nil {
+		_, err := toml.DecodeFile(configFile, &conf)
+		if err != nil {
 			fmt.Println("ZJU Connect: error parsing the config file")
 			return
 		}
 
-		host = conf.ServerAddress
-		port = conf.ServerPort
-		username = conf.Username
-		password = conf.Password
-		core.ParseServConfig = !conf.DisableServerConfig
-		core.ParseZjuConfig = !conf.DisableZjuConfig
-		core.UseZjuDns = !conf.DisableZjuDns
-		core.TestMultiLine = !conf.DisableMultiLine
-		core.ProxyAll = conf.ProxyAll
-		core.SocksBind = conf.SocksBind
-		core.SocksUser = conf.SocksUser
-		core.SocksPasswd = conf.SocksPasswd
-		core.HttpBind = conf.HttpBind
-		core.DnsTTL = conf.DnsTTL
-		core.DebugDump = conf.DebugDump
-		core.PortForwarding = conf.PortForwarding
+		host = getTomlVal(conf.ServerAddress, "rvpn.zju.edu.cn")
+		port = getTomlVal(conf.ServerPort, 443)
+		username = getTomlVal(conf.Username, "")
+		password = getTomlVal(conf.Password, "")
+		core.ParseServConfig = !getTomlVal(conf.DisableServerConfig, false)
+		core.ParseZjuConfig = !getTomlVal(conf.DisableZjuConfig, false)
+		core.UseZjuDns = !getTomlVal(conf.DisableZjuDns, false)
+		core.TestMultiLine = getTomlVal(conf.DisableMultiLine, false)
+		core.ProxyAll = getTomlVal(conf.ProxyAll, false)
+		core.SocksBind = getTomlVal(conf.SocksBind, ":1080")
+		core.SocksUser = getTomlVal(conf.SocksUser, "")
+		core.SocksPasswd = getTomlVal(conf.SocksPasswd, "")
+		core.HttpBind = getTomlVal(conf.HttpBind, ":1081")
+		core.DnsTTL = getTomlVal(conf.DnsTTL, uint64(3600))
+		core.DebugDump = getTomlVal(conf.DebugDump, false)
+
+		if conf.Username != nil {
+			username = *conf.Username
+		} else {
+			fmt.Println("ZJU Connect: username is not set")
+			return
+		}
+
+		if conf.Password != nil {
+			password = *conf.Password
+		} else {
+			fmt.Println("ZJU Connect: password is not set")
+			return
+		}
+
+		for _, singlePortForwarding := range conf.PortForwarding {
+			if singlePortForwarding.NetworkType == nil {
+				fmt.Println("ZJU Connect: network type is not set")
+				return
+			}
+
+			if singlePortForwarding.BindAddress == nil {
+				fmt.Println("ZJU Connect: bind address is not set")
+				return
+			}
+
+			if singlePortForwarding.RemoteAddress == nil {
+				fmt.Println("ZJU Connect: remote address is not set")
+				return
+			}
+
+			core.ForwardingList = append(core.ForwardingList, core.Forwarding{
+				NetworkType:   *singlePortForwarding.NetworkType,
+				BindAddress:   *singlePortForwarding.BindAddress,
+				RemoteAddress: *singlePortForwarding.RemoteAddress,
+			})
+		}
 
 		if host == "" || (username == "" || password == "") {
-			fmt.Println("ZJU Connect: host, username and password are required in config file")
-
+			fmt.Println("ZJU Connect: host, username and password can not be empty")
 			return
 		}
 	} else {

@@ -15,13 +15,11 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-type (
-	SingleForwarding struct {
-		NetworkType   string
-		BindAddress   string
-		RemoteAddress string
-	}
-)
+type Forwarding struct {
+	NetworkType   string
+	BindAddress   string
+	RemoteAddress string
+}
 
 var SocksBind string
 var SocksUser string
@@ -34,7 +32,7 @@ var UseZjuDns bool
 var TestMultiLine bool
 var DnsTTL uint64
 var ProxyAll bool
-var PortForwarding []SingleForwarding
+var ForwardingList []Forwarding
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -136,8 +134,8 @@ func StartClient(host string, port int, username string, password string, twfId 
 		go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
 	}
 
-	for _, singleForward := range PortForwarding {
-		go client.ServeForwarding(strings.ToLower(singleForward.NetworkType), singleForward.BindAddress, singleForward.RemoteAddress)
+	for _, singleForwarding := range ForwardingList {
+		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
 
 	client.ServeSocks5(SocksBind, DebugDump)
