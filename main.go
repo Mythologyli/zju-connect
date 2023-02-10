@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/mythologyli/zju-connect/core"
@@ -46,7 +47,10 @@ func getTomlVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 
 func main() {
 	// CLI args
-	host, port, username, password, disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine, twfId, configFile := "", 0, "", "", false, false, false, false, "", ""
+	host, port, username, password := "", 0, "", ""
+	disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine := false, false, false, false
+	twfId, configFile, tcpPortForwarding, udpPortForwarding := "", "", "", ""
+
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address")
 	flag.StringVar(&username, "username", "", "Your username")
@@ -62,6 +66,8 @@ func main() {
 	flag.StringVar(&core.HttpBind, "http-bind", ":1081", "The address HTTP server listens on (e.g. 127.0.0.1:1081)")
 	flag.Uint64Var(&core.DnsTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&core.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
+	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
+	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&twfId, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 
@@ -137,6 +143,40 @@ func main() {
 		core.ParseZjuConfig = !disableZjuConfig
 		core.UseZjuDns = !disableZjuDns
 		core.TestMultiLine = !disableMultiLine
+
+		if tcpPortForwarding != "" {
+			forwardingStringList := strings.Split(tcpPortForwarding, ",")
+			for _, forwardingString := range forwardingStringList {
+				addressStringList := strings.Split(forwardingString, "-")
+				if len(addressStringList) != 2 {
+					fmt.Println("ZJU Connect: wrong tcp port forwarding format")
+					return
+				}
+
+				core.ForwardingList = append(core.ForwardingList, core.Forwarding{
+					NetworkType:   "tcp",
+					BindAddress:   addressStringList[0],
+					RemoteAddress: addressStringList[1],
+				})
+			}
+		}
+
+		if udpPortForwarding != "" {
+			forwardingStringList := strings.Split(udpPortForwarding, ",")
+			for _, forwardingString := range forwardingStringList {
+				addressStringList := strings.Split(forwardingString, "-")
+				if len(addressStringList) != 2 {
+					fmt.Println("ZJU Connect: wrong udp port forwarding format")
+					return
+				}
+
+				core.ForwardingList = append(core.ForwardingList, core.Forwarding{
+					NetworkType:   "udp",
+					BindAddress:   addressStringList[0],
+					RemoteAddress: addressStringList[1],
+				})
+			}
+		}
 
 		if host == "" || ((username == "" || password == "") && twfId == "") {
 			fmt.Println("ZJU Connect")
