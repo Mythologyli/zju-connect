@@ -24,7 +24,7 @@
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
 
-对于 Ubuntu/Debian、RHEL 系、Arch 等基于 Systemd 的 Linux 发行版，除按照上述方法运行外，亦可通过以下步骤将 ZJU Connect 安装为系统服务：
+对于 Ubuntu/Debian、RHEL 系、Arch 等基于 Systemd 的 Linux 发行版，除按照上述方法运行外，亦可通过以下步骤将 ZJU Connect 安装为系统服务，实现自动重连功能：
 
 1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本，将可执行文件放置于 `/opt` 目录并赋予可执行权限。
 
@@ -33,13 +33,14 @@
 3. 在 `/lib/systemd/system` 下创建 `zju-connect.service` 文件，内容如下：
 
    ```
-   [Unit] 
+   [Unit]
    Description=ZJU Connect
    After=network.target
-   [Service] 
+   [Service]
+   Restart=always
    ExecStart=/opt/zju-connect -config /etc/zju-connect/config.toml
-   [Install] 
-   WantedBy=multi-user.target 
+   [Install]
+   WantedBy=multi-user.target
    ```
 
 4. 执行以下命令启用服务并设置自启：
