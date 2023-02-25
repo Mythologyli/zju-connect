@@ -33,6 +33,8 @@ var TestMultiLine bool
 var DnsTTL uint64
 var ProxyAll bool
 var ForwardingList []Forwarding
+var EnableKeepAlive bool
+var ZjuDnsServer string
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -138,7 +140,12 @@ func StartClient(host string, port int, username string, password string, twfId 
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
 
-	client.ServeSocks5(SocksBind)
+	if EnableKeepAlive {
+		go client.ServeSocks5(SocksBind, ZjuDnsServer)
+		client.KeepAlive(ZjuDnsServer)
+	} else {
+		client.ServeSocks5(SocksBind, ZjuDnsServer)
+	}
 
 	runtime.KeepAlive(client)
 }
@@ -222,8 +229,8 @@ func (client *EasyConnectClient) GetClientIp() ([]byte, error) {
 	return client.clientIp, nil
 }
 
-func (client *EasyConnectClient) ServeSocks5(socksBind string) {
-	ServeSocks5(client.ipStack, client.clientIp, socksBind)
+func (client *EasyConnectClient) ServeSocks5(socksBind string, dnsServer string) {
+	ServeSocks5(client.ipStack, client.clientIp, socksBind, dnsServer)
 }
 
 func (client *EasyConnectClient) ServeHttp(httpBind string, socksBind string, socksUser string, socksPasswd string) {
@@ -242,4 +249,8 @@ func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress
 	} else {
 		log.Println("Only TCP/UDP forwarding is supported yet. Aborting.")
 	}
+}
+
+func (client *EasyConnectClient) KeepAlive(dnsServer string) {
+	KeepAlive(dnsServer, client.ipStack, client.clientIp)
 }

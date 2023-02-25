@@ -99,14 +99,14 @@ func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
 	return goDial(ctx, network, addr)
 }
 
-func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string) {
+func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string, dnsServer string) {
 	var remoteResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			addrDns := tcpip.FullAddress{
 				NIC:  defaultNIC,
 				Port: uint16(53),
-				Addr: tcpip.Address(net.ParseIP("10.10.0.21").To4()),
+				Addr: tcpip.Address(net.ParseIP(dnsServer).To4()),
 			}
 
 			bind := tcpip.FullAddress{

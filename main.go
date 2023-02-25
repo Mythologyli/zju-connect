@@ -26,6 +26,8 @@ type (
 		SocksPasswd         *string                `toml:"socks_passwd"`
 		HttpBind            *string                `toml:"http_bind"`
 		DnsTTL              *uint64                `toml:"dns_ttl"`
+		DisableKeepAlive    *bool                  `toml:"disable_keep_alive"`
+		ZjuDnsServer        *string                `toml:"zju_dns_server"`
 		DebugDump           *bool                  `toml:"debug_dump"`
 		PortForwarding      []SinglePortForwarding `toml:"port_forwarding"`
 	}
@@ -48,7 +50,7 @@ func getTomlVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 func main() {
 	// CLI args
 	host, port, username, password := "", 0, "", ""
-	disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine := false, false, false, false
+	disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine, disableKeepAlive := false, false, false, false, false
 	twfId, configFile, tcpPortForwarding, udpPortForwarding := "", "", "", ""
 
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
@@ -68,6 +70,8 @@ func main() {
 	flag.BoolVar(&core.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
+	flag.BoolVar(&disableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
+	flag.StringVar(&core.ZjuDnsServer, "zju-dns-server", "10.10.0.21", "ZJU DNS server address")
 	flag.StringVar(&twfId, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 
@@ -96,6 +100,8 @@ func main() {
 		core.HttpBind = getTomlVal(conf.HttpBind, ":1081")
 		core.DnsTTL = getTomlVal(conf.DnsTTL, uint64(3600))
 		core.DebugDump = getTomlVal(conf.DebugDump, false)
+		core.EnableKeepAlive = !getTomlVal(conf.DisableKeepAlive, false)
+		core.ZjuDnsServer = getTomlVal(conf.ZjuDnsServer, "10.10.0.21")
 
 		if conf.Username != nil {
 			username = *conf.Username
@@ -143,6 +149,7 @@ func main() {
 		core.ParseZjuConfig = !disableZjuConfig
 		core.UseZjuDns = !disableZjuDns
 		core.TestMultiLine = !disableMultiLine
+		core.EnableKeepAlive = !disableKeepAlive
 
 		if tcpPortForwarding != "" {
 			forwardingStringList := strings.Split(tcpPortForwarding, ",")
