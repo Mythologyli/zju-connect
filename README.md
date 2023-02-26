@@ -48,6 +48,45 @@
    $ sudo systemctl start zju-connect
    $ sudo systemctl enable zju-connect
    ```
+   
+对于Mac平台下，系统服务的安装与运行基于`launchctl`，使用上与`systemctl`有一定差异，
+可通过下述方案实现后台自动重连，开机自启动等功能：
+
+1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应drawin平台的最新版本。
+2. 将可执行文件放置于 `/usr/local/bin/` 目录并赋予可执行权限。
+3. 参考[com.zju.connect.plist](com.zju.connect.plist)建立Mac系统服务配置文件，plist文件为二进制文件建议使用PlistEdict Pro编辑，其中关键配置参数如下:
+
+   + `UserName`: 后台运行easyconnect的的用户默认为`root`，建议修改为你自己的mac用户名
+
+   + `ProgramArguments`: zju-connect运行参数，如vpn用户名、密码、server地址
+      
+   + `StandardErrorPath`: 输出zju-connect运行日志的目录（用于debug，可不指定）
+
+   + `StandardOutPath`: 输出zju-connect运行日志的目录（用于debug，可不指定）
+   + `RunAtLoad`: 是否开机自启动
+   + `KeepAlive`: 是否后台断开重连
+   
+   详细参数配置可参考以下文档：
+   + [plist配置参数文档](https://keith.github.io/xcode-man-pages/launchd.plist.5.html#OnDemand)
+   + [Apple开发者文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/Introduction.html#//apple_ref/doc/uid/10000172i-SW1-SW1)
+4. 移动配置文件至`/Library/LaunchDaemons/`目录，同时执行以下命令:
+   ```zsh
+   $ cd /Library/LaunchDaemons
+   $ sudo chown root:wheel com.zju.connect.plist
+   ```
+
+4. 执行以下命令启用服务并设置自启：
+   ```zsh
+   $ sudo launchctl load com.zju.connect.plist
+   ```
+
+5. 执行以下命令关闭自启动服务：
+   ```zsh
+   $ sudo launchctl unload com.zju.connect.plist
+   ```
+
+如需频繁开关服务，可直接在mac系统设置中的后台程序开关zju-connect。
+
 
 ### 参数说明
 
