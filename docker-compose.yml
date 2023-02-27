@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  zju-connect:
+    # docker pull registry.cn-hangzhou.aliyuncs.com/117503445-mirror/zju-connect && docker image tag registry.cn-hangzhou.aliyuncs.com/117503445-mirror/zju-connect 117503445/zju-connect
+    image: 117503445/zju-connect
+    restart: unless-stopped
+    ports:
+      - 2080:1080
+      - 2081:1081
+    volumes:
+      - ./config.toml:/home/nonroot/config.toml
