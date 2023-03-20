@@ -20,5 +20,5 @@ debug_dump = false
 port_forwarding = [
     { network_type = "tcp", bind_address = "127.0.0.1:9898", remote_address = "10.10.98.98:80" },
     { network_type = "tcp", bind_address = "127.0.0.1:9899", remote_address = "10.10.98.98:80" },
-    { network_type = "udp", bind_address = "127.0.0.1:53", remote_address = "10.10.0.21:53" }
+    { network_type = "udp", bind_address = "127.0.0.1:1053", remote_address = "10.10.0.21:53" }
 ]
