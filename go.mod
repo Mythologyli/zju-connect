@@ -9,11 +9,11 @@ require (
 	github.com/bobesa/go-domain-util v0.0.0-20190911083921-4033b5f7dd89
 	github.com/cloverstd/tcping v0.1.1
 	github.com/cornelk/hashmap v1.0.8
-	github.com/cxz66666/go-socks5 v0.0.3
+	github.com/things-go/go-socks5 v0.0.4-0.20230316080832-bc61edbc61c2
 	github.com/dlclark/regexp2 v1.8.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	golang.org/x/net v0.8.0
-	gvisor.dev/gvisor v0.0.0-20230318000052-cb83cbc04adb
+	gvisor.dev/gvisor v0.0.0-20230404014940-87523d4f2f99
 )
 
 require (

@@ -12,7 +12,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/core/config"
 
-	"github.com/cxz66666/go-socks5"
+	"github.com/things-go/go-socks5"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

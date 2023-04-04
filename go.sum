@@ -35,6 +35,9 @@ github.com/refraction-networking/utls v1.3.1/go.mod h1:kHXvVB66a4BzVRYC4Em7e1HAf
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+github.com/stretchr/testify v1.8.2 h1:+h33VjcLVPDHtOdpUCuF+7gSuG3yGIftsP1YvFihtJ8=
+github.com/things-go/go-socks5 v0.0.4-0.20230316080832-bc61edbc61c2 h1:WMweLMzpfIduyZLfcCmeqA/NHuFgcDn1wgRkeGffdFw=
+github.com/things-go/go-socks5 v0.0.4-0.20230316080832-bc61edbc61c2/go.mod h1:eEogOhwudEdY6YPMjoTBraroSp2BNme1pVFPqoQ404g=
 golang.org/x/crypto v0.6.0 h1:qfktjS5LUO+fFKeJXZ+ikTRijMmljikvG68fpMMruSc=
 golang.org/x/crypto v0.6.0/go.mod h1:OFC/31mSvZgRz0V1QTNCzfAI1aIRzbiufJtkMIlEp58=
 golang.org/x/crypto v0.7.0 h1:AvwMYaRytfdeVt3u6mLaxYtErKYjxA2OXjJ1HHq6t3A=
@@ -70,3 +73,7 @@ gvisor.dev/gvisor v0.0.0-20230317235517-acf460d0d735 h1:auR57SHNoLl+gypGBF9zQfe5
 gvisor.dev/gvisor v0.0.0-20230317235517-acf460d0d735/go.mod h1:pzr6sy8gDLfVmDAg8OYrlKvGEHw5C3PGTiBXBTCx76Q=
 gvisor.dev/gvisor v0.0.0-20230318000052-cb83cbc04adb h1:sqOAeu8xzgp2qvZUlXkWafBjUE3jfiqbSo/lnKA2qJE=
 gvisor.dev/gvisor v0.0.0-20230318000052-cb83cbc04adb/go.mod h1:pzr6sy8gDLfVmDAg8OYrlKvGEHw5C3PGTiBXBTCx76Q=
+gvisor.dev/gvisor v0.0.0-20230404014520-dc67711b6f64 h1:yDMTk2oN+WRFwQCYMWEJOz+5RsQcVw1gZFcjS79xhv0=
+gvisor.dev/gvisor v0.0.0-20230404014520-dc67711b6f64/go.mod h1:pzr6sy8gDLfVmDAg8OYrlKvGEHw5C3PGTiBXBTCx76Q=
+gvisor.dev/gvisor v0.0.0-20230404014940-87523d4f2f99 h1:2vpjufMeScKbdWjhdOeP9SR3z0HygM7M9CRQN7OGkcU=
+gvisor.dev/gvisor v0.0.0-20230404014940-87523d4f2f99/go.mod h1:pzr6sy8gDLfVmDAg8OYrlKvGEHw5C3PGTiBXBTCx76Q=
