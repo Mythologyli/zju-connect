@@ -14,6 +14,8 @@
 
 ### 使用方法
 
+#### 直接运行
+
 *Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
 
 1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
@@ -23,6 +25,10 @@
 3. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
 
 4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
+
+#### 作为服务运行
+
+**请先直接运行，确保无误后再创建服务，避免反复登录失败导致 IP 被临时封禁！**
 
 对于 Ubuntu/Debian、RHEL 系、Arch 等基于 Systemd 的 Linux 发行版，除按照上述方法运行外，亦可通过以下步骤将 ZJU Connect 安装为系统服务，实现自动重连功能：
 
