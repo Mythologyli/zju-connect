@@ -73,21 +73,21 @@ func StartClient(host string, port int, username string, password string, twfId 
 		if err == ERR_NEXT_AUTH_SMS {
 			fmt.Print(">>>Please enter your sms code<<<:")
 			smsCode := ""
-			_, err := fmt.Scan(&smsCode)
-			if err != nil {
-				panic(err)
+			_, _err := fmt.Scan(&smsCode)
+			if _err != nil {
+				panic(_err)
 			}
 
-			_ = client.AuthSMSCode(smsCode)
+			err = client.AuthSMSCode(smsCode)
 		} else if err == ERR_NEXT_AUTH_TOTP {
 			fmt.Print(">>>Please enter your TOTP Auth code<<<:")
 			TOTPCode := ""
-			_, err := fmt.Scan(&TOTPCode)
-			if err != nil {
-				panic(err)
+			_, _err := fmt.Scan(&TOTPCode)
+			if _err != nil {
+				panic(_err)
 			}
 
-			_ = client.AuthTOTP(TOTPCode)
+			err = client.AuthTOTP(TOTPCode)
 		}
 	}
 
