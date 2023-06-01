@@ -93,6 +93,27 @@
 
 如需开关服务，可直接在 macOS 系统设置中的后台程序开关 zju-connect。
 
+#### Docker 运行
+
+拷贝源码
+
+```zsh
+$ git clone git@github.com:Mythologyli/zju-connect.git
+```
+
+本地构建镜像并运行
+
+```zsh
+$ docker build -t zju-connect .
+$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped zju-connect
+```
+
+也可以使用 Docker Compose
+
+```zsh
+$ docker compose up -d
+```
+
 ### 参数说明
 
 + `server`: SSL VPN 服务端地址，默认为 `rvpn.zju.edu.cn`
