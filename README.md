@@ -95,20 +95,28 @@
 
 #### Docker 运行
 
-拷贝源码
-
 ```zsh
-$ git clone git@github.com:Mythologyli/zju-connect.git
+$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped Mythologyli/zju-connect
 ```
 
-本地构建镜像并运行
+也可以使用 Docker Compose。创建 `docker-compose.yml` 文件，内容如下：
 
-```zsh
-$ docker build -t zju-connect .
-$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped zju-connect
+```yaml
+version: '3'
+
+services:
+  zju-connect:
+    image: Mythologyli/zju-connect
+    container_name: zju-connect
+    restart: unless-stopped
+    ports:
+      - 1080:1080
+      - 1081:1081
+    volumes:
+      - ./config.toml:/home/nonroot/config.toml
 ```
 
-也可以使用 Docker Compose
+并在同目录下运行
 
 ```zsh
 $ docker compose up -d
