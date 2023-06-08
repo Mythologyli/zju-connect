@@ -10,8 +10,6 @@
 
 **[电报交流群](https://t.me/zjuers)**，欢迎来自 ZJU 的使用者加入交流。
 
-**项目处于早期开发中，可能发生不兼容更改！**
-
 ### 使用方法
 
 #### 直接运行
@@ -41,10 +39,14 @@
    ```
    [Unit]
    Description=ZJU Connect
-   After=network.target
+   After=network-online.target
+   Wants=network-online.target
+   
    [Service]
-   Restart=always
+   Restart=on-failure
+   RestartSec=5s
    ExecStart=/opt/zju-connect -config /etc/zju-connect/config.toml
+   
    [Install]
    WantedBy=multi-user.target
    ```
