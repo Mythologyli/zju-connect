@@ -98,7 +98,7 @@
 #### Docker 运行
 
 ```zsh
-$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped Mythologyli/zju-connect
+$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped mythologyli/zju-connect
 ```
 
 也可以使用 Docker Compose。创建 `docker-compose.yml` 文件，内容如下：
@@ -108,7 +108,7 @@ version: '3'
 
 services:
   zju-connect:
-    image: Mythologyli/zju-connect
+    image: mythologyli/zju-connect
     container_name: zju-connect
     restart: unless-stopped
     ports:
