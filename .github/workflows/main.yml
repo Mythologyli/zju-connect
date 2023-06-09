@@ -149,7 +149,7 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-            Mythologyli/zju-connect
+            mythologyli/zju-connect
           tags: |
             type=schedule
             type=ref,event=branch
