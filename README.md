@@ -95,6 +95,68 @@
 
 如需开关服务，可直接在 macOS 系统设置中的后台程序开关 zju-connect。
 
+对于 OpenWrt 系统，可通过 procd init 脚本让 zju-connect 开机自启、后台运行，在代理插件中添加对应本机节点和分流规则即可正常使用。
+
+1. 从 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新 linux 版本，将可执行文件保存为 `/usr/bin/zju-connect` 并赋予可执行权限。
+
+2. 参照仓库中的 `config.toml.example`，创建配置文件 `/etc/back2zju.toml`，配置好 socks/http 代理端口，因通过代理插件实现分流，建议将 zju-connect 的配置项 `proxy_all` 设置为 `true`。
+
+3. 将以下内容保存为 `/etc/init.d/back2zju` 并赋予可执行权限：
+
+```shell
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=60
+STOP=03
+
+PROGRAM="/usr/bin/zju-connect"
+NET_CHECKER="rvpn.zju.edu.cn"
+CONFIG_FILE="/etc/back2zju.toml"
+LOG_FILE="/var/log/back2zju.log"
+
+start_service() {
+	ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
+	procd_open_instance
+	procd_set_param command /bin/sh -c "${PROGRAM} -config ${CONFIG_FILE} >>${LOG_FILE} 2>&1"
+	procd_set_param respawn 3600 5 3
+	procd_set_param limits core="unlimited"
+	procd_set_param limits nofile="200000 200000"
+	procd_set_param file ${CONFIG_FILE}
+	procd_close_instance
+	logger -p daemon.warn -t back2zju 'Service has been started.'
+}
+
+reload_service() {
+	stop
+	start
+	logger -p daemon.warn -t back2zju 'Service has been restarted.'
+}
+```
+
+4. 执行以下命令：
+
+```shell
+/etc/init.d/back2zju enable
+/etc/init.d/back2zju start
+```
+
+或通过 OpenWrt LuCi 网页的 `系统-启动项` 启用并启动 `back2zju`（也可在此处停用服务）。
+
+随后 zju-connect 将开始运行，支持开机自启动，其运行日志保存在 `/var/log/back2zju.log`
+
+5. 在代理插件中添加对应本机节点和分流规则
+
+根据在 `/etc/back2zju.toml` 中的配置，在代理插件中添加本机节点。ip 填写 `127.0.0.1`，端口号/协议与 `/etc/back2zju.toml` 保持一致，若设置了 socks 用户名和密码也需要填写。
+
+然后在对应代理插件中添加分流规则，具体操作略
+
+- 注意事项：
+
+  1. ZJU 校园网使用的内网 IP 段是 `10.0.0.0/8`，可能需要将此 IP 段从代理插件的直连列表/局域网列表中移除并添加至代理列表。
+
+  2. 请确保使用的 RVPN 服务器与本机直连，若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
+
 #### Docker 运行
 
 ```zsh
