@@ -1,7 +1,7 @@
 # ZJU Connect
 
 > 🚫 **免责声明**
-> 
+>
 > 本程序**按原样提供**，作者**不对程序的正确性或可靠性提供保证**，请使用者自行判断具体场景是否适合使用该程序，**使用该程序造成的问题或后果由使用者自行承担**！
 
 ---
@@ -56,7 +56,7 @@
    $ sudo systemctl start zju-connect
    $ sudo systemctl enable zju-connect
    ```
-   
+
 对于 macOS 平台，系统服务的安装与运行基于 `launchctl`，使用上与 `systemctl` 有一定差异，可通过下述方案实现后台自动重连、开机自启动等功能：
 
 1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应 darwin 平台的最新版本。
@@ -71,12 +71,12 @@
    + `StandardOutPath`: 输出 zju-connect 运行日志的目录（用于调试，可不指定）
    + `RunAtLoad`: 是否开机自启动
    + `KeepAlive`: 是否后台断开重连
-   
+
    详细参数配置可参考以下文档：
-   
+
    + [plist 配置参数文档](https://keith.github.io/xcode-man-pages/launchd.plist.5.html#OnDemand)
    + [Apple开发者文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/Introduction.html#//apple_ref/doc/uid/10000172i-SW1-SW1)
-   
+
 4. 移动配置文件至 `/Library/LaunchDaemons/` 目录，同时执行以下命令:
    ```zsh
    $ cd /Library/LaunchDaemons
@@ -103,59 +103,59 @@
 
 3. 将以下内容保存为 `/etc/init.d/back2zju` 并赋予可执行权限：
 
-```shell
-#!/bin/sh /etc/rc.common
-
-USE_PROCD=1
-START=60
-STOP=03
-
-PROGRAM="/usr/bin/zju-connect"
-NET_CHECKER="rvpn.zju.edu.cn"
-CONFIG_FILE="/etc/back2zju.toml"
-LOG_FILE="/var/log/back2zju.log"
-
-start_service() {
-	ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
-	procd_open_instance
-	procd_set_param command /bin/sh -c "${PROGRAM} -config ${CONFIG_FILE} >>${LOG_FILE} 2>&1"
-	procd_set_param respawn 3600 5 3
-	procd_set_param limits core="unlimited"
-	procd_set_param limits nofile="200000 200000"
-	procd_set_param file ${CONFIG_FILE}
-	procd_close_instance
-	logger -p daemon.warn -t back2zju 'Service has been started.'
-}
-
-reload_service() {
-	stop
-	start
-	logger -p daemon.warn -t back2zju 'Service has been restarted.'
-}
-```
+   ```shell
+   #!/bin/sh /etc/rc.common
+   
+   USE_PROCD=1
+   START=60
+   STOP=03
+   
+   PROGRAM="/usr/bin/zju-connect"
+   NET_CHECKER="rvpn.zju.edu.cn"
+   CONFIG_FILE="/etc/back2zju.toml"
+   LOG_FILE="/var/log/back2zju.log"
+   
+   start_service() {
+       ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
+       procd_open_instance
+       procd_set_param command /bin/sh -c "${PROGRAM} -config ${CONFIG_FILE} >>${LOG_FILE} 2>&1"
+       procd_set_param respawn 3600 5 3
+       procd_set_param limits core="unlimited"
+       procd_set_param limits nofile="200000 200000"
+       procd_set_param file ${CONFIG_FILE}
+       procd_close_instance
+       logger -p daemon.warn -t back2zju 'Service has been started.'
+   }
+   
+   reload_service() {
+       stop
+       start
+       logger -p daemon.warn -t back2zju 'Service has been restarted.'
+   }
+   ```
 
 4. 执行以下命令：
 
-```shell
-/etc/init.d/back2zju enable
-/etc/init.d/back2zju start
-```
+   ```shell
+   /etc/init.d/back2zju enable
+   /etc/init.d/back2zju start
+   ```
 
-或通过 OpenWrt LuCi 网页的 `系统-启动项` 启用并启动 `back2zju`（也可在此处停用服务）。
+   或通过 OpenWrt LuCi 网页的 `系统-启动项` 启用并启动 `back2zju`（也可在此处停用服务）。
 
-随后 zju-connect 将开始运行，支持开机自启动，其运行日志保存在 `/var/log/back2zju.log`
+   随后 zju-connect 将开始运行，支持开机自启动，其运行日志保存在 `/var/log/back2zju.log`
 
 5. 在代理插件中添加对应本机节点和分流规则
 
-根据在 `/etc/back2zju.toml` 中的配置，在代理插件中添加本机节点。ip 填写 `127.0.0.1`，端口号/协议与 `/etc/back2zju.toml` 保持一致，若设置了 socks 用户名和密码也需要填写。
+   根据在 `/etc/back2zju.toml` 中的配置，在代理插件中添加本机节点。ip 填写 `127.0.0.1`，端口号/协议与 `/etc/back2zju.toml` 保持一致，若设置了 socks 用户名和密码也需要填写。
 
-然后在对应代理插件中添加分流规则，具体操作略
+   然后在对应代理插件中添加分流规则，具体操作略。
 
-- 注意事项：
+   注意事项：
 
-  1. ZJU 校园网使用的内网 IP 段是 `10.0.0.0/8`，可能需要将此 IP 段从代理插件的直连列表/局域网列表中移除并添加至代理列表。
+   1. ZJU 校园网使用的内网 IP 段是 `10.0.0.0/8`，可能需要将此 IP 段从代理插件的直连列表/局域网列表中移除并添加至代理列表。
 
-  2. 请确保使用的 RVPN 服务器与本机直连，若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
+   2. 请确保使用的 RVPN 服务器与本机直连，若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
 
 #### Docker 运行
 
@@ -169,15 +169,15 @@ $ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml
 version: '3'
 
 services:
-  zju-connect:
-    image: mythologyli/zju-connect
-    container_name: zju-connect
-    restart: unless-stopped
-    ports:
-      - 1080:1080
-      - 1081:1081
-    volumes:
-      - ./config.toml:/home/nonroot/config.toml
+   zju-connect:
+      image: mythologyli/zju-connect
+      container_name: zju-connect
+      restart: unless-stopped
+      ports:
+         - 1080:1080
+         - 1081:1081
+      volumes:
+         - ./config.toml:/home/nonroot/config.toml
 ```
 
 并在同目录下运行
