@@ -139,11 +139,6 @@ func ServeSocks5(ipStack *stack.Stack, selfIp []byte, bindAddr string, dnsServer
 		// in normal situation, addr must be a pure valid IP
 		// because we use `ZJUDnsResolve` to resolve domain name before call `Dial`
 		host := parts[0]
-		// TODO: figure out why host is 0.0.0.0
-		if host == "0.0.0.0" {
-			return nil, errors.New("Invalid host in address: " + addr)
-		}
-
 		port, err := strconv.Atoi(parts[1])
 		if err != nil {
 			return nil, errors.New("Invalid port in address: " + addr)
