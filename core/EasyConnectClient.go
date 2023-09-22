@@ -21,6 +21,11 @@ type Forwarding struct {
 	RemoteAddress string
 }
 
+type CustomDNS struct {
+	HostName string
+	IP       string
+}
+
 var SocksBind string
 var SocksUser string
 var SocksPasswd string
@@ -35,6 +40,7 @@ var ProxyAll bool
 var ForwardingList []Forwarding
 var EnableKeepAlive bool
 var ZjuDnsServer string
+var CustomDNSList []CustomDNS
 
 type EasyConnectClient struct {
 	queryConn net.Conn
@@ -138,6 +144,15 @@ func StartClient(host string, port int, username string, password string, twfId 
 
 	for _, singleForwarding := range ForwardingList {
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
+	}
+
+	for _, customDNS := range CustomDNSList {
+		ipAddr := net.ParseIP(customDNS.IP)
+		if ipAddr == nil {
+			log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
+		}
+		SetPermantDns(customDNS.HostName, ipAddr)
+		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
 	}
 
 	if EnableKeepAlive {
