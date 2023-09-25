@@ -115,6 +115,12 @@
    CONFIG_FILE="/etc/back2zju.toml"
    LOG_FILE="/var/log/back2zju.log"
    
+   boot() {
+   	ubus -t 10 wait_for network.interface.wan 2>/dev/null
+   	sleep 10
+   	rc_procd start_service
+   }
+   
    start_service() {
        ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
        procd_open_instance
@@ -155,7 +161,7 @@
 
    1. ZJU 校园网使用的内网 IP 段是 `10.0.0.0/8`，可能需要将此 IP 段从代理插件的直连列表/局域网列表中移除并添加至代理列表。
 
-   2. 请确保使用的 RVPN 服务器与本机直连，若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
+   2. 请确保使用的 RVPN 服务器与 OpenWrt 直连。若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
 
 #### Docker 运行
 
