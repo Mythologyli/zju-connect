@@ -42,6 +42,9 @@ func newClient() *http.Client {
 				return socks5proxy.Dial(net, addr)
 			},
 		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 
