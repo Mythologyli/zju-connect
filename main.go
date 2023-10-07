@@ -110,20 +110,6 @@ func main() {
 		core.EnableKeepAlive = !getTomlVal(conf.DisableKeepAlive, false)
 		core.ZjuDnsServer = getTomlVal(conf.ZjuDnsServer, "10.10.0.21")
 
-		if conf.Username != nil {
-			username = *conf.Username
-		} else {
-			fmt.Println("ZJU Connect: username is not set")
-			return
-		}
-
-		if conf.Password != nil {
-			password = *conf.Password
-		} else {
-			fmt.Println("ZJU Connect: password is not set")
-			return
-		}
-
 		for _, singlePortForwarding := range conf.PortForwarding {
 			if singlePortForwarding.NetworkType == nil {
 				fmt.Println("ZJU Connect: network type is not set")
@@ -235,6 +221,11 @@ func main() {
 			return
 		}
 
+	}
+
+	if core.SocksBind == "" && core.HttpBind != "" {
+		fmt.Println("ZJU Connect: http proxy is enabled but socks proxy is disabled")
+		return
 	}
 
 	core.StartClient(host, port, username, password, twfId)

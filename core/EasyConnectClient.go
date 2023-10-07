@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -138,10 +137,6 @@ func StartClient(host string, port int, username string, password string, twfId 
 	// Sangfor Easyconnect protocol
 	StartProtocol(client.endpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
 
-	if HttpBind != "" {
-		go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
-	}
-
 	for _, singleForwarding := range ForwardingList {
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
@@ -155,14 +150,19 @@ func StartClient(host string, port int, username string, password string, twfId 
 		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
 	}
 
-	if EnableKeepAlive {
+	if SocksBind != "" {
 		go client.ServeSocks5(SocksBind, ZjuDnsServer)
-		client.KeepAlive(ZjuDnsServer)
-	} else {
-		client.ServeSocks5(SocksBind, ZjuDnsServer)
+
+		if HttpBind != "" {
+			go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
+		}
 	}
 
-	runtime.KeepAlive(client)
+	if EnableKeepAlive {
+		go client.KeepAlive(ZjuDnsServer)
+	}
+
+	select {}
 }
 
 func (client *EasyConnectClient) Login(username string, password string) error {
