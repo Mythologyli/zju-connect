@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mythologyli/zju-connect/core/config"
 	"github.com/mythologyli/zju-connect/parser"
@@ -162,7 +164,10 @@ func StartClient(host string, port int, username string, password string, twfId 
 		go client.KeepAlive(ZjuDnsServer)
 	}
 
-	select {}
+	for {
+		runtime.KeepAlive(client)
+		time.Sleep(time.Second * 10)
+	}
 }
 
 func (client *EasyConnectClient) Login(username string, password string) error {
