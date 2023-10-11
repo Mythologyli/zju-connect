@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -54,10 +55,13 @@ func getTomlVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 }
 
 func main() {
+	version := "0.4.1"
+
 	// CLI args
 	host, port, username, password := "", 0, "", ""
 	disableServerConfig, disableZjuConfig, disableZjuDns, disableMultiLine, disableKeepAlive := false, false, false, false, false
 	twfId, configFile, tcpPortForwarding, udpPortForwarding, customDns := "", "", "", "", ""
+	showVersion := false
 
 	flag.StringVar(&host, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&port, "port", 443, "EasyConnect port address")
@@ -81,8 +85,14 @@ func main() {
 	flag.StringVar(&core.ZjuDnsServer, "zju-dns-server", "10.10.0.21", "ZJU DNS server address")
 	flag.StringVar(&twfId, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&configFile, "config", "", "Config file")
+	flag.BoolVar(&showVersion, "version", false, "Show version")
 
 	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("ZJU Connect v%s\n", version)
+		return
+	}
 
 	if configFile != "" {
 		var conf Config
@@ -227,6 +237,8 @@ func main() {
 		fmt.Println("ZJU Connect: http proxy is enabled but socks proxy is disabled")
 		return
 	}
+
+	log.Println("Start ZJU Connect v" + version)
 
 	core.StartClient(host, port, username, password, twfId)
 }
