@@ -20,6 +20,7 @@ const DefaultTimeout = time.Minute * 5
 type udpForward struct {
 	src          *net.UDPAddr
 	dest         *tcpip.FullAddress
+	destString   string
 	ipStack      *stack.Stack
 	client       *net.UDPAddr
 	listenerConn *net.UDPConn
@@ -66,6 +67,8 @@ func newUdpForward(src, dest string, ipStack *stack.Stack) *udpForward {
 	host := parts[0]
 	port, err := strconv.Atoi(parts[1])
 
+	u.destString = dest
+
 	u.dest = &tcpip.FullAddress{
 		NIC:  defaultNIC,
 		Port: uint16(port),
@@ -91,7 +94,7 @@ func (u *udpForward) StartUdpForward() {
 			return
 		}
 
-		log.Printf("Port forwarding (udp): %s -> %s -> %s", addr.String(), u.src.String(), u.dest.Addr.String())
+		log.Printf("Port forwarding (udp): %s -> %s -> %s", addr.String(), u.src.String(), u.destString)
 		go u.handle(buf[:n], addr)
 	}
 }
