@@ -1,8 +1,12 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"log"
 	"net"
 	"runtime"
@@ -152,16 +156,54 @@ func StartClient(host string, port int, username string, password string, twfId 
 		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
 	}
 
-	if SocksBind != "" {
-		go client.ServeSocks5(SocksBind, ZjuDnsServer)
+	dnsResolve := DnsResolve{
+		remoteTCPResolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				addrDns := tcpip.FullAddress{
+					NIC:  defaultNIC,
+					Port: uint16(53),
+					Addr: tcpip.Address(net.ParseIP(ZjuDnsServer).To4()),
+				}
 
-		if HttpBind != "" {
-			go client.ServeHttp(HttpBind, SocksBind, SocksUser, SocksPasswd)
-		}
+				bind := tcpip.FullAddress{
+					NIC:  defaultNIC,
+					Addr: tcpip.Address(client.clientIp),
+				}
+
+				return gonet.DialUDP(client.ipStack, &bind, &addrDns, header.IPv4ProtocolNumber)
+			},
+		},
+		remoteUDPResolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				addrDns := tcpip.FullAddress{
+					NIC:  defaultNIC,
+					Port: uint16(53),
+					Addr: tcpip.Address(net.ParseIP(ZjuDnsServer).To4()),
+				}
+				return gonet.DialTCP(client.ipStack, addrDns, header.IPv4ProtocolNumber)
+			},
+		},
+		useTCP: false,
+		timer:  nil,
+	}
+
+	dialer := Dialer{
+		selfIp:  client.clientIp,
+		ipStack: client.ipStack,
+	}
+
+	if SocksBind != "" {
+		go ServeSocks5(SocksBind, dialer, &dnsResolve)
+	}
+
+	if HttpBind != "" {
+		go ServeHttp(HttpBind, dialer, &dnsResolve)
 	}
 
 	if EnableKeepAlive {
-		go client.KeepAlive(ZjuDnsServer)
+		go KeepAlive(ZjuDnsServer, client.ipStack, client.clientIp)
 	}
 
 	for {
@@ -249,14 +291,6 @@ func (client *EasyConnectClient) GetClientIp() ([]byte, error) {
 	return client.clientIp, nil
 }
 
-func (client *EasyConnectClient) ServeSocks5(socksBind string, dnsServer string) {
-	ServeSocks5(client.ipStack, client.clientIp, socksBind, dnsServer)
-}
-
-func (client *EasyConnectClient) ServeHttp(httpBind string, socksBind string, socksUser string, socksPasswd string) {
-	ServeHttp(httpBind, socksBind, socksUser, socksPasswd)
-}
-
 func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress string, remoteAddress string) {
 	if networkType == "tcp" {
 		log.Printf("Port forwarding (tcp): %s <- %s", bindAddress, remoteAddress)
@@ -269,8 +303,4 @@ func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress
 	} else {
 		log.Println("Only TCP/UDP forwarding is supported yet. Aborting.")
 	}
-}
-
-func (client *EasyConnectClient) KeepAlive(dnsServer string) {
-	KeepAlive(dnsServer, client.ipStack, client.clientIp)
 }

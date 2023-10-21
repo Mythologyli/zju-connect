@@ -1,12 +1,11 @@
 package core
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
 	"net/http"
-
-	"golang.org/x/net/proxy"
 )
 
 // The MIT License (MIT)
@@ -30,47 +29,21 @@ import (
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-var (
-	socks5proxy proxy.Dialer
-	client      *http.Client
-)
-
-func newClient() *http.Client {
-	return &http.Client{
+func ServeHttp(bindAddr string, dialer Dialer, zjuDnsResolve *DnsResolve) {
+	client := &http.Client{
 		Transport: &http.Transport{
-			Dial: func(net, addr string) (net.Conn, error) {
-				return socks5proxy.Dial(net, addr)
+			DialContext: func(ctx context.Context, net, addr string) (net.Conn, error) {
+				return dialer.Dial(ctx, zjuDnsResolve, "tcp", addr)
 			},
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-}
-
-func ServeHttp(bindAddr string, socksAddr string, socksUser string, socksPasswd string) {
-	var err error
-
-	var auth *proxy.Auth
-	if socksUser == "" || socksPasswd == "" {
-		auth = nil
-	} else {
-		auth = &proxy.Auth{
-			User:     socksUser,
-			Password: socksPasswd,
-		}
-	}
-
-	socks5proxy, err = proxy.SOCKS5("tcp", socksAddr, auth, proxy.Direct)
-	if err != nil {
-		panic(err)
-	}
-
-	client = newClient()
 
 	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "CONNECT" {
-			serverConn, err := socks5proxy.Dial("tcp", req.Host)
+			serverConn, err := dialer.Dial(context.Background(), zjuDnsResolve, "tcp", req.Host)
 			if err != nil {
 				w.WriteHeader(500)
 				w.Write([]byte(err.Error() + "\n"))

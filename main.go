@@ -233,11 +233,6 @@ func main() {
 
 	}
 
-	if core.SocksBind == "" && core.HttpBind != "" {
-		fmt.Println("ZJU Connect: http proxy is enabled but socks proxy is disabled")
-		return
-	}
-
 	log.Println("Start ZJU Connect v" + version)
 
 	core.StartClient(host, port, username, password, twfId)
