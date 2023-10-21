@@ -109,7 +109,7 @@ func main() {
 		core.ParseServConfig = !getTomlVal(conf.DisableServerConfig, false)
 		core.ParseZjuConfig = !getTomlVal(conf.DisableZjuConfig, false)
 		core.UseZjuDns = !getTomlVal(conf.DisableZjuDns, false)
-		core.TestMultiLine = getTomlVal(conf.DisableMultiLine, false)
+		core.TestMultiLine = !getTomlVal(conf.DisableMultiLine, false)
 		core.ProxyAll = getTomlVal(conf.ProxyAll, false)
 		core.SocksBind = getTomlVal(conf.SocksBind, ":1080")
 		core.SocksUser = getTomlVal(conf.SocksUser, "")
