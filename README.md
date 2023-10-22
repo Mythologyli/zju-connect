@@ -220,6 +220,8 @@ $ docker compose up -d
 
 + `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
 
++ `tun-mode`: TUN 模式（实验性）
+
 + `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
 
 + `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
@@ -257,6 +259,8 @@ $ docker compose up -d
 - [x] 定时保活
 
 #### To Do
+
+- [ ] TUN 模式
 
 ### 贡献者
 

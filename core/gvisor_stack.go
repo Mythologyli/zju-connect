@@ -1,7 +1,7 @@
 package core
 
 import (
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -14,44 +14,48 @@ const defaultNIC tcpip.NICID = 1
 const defaultMTU uint32 = 1400
 
 // implements LinkEndpoint
-type EasyConnectEndpoint struct {
+type EasyConnectGvisorEndpoint struct {
 	dispatcher stack.NetworkDispatcher
 	OnRecv     func(buf []byte)
 }
 
-func (ep *EasyConnectEndpoint) MTU() uint32 {
+func (ep *EasyConnectGvisorEndpoint) ParseHeader(ptr stack.PacketBufferPtr) bool {
+	return true
+}
+
+func (ep *EasyConnectGvisorEndpoint) MTU() uint32 {
 	return defaultMTU
 }
 
-func (ep *EasyConnectEndpoint) MaxHeaderLength() uint16 {
+func (ep *EasyConnectGvisorEndpoint) MaxHeaderLength() uint16 {
 	return 0
 }
 
-func (ep *EasyConnectEndpoint) LinkAddress() tcpip.LinkAddress {
+func (ep *EasyConnectGvisorEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
-func (ep *EasyConnectEndpoint) Capabilities() stack.LinkEndpointCapabilities {
+func (ep *EasyConnectGvisorEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return stack.CapabilityNone
 }
 
-func (ep *EasyConnectEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (ep *EasyConnectGvisorEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	ep.dispatcher = dispatcher
 }
 
-func (ep *EasyConnectEndpoint) IsAttached() bool {
+func (ep *EasyConnectGvisorEndpoint) IsAttached() bool {
 	return ep.dispatcher != nil
 }
 
-func (ep *EasyConnectEndpoint) Wait() {}
+func (ep *EasyConnectGvisorEndpoint) Wait() {}
 
-func (ep *EasyConnectEndpoint) ARPHardwareType() header.ARPHardwareType {
+func (ep *EasyConnectGvisorEndpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone
 }
 
-func (ep *EasyConnectEndpoint) AddHeader(stack.PacketBufferPtr) {}
+func (ep *EasyConnectGvisorEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
-func (ep *EasyConnectEndpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
+func (ep *EasyConnectGvisorEndpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
 	for _, packetBuffer := range list.AsSlice() {
 		var buf []byte
 		for _, t := range packetBuffer.AsSlices() {
@@ -65,17 +69,17 @@ func (ep *EasyConnectEndpoint) WritePackets(list stack.PacketBufferList) (int, t
 	return list.Len(), nil
 }
 
-func (ep *EasyConnectEndpoint) WriteTo(buf []byte) {
+func (ep *EasyConnectGvisorEndpoint) WriteTo(buf []byte) {
 	if ep.IsAttached() {
 		packetBuffer := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		})
 		ep.dispatcher.DeliverNetworkPacket(header.IPv4ProtocolNumber, packetBuffer)
 		packetBuffer.DecRef()
 	}
 }
 
-func SetupStack(ip []byte, endpoint *EasyConnectEndpoint) *stack.Stack {
+func SetupGvisorStack(ip []byte, endpoint *EasyConnectGvisorEndpoint) *stack.Stack {
 
 	// init IP stack
 	ipStack := stack.New(stack.Options{
@@ -84,14 +88,14 @@ func SetupStack(ip []byte, endpoint *EasyConnectEndpoint) *stack.Stack {
 		HandleLocal:        true,
 	})
 
-	// create NIC associated to the endpoint
+	// create NIC associated to the gvisorEndpoint
 	err := ipStack.CreateNIC(defaultNIC, endpoint)
 	if err != nil {
 		panic(err)
 	}
 
 	// assign ip
-	addr := tcpip.Address(ip)
+	addr := tcpip.AddrFromSlice(ip)
 	protoAddr := tcpip.ProtocolAddress{
 		AddressWithPrefix: tcpip.AddressWithPrefix{
 			Address:   addr,

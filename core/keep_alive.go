@@ -18,12 +18,12 @@ func KeepAlive(dnsServer string, ipStack *stack.Stack, selfIp []byte) {
 			addrDns := tcpip.FullAddress{
 				NIC:  defaultNIC,
 				Port: uint16(53),
-				Addr: tcpip.Address(net.ParseIP(dnsServer).To4()),
+				Addr: tcpip.AddrFromSlice(net.ParseIP(dnsServer).To4()),
 			}
 
 			bind := tcpip.FullAddress{
 				NIC:  defaultNIC,
-				Addr: tcpip.Address(selfIp),
+				Addr: tcpip.AddrFromSlice(selfIp),
 			}
 
 			return gonet.DialUDP(ipStack, &bind, &addrDns, header.IPv4ProtocolNumber)

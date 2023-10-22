@@ -72,7 +72,7 @@ func newUdpForward(src, dest string, ipStack *stack.Stack) *udpForward {
 	u.dest = &tcpip.FullAddress{
 		NIC:  defaultNIC,
 		Port: uint16(port),
-		Addr: tcpip.Address(net.ParseIP(host).To4()),
+		Addr: tcpip.AddrFromSlice(net.ParseIP(host).To4()),
 	}
 
 	u.listenerConn, err = net.ListenUDP("udp", u.src)

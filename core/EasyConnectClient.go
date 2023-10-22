@@ -16,7 +16,6 @@ import (
 
 	"github.com/mythologyli/zju-connect/core/config"
 	"github.com/mythologyli/zju-connect/parser"
-
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -35,6 +34,7 @@ var SocksBind string
 var SocksUser string
 var SocksPasswd string
 var HttpBind string
+var TunMode bool
 var DebugDump bool
 var ParseServConfig bool
 var ParseZjuConfig bool
@@ -53,8 +53,12 @@ type EasyConnectClient struct {
 	token     *[48]byte
 	twfId     string
 
-	endpoint *EasyConnectEndpoint
-	ipStack  *stack.Stack
+	// Gvisor stack
+	gvisorEndpoint *EasyConnectGvisorEndpoint
+	gvisorStack    *stack.Stack
+
+	// TUN stack
+	tunEndpoint *EasyConnectTunEndpoint
 
 	server   string
 	username string
@@ -136,74 +140,81 @@ func StartClient(host string, port int, username string, password string, twfId 
 		log.Printf("Login success, your IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 	}
 
-	// Link-level endpoint used in gvisor netstack
-	client.endpoint = &EasyConnectEndpoint{}
-	client.ipStack = SetupStack(client.clientIp, client.endpoint)
+	if TunMode {
+		// Use TUN stack
+		client.tunEndpoint = &EasyConnectTunEndpoint{}
+		SetupTunStack(ip, client.tunEndpoint)
 
-	// Sangfor Easyconnect protocol
-	StartProtocol(client.endpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
+		StartProtocolWithTun(client.tunEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
+	} else {
+		// Use Gvisor stack
+		client.gvisorEndpoint = &EasyConnectGvisorEndpoint{}
+		client.gvisorStack = SetupGvisorStack(client.clientIp, client.gvisorEndpoint)
 
-	for _, singleForwarding := range ForwardingList {
-		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
-	}
+		StartProtocolWithStack(client.gvisorEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
 
-	for _, customDNS := range CustomDNSList {
-		ipAddr := net.ParseIP(customDNS.IP)
-		if ipAddr == nil {
-			log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
+		for _, singleForwarding := range ForwardingList {
+			go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 		}
-		SetPermantDns(customDNS.HostName, ipAddr)
-		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
-	}
 
-	dnsResolve := DnsResolve{
-		remoteTCPResolver: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				addrDns := tcpip.FullAddress{
-					NIC:  defaultNIC,
-					Port: uint16(53),
-					Addr: tcpip.Address(net.ParseIP(ZjuDnsServer).To4()),
-				}
+		for _, customDNS := range CustomDNSList {
+			ipAddr := net.ParseIP(customDNS.IP)
+			if ipAddr == nil {
+				log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
+			}
+			SetPermantDns(customDNS.HostName, ipAddr)
+			log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
+		}
 
-				bind := tcpip.FullAddress{
-					NIC:  defaultNIC,
-					Addr: tcpip.Address(client.clientIp),
-				}
+		dnsResolve := DnsResolve{
+			remoteTCPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Port: uint16(53),
+						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
+					}
 
-				return gonet.DialUDP(client.ipStack, &bind, &addrDns, header.IPv4ProtocolNumber)
+					bind := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Addr: tcpip.AddrFromSlice(client.clientIp),
+					}
+
+					return gonet.DialUDP(client.gvisorStack, &bind, &addrDns, header.IPv4ProtocolNumber)
+				},
 			},
-		},
-		remoteUDPResolver: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				addrDns := tcpip.FullAddress{
-					NIC:  defaultNIC,
-					Port: uint16(53),
-					Addr: tcpip.Address(net.ParseIP(ZjuDnsServer).To4()),
-				}
-				return gonet.DialTCP(client.ipStack, addrDns, header.IPv4ProtocolNumber)
+			remoteUDPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Port: uint16(53),
+						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
+					}
+					return gonet.DialTCP(client.gvisorStack, addrDns, header.IPv4ProtocolNumber)
+				},
 			},
-		},
-		useTCP: false,
-		timer:  nil,
-	}
+			useTCP: false,
+			timer:  nil,
+		}
 
-	dialer := Dialer{
-		selfIp:  client.clientIp,
-		ipStack: client.ipStack,
-	}
+		dialer := Dialer{
+			selfIp:      client.clientIp,
+			gvisorStack: client.gvisorStack,
+		}
 
-	if SocksBind != "" {
-		go ServeSocks5(SocksBind, dialer, &dnsResolve)
-	}
+		if SocksBind != "" {
+			go ServeSocks5(SocksBind, dialer, &dnsResolve)
+		}
 
-	if HttpBind != "" {
-		go ServeHttp(HttpBind, dialer, &dnsResolve)
-	}
+		if HttpBind != "" {
+			go ServeHttp(HttpBind, dialer, &dnsResolve)
+		}
 
-	if EnableKeepAlive {
-		go KeepAlive(ZjuDnsServer, client.ipStack, client.clientIp)
+		if EnableKeepAlive {
+			go KeepAlive(ZjuDnsServer, client.gvisorStack, client.clientIp)
+		}
 	}
 
 	for {
@@ -295,11 +306,11 @@ func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress
 	if networkType == "tcp" {
 		log.Printf("Port forwarding (tcp): %s <- %s", bindAddress, remoteAddress)
 
-		ServeTcpForwarding(bindAddress, remoteAddress, client.ipStack, client.clientIp)
+		ServeTcpForwarding(bindAddress, remoteAddress, client.gvisorStack, client.clientIp)
 	} else if networkType == "udp" {
 		log.Printf("Port forwarding (udp): %s <- %s", bindAddress, remoteAddress)
 
-		ServeUdpForwarding(bindAddress, remoteAddress, client.ipStack)
+		ServeUdpForwarding(bindAddress, remoteAddress, client.gvisorStack)
 	} else {
 		log.Println("Only TCP/UDP forwarding is supported yet. Aborting.")
 	}

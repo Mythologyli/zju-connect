@@ -43,12 +43,12 @@ func handleRequest(conn net.Conn, remoteAddress string, ipStack *stack.Stack, se
 	addrTarget := tcpip.FullAddress{
 		NIC:  defaultNIC,
 		Port: uint16(port),
-		Addr: tcpip.Address(net.ParseIP(host).To4()),
+		Addr: tcpip.AddrFromSlice(net.ParseIP(host).To4()),
 	}
 
 	bind := tcpip.FullAddress{
 		NIC:  defaultNIC,
-		Addr: tcpip.Address(selfIp),
+		Addr: tcpip.AddrFromSlice(selfIp),
 	}
 
 	proxy, err := gonet.DialTCPWithBind(context.Background(), ipStack, bind, addrTarget, header.IPv4ProtocolNumber)

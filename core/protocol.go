@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"golang.org/x/net/ipv4"
 	"io"
 	"log"
 	"net"
@@ -112,7 +113,7 @@ func QueryIp(server string, token *[48]byte, debugDump bool) ([]byte, *tls.UConn
 	return reply[4:8], conn, nil
 }
 
-func BlockRXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectEndpoint, debug bool) error {
+func BlockRXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
 	conn, err := TLSConn(server)
 	if err != nil {
 		panic(err)
@@ -164,7 +165,7 @@ func BlockRXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConne
 	}
 }
 
-func BlockTXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectEndpoint, debug bool) error {
+func BlockTXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
 	conn, err := TLSConn(server)
 	if err != nil {
 		return err
@@ -218,11 +219,11 @@ func BlockTXStream(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConne
 	return <-errCh
 }
 
-func StartProtocol(endpoint *EasyConnectEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
+func StartProtocolWithStack(endpoint *EasyConnectGvisorEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
 	RX := func() {
 		counter := 0
 		for counter < 5 {
-			err := BlockRXStream(server, token, ipRev, endpoint, debug)
+			err := BlockRXStreamWithStack(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while receiving, retrying: " + err.Error())
 			}
@@ -236,7 +237,154 @@ func StartProtocol(endpoint *EasyConnectEndpoint, server string, token *[48]byte
 	TX := func() {
 		counter := 0
 		for counter < 5 {
-			err := BlockTXStream(server, token, ipRev, endpoint, debug)
+			err := BlockTXStreamWithStack(server, token, ipRev, endpoint, debug)
+			if err != nil {
+				log.Print("Error occurred while send, retrying: " + err.Error())
+			}
+			counter += 1
+		}
+		panic("send retry limit exceeded.")
+	}
+
+	go TX()
+}
+
+func BlockRXStreamWithTun(server string, token *[48]byte, ipRev *[4]byte, endpoint *EasyConnectTunEndpoint, debug bool) error {
+	conn, err := TLSConn(server)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	// RECV STREAM START
+	message := []byte{0x06, 0x00, 0x00, 0x00}
+	message = append(message, token[:]...)
+	message = append(message, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
+	message = append(message, ipRev[:]...)
+
+	n, err := conn.Write(message)
+	if err != nil {
+		return err
+	}
+	if debug {
+		log.Printf("recv handshake: wrote %d bytes", n)
+		DumpHex(message[:n])
+	}
+
+	reply := make([]byte, 1500)
+	n, err = conn.Read(reply)
+	if err != nil {
+		return err
+	}
+	if debug {
+		log.Printf("recv handshake: read %d bytes", n)
+		DumpHex(reply[:n])
+	}
+
+	if reply[0] != 0x01 {
+		return errors.New("unexpected recv handshake reply")
+	}
+
+	for {
+		n, err = conn.Read(reply)
+		if err != nil {
+			return err
+		}
+
+		err = endpoint.Write(reply[:n])
+		if err != nil {
+			panic(err)
+		}
+
+		if debug {
+			log.Printf("recv: read %d bytes", n)
+			DumpHex(reply[:n])
+		}
+	}
+}
+
+func BlockTXStreamWithTun(server string, token *[48]byte, ipRev *[4]byte, endpoint *EasyConnectTunEndpoint, debug bool) error {
+	conn, err := TLSConn(server)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// SEND STREAM START
+	message := []byte{0x05, 0x00, 0x00, 0x00}
+	message = append(message, token[:]...)
+	message = append(message, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
+	message = append(message, ipRev[:]...)
+
+	n, err := conn.Write(message)
+	if err != nil {
+		return err
+	}
+	if debug {
+		log.Printf("send handshake: wrote %d bytes", n)
+		DumpHex(message[:n])
+	}
+
+	reply := make([]byte, 1500)
+	n, err = conn.Read(reply)
+	if err != nil {
+		return err
+	}
+	if debug {
+		log.Printf("send handshake: read %d bytes", n)
+		DumpHex(reply[:n])
+	}
+
+	if reply[0] != 0x02 {
+		return errors.New("unexpected send handshake reply")
+	}
+
+	for {
+		n, err := endpoint.Read(reply)
+		if err != nil {
+			return err
+		}
+
+		header, err := ipv4.ParseHeader(reply[:n])
+		if err != nil {
+			continue
+		}
+
+		if header.Protocol != 6 && header.Protocol != 17 {
+			continue
+		}
+
+		n, err = conn.Write(reply[:n])
+		if err != nil {
+			return err
+		}
+
+		if debug {
+			log.Printf("send: wrote %d bytes", n)
+			DumpHex(reply[:n])
+		}
+	}
+}
+
+func StartProtocolWithTun(endpoint *EasyConnectTunEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
+	RX := func() {
+		counter := 0
+		for counter < 50 {
+			err := BlockRXStreamWithTun(server, token, ipRev, endpoint, debug)
+			if err != nil {
+				log.Print("Error occurred while receiving, retrying: " + err.Error())
+			}
+			counter += 1
+		}
+		panic("receive retry limit exceeded.")
+	}
+
+	go RX()
+
+	TX := func() {
+		counter := 0
+		for counter < 50 {
+			err := BlockTXStreamWithTun(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while send, retrying: " + err.Error())
 			}

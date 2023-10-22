@@ -18,7 +18,7 @@ import (
 type Dialer struct {
 	selfIp []byte
 
-	ipStack *stack.Stack
+	gvisorStack *stack.Stack
 }
 
 func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -121,20 +121,20 @@ func (dialer *Dialer) DialIpAndPort(ctx context.Context, network, addr string) (
 		addrTarget := tcpip.FullAddress{
 			NIC:  defaultNIC,
 			Port: uint16(port),
-			Addr: tcpip.Address(target.IP),
+			Addr: tcpip.AddrFromSlice(target.IP),
 		}
 
 		bind := tcpip.FullAddress{
 			NIC:  defaultNIC,
-			Addr: tcpip.Address(dialer.selfIp),
+			Addr: tcpip.AddrFromSlice(dialer.selfIp),
 		}
 
 		if network == "tcp" {
 			log.Printf("%s -> PROXY", addr)
-			return gonet.DialTCPWithBind(context.Background(), dialer.ipStack, bind, addrTarget, header.IPv4ProtocolNumber)
+			return gonet.DialTCPWithBind(context.Background(), dialer.gvisorStack, bind, addrTarget, header.IPv4ProtocolNumber)
 		} else if network == "udp" {
 			log.Printf("%s -> PROXY", addr)
-			return gonet.DialUDP(dialer.ipStack, &bind, &addrTarget, header.IPv4ProtocolNumber)
+			return gonet.DialUDP(dialer.gvisorStack, &bind, &addrTarget, header.IPv4ProtocolNumber)
 		} else {
 			log.Printf("Proxy only support TCP/UDP. Connection to %s will use direct connection.", addr)
 			return dialDirect(ctx, network, addr)
