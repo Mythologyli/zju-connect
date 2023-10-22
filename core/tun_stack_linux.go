@@ -38,7 +38,10 @@ func (ep *EasyConnectTunEndpoint) Read(buf []byte) (int, error) {
 }
 
 func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
-	tun.CreateTUN("zjuconnect", 0)
+	dev, err := tun.CreateTUN("zjuconnect", 1400)
+	if err != nil {
+		panic(err)
+	}
 
 	endpoint.dev = dev
 }
