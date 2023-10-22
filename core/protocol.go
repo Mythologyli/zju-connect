@@ -113,7 +113,7 @@ func QueryIp(server string, token *[48]byte, debugDump bool) ([]byte, *tls.UConn
 	return reply[4:8], conn, nil
 }
 
-func BlockRXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
+func BlockRXStreamWithGvisor(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
 	conn, err := TLSConn(server)
 	if err != nil {
 		panic(err)
@@ -165,7 +165,7 @@ func BlockRXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *
 	}
 }
 
-func BlockTXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
+func BlockTXStreamWithGvisor(server string, token *[48]byte, ipRev *[4]byte, ep *EasyConnectGvisorEndpoint, debug bool) error {
 	conn, err := TLSConn(server)
 	if err != nil {
 		return err
@@ -219,11 +219,11 @@ func BlockTXStreamWithStack(server string, token *[48]byte, ipRev *[4]byte, ep *
 	return <-errCh
 }
 
-func StartProtocolWithStack(endpoint *EasyConnectGvisorEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
+func StartProtocolWithGvisor(endpoint *EasyConnectGvisorEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
 	RX := func() {
 		counter := 0
 		for counter < 5 {
-			err := BlockRXStreamWithStack(server, token, ipRev, endpoint, debug)
+			err := BlockRXStreamWithGvisor(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while receiving, retrying: " + err.Error())
 			}
@@ -237,7 +237,7 @@ func StartProtocolWithStack(endpoint *EasyConnectGvisorEndpoint, server string, 
 	TX := func() {
 		counter := 0
 		for counter < 5 {
-			err := BlockTXStreamWithStack(server, token, ipRev, endpoint, debug)
+			err := BlockTXStreamWithGvisor(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while send, retrying: " + err.Error())
 			}

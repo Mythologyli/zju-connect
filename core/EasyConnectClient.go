@@ -151,11 +151,7 @@ func StartClient(host string, port int, username string, password string, twfId 
 		client.gvisorEndpoint = &EasyConnectGvisorEndpoint{}
 		client.gvisorStack = SetupGvisorStack(client.clientIp, client.gvisorEndpoint)
 
-		StartProtocolWithStack(client.gvisorEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
-
-		for _, singleForwarding := range ForwardingList {
-			go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
-		}
+		StartProtocolWithGvisor(client.gvisorEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
 
 		for _, customDNS := range CustomDNSList {
 			ipAddr := net.ParseIP(customDNS.IP)
@@ -215,6 +211,10 @@ func StartClient(host string, port int, username string, password string, twfId 
 		if EnableKeepAlive {
 			go KeepAlive(ZjuDnsServer, client.gvisorStack, client.clientIp)
 		}
+	}
+
+	for _, singleForwarding := range ForwardingList {
+		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
 
 	for {
@@ -293,7 +293,7 @@ func (client *EasyConnectClient) ParseAllConfig() {
 
 func (client *EasyConnectClient) GetClientIp() ([]byte, error) {
 	var err error
-	// Query IP (keep the connection used, so it's not closed too early, otherwise i/o stream will be closed)
+	// Query IP (keep the gvisorConnection used, so it's not closed too early, otherwise i/o stream will be closed)
 	client.clientIp, client.queryConn, err = QueryIp(client.server, client.token, DebugDump)
 	if err != nil {
 		return nil, err
@@ -306,11 +306,11 @@ func (client *EasyConnectClient) ServeForwarding(networkType string, bindAddress
 	if networkType == "tcp" {
 		log.Printf("Port forwarding (tcp): %s <- %s", bindAddress, remoteAddress)
 
-		ServeTcpForwarding(bindAddress, remoteAddress, client.gvisorStack, client.clientIp)
+		ServeTcpForwarding(bindAddress, remoteAddress, client)
 	} else if networkType == "udp" {
 		log.Printf("Port forwarding (udp): %s <- %s", bindAddress, remoteAddress)
 
-		ServeUdpForwarding(bindAddress, remoteAddress, client.gvisorStack)
+		ServeUdpForwarding(bindAddress, remoteAddress, client)
 	} else {
 		log.Println("Only TCP/UDP forwarding is supported yet. Aborting.")
 	}
