@@ -7,6 +7,7 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 	"log"
 	"net/netip"
+	"os/exec"
 )
 
 type EasyConnectTunEndpoint struct {
@@ -59,7 +60,9 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 
 	link := winipcfg.LUID(nativeTunDevice.LUID())
 
-	prefix, err := netip.ParsePrefix(fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]))
+	ipStr := fmt.Sprintf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
+
+	prefix, err := netip.ParsePrefix(ipStr + "/8")
 	if err != nil {
 		log.Printf("ParsePrefix failed: %v", err)
 	}
@@ -67,5 +70,11 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	err = link.SetIPAddresses([]netip.Prefix{prefix})
 	if err != nil {
 		log.Printf("SetIPAddresses failed: %v", err)
+	}
+
+	cmd := exec.Command("route", "add", "0.0.0.0", "mask", "0.0.0.0", ipStr, "metric", "9999")
+	err = cmd.Run()
+	if err != nil {
+		log.Printf("Run route add failed: %v", err)
 	}
 }
