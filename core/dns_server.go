@@ -19,9 +19,14 @@ func (dnsServer DnsServer) handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 	switch r.Opcode {
 	case dns.OpcodeQuery:
 		for _, q := range r.Question {
+			name := q.Name
+			if len(name) > 1 && name[len(name)-1] == '.' {
+				name = name[:len(name)-1]
+			}
+
 			switch q.Qtype {
 			case dns.TypeA:
-				if _, ip, err := dnsServer.dnsResolve.Resolve(context.Background(), q.Name); err == nil {
+				if _, ip, err := dnsServer.dnsResolve.Resolve(context.Background(), name); err == nil {
 					if ip.To4() != nil {
 						rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, ip))
 						if err == nil {
@@ -30,7 +35,7 @@ func (dnsServer DnsServer) handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 					}
 				}
 			case dns.TypeAAAA:
-				if _, ip, err := dnsServer.dnsResolve.Resolve(context.Background(), q.Name); err == nil {
+				if _, ip, err := dnsServer.dnsResolve.Resolve(context.Background(), name); err == nil {
 					if ip.To4() == nil {
 						rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, ip))
 						if err == nil {
