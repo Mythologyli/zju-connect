@@ -11,6 +11,7 @@ require (
 	github.com/cornelk/hashmap v1.0.8
 	github.com/dlclark/regexp2 v1.10.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/things-go/go-socks5 v0.0.4
 	golang.org/x/net v0.17.0
 	golang.org/x/sys v0.13.0

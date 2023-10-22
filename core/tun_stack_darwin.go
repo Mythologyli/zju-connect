@@ -1,47 +1,40 @@
 package core
 
 import (
-	"golang.zx2c4.com/wireguard/tun"
+	"fmt"
+	"github.com/songgao/water"
+	"log"
+	"os/exec"
 )
 
 type EasyConnectTunEndpoint struct {
-	dev tun.Device
+	ifce *water.Interface
 }
 
 func (ep *EasyConnectTunEndpoint) Write(buf []byte) error {
-	bufs := [][]byte{buf}
-
-	_, err := ep.dev.Write(bufs, 0)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := ep.ifce.Write(buf)
+	return err
 }
 
 func (ep *EasyConnectTunEndpoint) Read(buf []byte) (int, error) {
-	bufs := make([][]byte, 1)
-	for i := range bufs {
-		bufs[i] = make([]byte, 1500)
-	}
-
-	sizes := make([]int, 1)
-
-	_, err := ep.dev.Read(bufs, sizes, 0)
-	if err != nil {
-		return 0, err
-	}
-
-	copy(buf, bufs[0][:sizes[0]])
-
-	return sizes[0], nil
+	return ep.ifce.Read(buf)
 }
 
 func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
-	dev, err := tun.CreateTUN("zjuconnect", 1400)
+	ifce, err := water.New(water.Config{
+		DeviceType: water.TUN,
+	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	endpoint.dev = dev
+	log.Printf("Interface Name: %s\n", ifce.Name())
+
+	endpoint.ifce = ifce
+
+	cmd := exec.Command("/sbin/ifconfig", ifce.Name(), fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "up")
+	err = cmd.Run()
+	if err != nil {
+		log.Printf("Run ifconfig failed: %v", err)
+	}
 }
