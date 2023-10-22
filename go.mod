@@ -10,6 +10,7 @@ require (
 	github.com/cloverstd/tcping v0.1.1
 	github.com/cornelk/hashmap v1.0.8
 	github.com/dlclark/regexp2 v1.10.0
+	github.com/miekg/dns v1.1.56
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/things-go/go-socks5 v0.0.4
@@ -28,7 +29,9 @@ require (
 	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/quic-go/quic-go v0.39.1 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/mod v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
+	golang.org/x/tools v0.14.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )

@@ -17,6 +17,9 @@ tun_mode = false
 dns_ttl = 3600
 disable_keep_alive = false
 zju_dns_server = "10.10.0.21"
+secondary_dns_server = "114.114.114.114"
+dns_server_bind = ""
+tun_dns_server = ""
 debug_dump = false
 
 # Port forwarding

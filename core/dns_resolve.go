@@ -15,25 +15,26 @@ import (
 type DnsResolve struct {
 	remoteUDPResolver *net.Resolver
 	remoteTCPResolver *net.Resolver
+	secondaryResolver *net.Resolver
 	timer             *time.Timer
 	useTCP            bool
 	lock              sync.RWMutex
 }
 
-func (resolve *DnsResolve) ResolveWithLocal(ctx context.Context, host string) (context.Context, net.IP, error) {
-	if target, err := net.ResolveIPAddr("ip4", host); err != nil {
-		log.Printf("Resolve IPv4 addr failed using local DNS: " + host + ". Try IPv6 addr.")
+func (resolve *DnsResolve) ResolveWithSecondaryDns(ctx context.Context, host string) (context.Context, net.IP, error) {
+	if targets, err := resolve.secondaryResolver.LookupIP(ctx, "ip4", host); err != nil {
+		log.Printf("Resolve IPv4 addr failed using secondary DNS: " + host + ". Try IPv6 addr.")
 
-		if target, err = net.ResolveIPAddr("ip6", host); err != nil {
-			log.Printf("Resolve IPv6 addr failed using local DNS: " + host + ". Reject connection.")
+		if targets, err = resolve.secondaryResolver.LookupIP(ctx, "ip6", host); err != nil {
+			log.Printf("Resolve IPv6 addr failed using secondary DNS: " + host + ". Reject connection.")
 			return ctx, nil, err
 		} else {
-			log.Printf("%s -> %s", host, target.IP.String())
-			return ctx, target.IP, nil
+			log.Printf("%s -> %s", host, targets[0].String())
+			return ctx, targets[0], nil
 		}
 	} else {
-		log.Printf("%s -> %s", host, target.IP.String())
-		return ctx, target.IP, nil
+		log.Printf("%s -> %s", host, targets[0].String())
+		return ctx, targets[0], nil
 	}
 }
 
@@ -72,10 +73,10 @@ func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Co
 				targets, err := resolve.remoteUDPResolver.LookupIP(context.Background(), "ip4", host)
 				if err != nil {
 					if targets, err = resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-						// all zju dns failed, so we keep do nothing but use local dns
+						// all zju dns failed, so we keep do nothing but use secondary dns
 						// host ipv4 and host ipv6 don't set cache
-						log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using local DNS instead.")
-						return resolve.ResolveWithLocal(ctx, host)
+						log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead.")
+						return resolve.ResolveWithSecondaryDns(ctx, host)
 					} else {
 						resolve.lock.Lock()
 						resolve.useTCP = true
@@ -96,10 +97,10 @@ func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Co
 				log.Printf("%s -> %s", host, targets[0].String())
 				return ctx, targets[0], nil
 			} else {
-				// only try tcp and local dns
+				// only try tcp and secondary dns
 				if targets, err := resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-					log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using local DNS instead.")
-					return resolve.ResolveWithLocal(ctx, host)
+					log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead.")
+					return resolve.ResolveWithSecondaryDns(ctx, host)
 				} else {
 					SetDnsCache(host, targets[0])
 					log.Printf("%s -> %s", host, targets[0].String())
@@ -110,7 +111,7 @@ func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Co
 
 	} else {
 		// because of OS cache, don't need extra dns memory cache
-		return resolve.ResolveWithLocal(ctx, host)
+		return resolve.ResolveWithSecondaryDns(ctx, host)
 	}
 }
 
@@ -185,6 +186,24 @@ func SetupDnsResolve(zjuDnsServer string, client *EasyConnectClient) *DnsResolve
 			},
 			useTCP: false,
 			timer:  nil,
+		}
+	}
+
+	if SecondaryDnsServer != "" {
+		dns.secondaryResolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				addrDns := net.UDPAddr{
+					IP:   net.ParseIP(SecondaryDnsServer),
+					Port: 53,
+				}
+
+				return net.DialUDP(network, nil, &addrDns)
+			},
+		}
+	} else {
+		dns.secondaryResolver = &net.Resolver{
+			PreferGo: true,
 		}
 	}
 

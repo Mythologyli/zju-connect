@@ -30,6 +30,9 @@ type (
 		DnsTTL              *uint64                `toml:"dns_ttl"`
 		DisableKeepAlive    *bool                  `toml:"disable_keep_alive"`
 		ZjuDnsServer        *string                `toml:"zju_dns_server"`
+		SecondaryDnsServer  *string                `toml:"secondary_dns_server"`
+		DnsServerBind       *string                `toml:"dns_server_bind"`
+		TunDnsServer        *string                `toml:"tun_dns_server"`
 		DebugDump           *bool                  `toml:"debug_dump"`
 		PortForwarding      []SinglePortForwarding `toml:"port_forwarding"`
 		CustomDns           []SingleCustomDns      `toml:"custom_dns"`
@@ -85,6 +88,9 @@ func main() {
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
 	flag.BoolVar(&disableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
 	flag.StringVar(&core.ZjuDnsServer, "zju-dns-server", "10.10.0.21", "ZJU DNS server address")
+	flag.StringVar(&core.SecondaryDnsServer, "secondary-dns-server", "114.114.114.114", "Secondary DNS server address. Leave empty to use system default DNS server")
+	flag.StringVar(&core.DnsServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
+	flag.StringVar(&core.TunDnsServer, "tun-dns-server", "", "DNS Server address for TUN interface (e.g. 127.0.0.1). You should not specify the port")
 	flag.StringVar(&twfId, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
@@ -122,6 +128,9 @@ func main() {
 		core.DebugDump = getTomlVal(conf.DebugDump, false)
 		core.EnableKeepAlive = !getTomlVal(conf.DisableKeepAlive, false)
 		core.ZjuDnsServer = getTomlVal(conf.ZjuDnsServer, "10.10.0.21")
+		core.SecondaryDnsServer = getTomlVal(conf.SecondaryDnsServer, "114.114.114.114")
+		core.DnsServerBind = getTomlVal(conf.DnsServerBind, "")
+		core.TunDnsServer = getTomlVal(conf.TunDnsServer, "")
 
 		for _, singlePortForwarding := range conf.PortForwarding {
 			if singlePortForwarding.NetworkType == nil {

@@ -41,6 +41,9 @@ var ProxyAll bool
 var ForwardingList []Forwarding
 var EnableKeepAlive bool
 var ZjuDnsServer string
+var SecondaryDnsServer string
+var DnsServerBind string
+var TunDnsServer string
 var CustomDNSList []CustomDNS
 
 type EasyConnectClient struct {
@@ -154,15 +157,19 @@ func StartClient(host string, port int, username string, password string, twfId 
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
 	}
 
-	dnsResolve := SetupDnsResolve(ZjuDnsServer, client)
-
 	for _, customDNS := range CustomDNSList {
 		ipAddr := net.ParseIP(customDNS.IP)
 		if ipAddr == nil {
 			log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
 		}
-		SetPermantDns(customDNS.HostName, ipAddr)
+		SetPermanentDns(customDNS.HostName, ipAddr)
 		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
+	}
+
+	dnsResolve := SetupDnsResolve(ZjuDnsServer, client)
+
+	if DnsServerBind != "" {
+		go ServeDns(DnsServerBind, dnsResolve)
 	}
 
 	dialer := Dialer{

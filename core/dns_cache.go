@@ -48,7 +48,7 @@ func SetDnsCache(host string, ip net.IP) {
 	dnsCaches.cache.Set(host, ip, cache.DefaultExpiration)
 }
 
-func SetPermantDns(host string, ip net.IP) {
+func SetPermanentDns(host string, ip net.IP) {
 	once.Do(func() {
 		dnsCaches = &DnsCache{
 			cache: cache.New(time.Duration(DnsTTL)*time.Second, time.Duration(DnsTTL)*2*time.Second),
