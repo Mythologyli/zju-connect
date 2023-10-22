@@ -35,6 +35,6 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	cmd := exec.Command("/sbin/ifconfig", ifce.Name(), fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "up")
 	err = cmd.Run()
 	if err != nil {
-		log.Printf("Run ifconfig failed: %v", err)
+		log.Printf("Run %s failed: %v", cmd.String(), err)
 	}
 }
