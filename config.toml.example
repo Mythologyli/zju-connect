@@ -14,6 +14,7 @@ socks_user = ""
 socks_passwd = ""
 http_bind = ":1081"
 tun_mode = false
+add_route = false
 dns_ttl = 3600
 disable_keep_alive = false
 zju_dns_server = "10.10.0.21"

@@ -1,13 +1,13 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"github.com/mythologyli/zju-connect/core/config"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"inet.af/netaddr"
 	"log"
 	"net"
 	"strconv"
@@ -77,39 +77,15 @@ func (dialer *Dialer) DialIpAndPort(ctx context.Context, network, addr string) (
 		}
 	}
 
-	if !useProxy && config.IsIpv4RuleAvailable() {
+	if !useProxy && config.IsIpv4SetAvailable() {
 		if DebugDump {
-			log.Printf("IPv4 rule is available ")
+			log.Printf("IPv4 set is available ")
 		}
-		for _, rule := range *config.GetIpv4Rules() {
-			if rule.CIDR {
-				_, cidr, _ := net.ParseCIDR(rule.Rule)
-				if DebugDump {
-					log.Printf("CIDR test: %s %s %v", target.IP, rule.Rule, cidr.Contains(target.IP))
-				}
-
-				if cidr.Contains(target.IP) {
-					if DebugDump {
-						log.Printf("CIDR matched: %s %s", target.IP, rule.Rule)
-					}
-
-					useProxy = true
-				}
-			} else {
-				if DebugDump {
-					log.Printf("Raw match test: %s %s", target.IP, rule.Rule)
-				}
-
-				ip1 := net.ParseIP(strings.Split(rule.Rule, "~")[0])
-				ip2 := net.ParseIP(strings.Split(rule.Rule, "~")[1])
-
-				if bytes.Compare(target.IP, ip1) >= 0 && bytes.Compare(target.IP, ip2) <= 0 {
-					if DebugDump {
-						log.Printf("Raw matched: %s %s", ip1, ip2)
-					}
-
-					useProxy = true
-				}
+		ipv4Set := config.GetIpv4Set()
+		ip, ok := netaddr.FromStdIP(target.IP)
+		if ok {
+			if ipv4Set.Contains(ip) {
+				useProxy = true
 			}
 		}
 	}

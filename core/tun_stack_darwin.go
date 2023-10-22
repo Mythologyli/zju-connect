@@ -20,6 +20,16 @@ func (ep *EasyConnectTunEndpoint) Read(buf []byte) (int, error) {
 	return ep.ifce.Read(buf)
 }
 
+func (ep *EasyConnectTunEndpoint) AddRoute(target string) error {
+	command := exec.Command("route", "-n", "add", "-net", target, "-interface", ep.ifce.Name())
+	err := command.Run()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	ifce, err := water.New(water.Config{
 		DeviceType: water.TUN,
@@ -32,7 +42,7 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 
 	endpoint.ifce = ifce
 
-	cmd := exec.Command("/sbin/ifconfig", ifce.Name(), fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "up")
+	cmd := exec.Command("ifconfig", ifce.Name(), fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "up")
 	err = cmd.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", cmd.String(), err)

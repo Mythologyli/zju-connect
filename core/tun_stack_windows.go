@@ -12,7 +12,8 @@ import (
 )
 
 type EasyConnectTunEndpoint struct {
-	dev tun.Device
+	dev    tun.Device
+	selfIp string
 }
 
 func (ep *EasyConnectTunEndpoint) Write(buf []byte) error {
@@ -44,7 +45,7 @@ func (ep *EasyConnectTunEndpoint) Read(buf []byte) (int, error) {
 	return sizes[0], nil
 }
 
-func AddRoute(target string, interfaceIp string, metric string) error {
+func (ep *EasyConnectTunEndpoint) AddRoute(target string) error {
 	ipaddr, ipv4Net, err := net.ParseCIDR(target)
 	if err != nil {
 		return err
@@ -55,7 +56,7 @@ func AddRoute(target string, interfaceIp string, metric string) error {
 		return fmt.Errorf("not a valid IPv4 address")
 	}
 
-	command := exec.Command("route", "add", ip.String(), "mask", net.IP(ipv4Net.Mask).String(), interfaceIp, "metric", metric)
+	command := exec.Command("route", "add", ip.String(), "mask", net.IP(ipv4Net.Mask).String(), ep.selfIp, "metric", "1")
 	err = command.Run()
 	if err != nil {
 		return err
@@ -83,6 +84,8 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 
 	ipStr := fmt.Sprintf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
+	endpoint.selfIp = ipStr
+
 	prefix, err := netip.ParsePrefix(ipStr + "/8")
 	if err != nil {
 		log.Printf("Parse prefix failed: %v", err)
@@ -93,9 +96,10 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 		log.Printf("Set IP address failed: %v", err)
 	}
 
-	err = AddRoute("0.0.0.0/0", ipStr, "9999")
+	command := exec.Command("route", "add", "0.0.0.0", "mask", "0.0.0.0", ipStr, "metric", "9999")
+	err = command.Run()
 	if err != nil {
-		log.Printf("Add route failed: %v", err)
+		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
 	if TunDnsServer != "" {

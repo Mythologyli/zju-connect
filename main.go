@@ -27,6 +27,7 @@ type (
 		SocksPasswd         *string                `toml:"socks_passwd"`
 		HttpBind            *string                `toml:"http_bind"`
 		TunMode             *bool                  `toml:"tun_mode"`
+		AddRoute            *bool                  `toml:"add_route"`
 		DnsTTL              *uint64                `toml:"dns_ttl"`
 		DisableKeepAlive    *bool                  `toml:"disable_keep_alive"`
 		ZjuDnsServer        *string                `toml:"zju_dns_server"`
@@ -81,6 +82,7 @@ func main() {
 	flag.StringVar(&core.SocksPasswd, "socks-passwd", "", "SOCKS5 password, default is don't use auth")
 	flag.StringVar(&core.HttpBind, "http-bind", ":1081", "The address HTTP server listens on (e.g. 127.0.0.1:1081)")
 	flag.BoolVar(&core.TunMode, "tun-mode", false, "Enable TUN mode (experimental)")
+	flag.BoolVar(&core.AddRoute, "add-route", false, "Add route from rules for TUN interface")
 	flag.Uint64Var(&core.DnsTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&core.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
@@ -124,6 +126,7 @@ func main() {
 		core.SocksPasswd = getTomlVal(conf.SocksPasswd, "")
 		core.HttpBind = getTomlVal(conf.HttpBind, ":1081")
 		core.TunMode = getTomlVal(conf.TunMode, false)
+		core.AddRoute = getTomlVal(conf.AddRoute, false)
 		core.DnsTTL = getTomlVal(conf.DnsTTL, uint64(3600))
 		core.DebugDump = getTomlVal(conf.DebugDump, false)
 		core.EnableKeepAlive = !getTomlVal(conf.DisableKeepAlive, false)

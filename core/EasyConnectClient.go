@@ -31,6 +31,7 @@ var SocksUser string
 var SocksPasswd string
 var HttpBind string
 var TunMode bool
+var AddRoute bool
 var DebugDump bool
 var ParseServConfig bool
 var ParseZjuConfig bool
@@ -143,6 +144,20 @@ func StartClient(host string, port int, username string, password string, twfId 
 		// Use TUN stack
 		client.tunEndpoint = &EasyConnectTunEndpoint{}
 		SetupTunStack(ip, client.tunEndpoint)
+
+		// Add routes
+		if AddRoute && config.IsIpv4SetAvailable() {
+			ipv4Set := config.GetIpv4Set()
+
+			if err != nil {
+				log.Printf("Cannot get ipset: %v", err)
+			} else {
+				for _, prefix := range ipv4Set.Prefixes() {
+					log.Printf("Add route to %s", prefix.String())
+					_ = client.tunEndpoint.AddRoute(prefix.String())
+				}
+			}
+		}
 
 		StartProtocolWithTun(client.tunEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
 	} else {
@@ -259,6 +274,11 @@ func (client *EasyConnectClient) ParseAllConfig() {
 		parser.ParseZjuDnsRules(DebugDump)
 		parser.ParseZjuIpv4Rules(DebugDump)
 		parser.ParseZjuForceProxyRules(DebugDump)
+	}
+
+	err := config.GenerateIpv4Set()
+	if err != nil {
+		return
 	}
 }
 
