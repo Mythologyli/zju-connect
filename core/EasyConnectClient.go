@@ -156,28 +156,25 @@ func StartClient(host string, port int, username string, password string, twfId 
 
 	dnsResolve := SetupDnsResolve(ZjuDnsServer, client)
 
-	if !TunMode {
-		for _, customDNS := range CustomDNSList {
-			ipAddr := net.ParseIP(customDNS.IP)
-			if ipAddr == nil {
-				log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
-			}
-			SetPermantDns(customDNS.HostName, ipAddr)
-			log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
+	for _, customDNS := range CustomDNSList {
+		ipAddr := net.ParseIP(customDNS.IP)
+		if ipAddr == nil {
+			log.Printf("Custom DNS for host_name %s is invalid, SKIP", customDNS.HostName)
 		}
+		SetPermantDns(customDNS.HostName, ipAddr)
+		log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
+	}
 
-		dialer := Dialer{
-			selfIp:      client.clientIp,
-			gvisorStack: client.gvisorStack,
-		}
+	dialer := Dialer{
+		client: client,
+	}
 
-		if SocksBind != "" {
-			go ServeSocks5(SocksBind, dialer, dnsResolve)
-		}
+	if SocksBind != "" {
+		go ServeSocks5(SocksBind, dialer, dnsResolve)
+	}
 
-		if HttpBind != "" {
-			go ServeHttp(HttpBind, dialer, dnsResolve)
-		}
+	if HttpBind != "" {
+		go ServeHttp(HttpBind, dialer, dnsResolve)
 	}
 
 	if EnableKeepAlive {

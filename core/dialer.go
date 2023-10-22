@@ -8,7 +8,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"log"
 	"net"
 	"strconv"
@@ -16,9 +15,7 @@ import (
 )
 
 type Dialer struct {
-	selfIp []byte
-
-	gvisorStack *stack.Stack
+	client *EasyConnectClient
 }
 
 func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -118,26 +115,61 @@ func (dialer *Dialer) DialIpAndPort(ctx context.Context, network, addr string) (
 	}
 
 	if useProxy {
-		addrTarget := tcpip.FullAddress{
-			NIC:  defaultNIC,
-			Port: uint16(port),
-			Addr: tcpip.AddrFromSlice(target.IP),
-		}
+		if TunMode {
+			if network == "tcp" {
+				log.Printf("%s -> PROXY", addr)
 
-		bind := tcpip.FullAddress{
-			NIC:  defaultNIC,
-			Addr: tcpip.AddrFromSlice(dialer.selfIp),
-		}
+				addrTarget := net.TCPAddr{
+					IP:   target.IP,
+					Port: port,
+				}
 
-		if network == "tcp" {
-			log.Printf("%s -> PROXY", addr)
-			return gonet.DialTCPWithBind(context.Background(), dialer.gvisorStack, bind, addrTarget, header.IPv4ProtocolNumber)
-		} else if network == "udp" {
-			log.Printf("%s -> PROXY", addr)
-			return gonet.DialUDP(dialer.gvisorStack, &bind, &addrTarget, header.IPv4ProtocolNumber)
+				bind := net.TCPAddr{
+					IP:   net.IP(dialer.client.clientIp),
+					Port: 0,
+				}
+
+				return net.DialTCP(network, &bind, &addrTarget)
+			} else if network == "udp" {
+				log.Printf("%s -> PROXY", addr)
+
+				addrTarget := net.UDPAddr{
+					IP:   target.IP,
+					Port: port,
+				}
+
+				bind := net.UDPAddr{
+					IP:   net.IP(dialer.client.clientIp),
+					Port: 0,
+				}
+
+				return net.DialUDP(network, &bind, &addrTarget)
+			} else {
+				log.Printf("Proxy only support TCP/UDP. Connection to %s will use direct connection.", addr)
+				return dialDirect(ctx, network, addr)
+			}
 		} else {
-			log.Printf("Proxy only support TCP/UDP. Connection to %s will use direct connection.", addr)
-			return dialDirect(ctx, network, addr)
+			addrTarget := tcpip.FullAddress{
+				NIC:  defaultNIC,
+				Port: uint16(port),
+				Addr: tcpip.AddrFromSlice(target.IP),
+			}
+
+			bind := tcpip.FullAddress{
+				NIC:  defaultNIC,
+				Addr: tcpip.AddrFromSlice(dialer.client.clientIp),
+			}
+
+			if network == "tcp" {
+				log.Printf("%s -> PROXY", addr)
+				return gonet.DialTCPWithBind(context.Background(), dialer.client.gvisorStack, bind, addrTarget, header.IPv4ProtocolNumber)
+			} else if network == "udp" {
+				log.Printf("%s -> PROXY", addr)
+				return gonet.DialUDP(dialer.client.gvisorStack, &bind, &addrTarget, header.IPv4ProtocolNumber)
+			} else {
+				log.Printf("Proxy only support TCP/UDP. Connection to %s will use direct connection.", addr)
+				return dialDirect(ctx, network, addr)
+			}
 		}
 	} else {
 		return dialDirect(ctx, network, addr)
