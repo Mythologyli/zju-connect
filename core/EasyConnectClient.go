@@ -207,14 +207,14 @@ func StartClient(host string, port int, username string, password string, twfId 
 		if HttpBind != "" {
 			go ServeHttp(HttpBind, dialer, &dnsResolve)
 		}
-
-		if EnableKeepAlive {
-			go KeepAlive(ZjuDnsServer, client.gvisorStack, client.clientIp)
-		}
 	}
 
 	for _, singleForwarding := range ForwardingList {
 		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
+	}
+
+	if EnableKeepAlive {
+		go KeepAlive(ZjuDnsServer, client)
 	}
 
 	for {
