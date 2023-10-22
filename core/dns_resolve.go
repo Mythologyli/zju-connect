@@ -39,13 +39,6 @@ func (resolve *DnsResolve) ResolveWithSecondaryDns(ctx context.Context, host str
 }
 
 func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Context, net.IP, error) {
-	if config.IsDnsRuleAvailable() {
-		if ip, hasDnsRule := config.GetSingleDnsRule(host); hasDnsRule {
-			ctx = context.WithValue(ctx, "USE_PROXY", true)
-			log.Printf("%s -> %s", host, ip)
-			return ctx, net.ParseIP(ip), nil
-		}
-	}
 	var useProxy = false
 	if config.IsZjuForceProxyRuleAvailable() {
 		if isInZjuForceProxyRule := config.IsInZjuForceProxyRule(host); isInZjuForceProxyRule {
@@ -60,55 +53,62 @@ func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Co
 
 	ctx = context.WithValue(ctx, "USE_PROXY", useProxy)
 
-	if UseZjuDns {
-		if cachedIP, found := GetDnsCache(host); found {
-			log.Printf("%s -> %s", host, cachedIP.String())
-			return ctx, cachedIP, nil
-		} else {
-			resolve.lock.RLock()
-			useTCP := resolve.useTCP
-			resolve.lock.RUnlock()
+	if cachedIP, found := GetDnsCache(host); found {
+		log.Printf("%s -> %s", host, cachedIP.String())
+		return ctx, cachedIP, nil
+	}
 
-			if !useTCP {
-				targets, err := resolve.remoteUDPResolver.LookupIP(context.Background(), "ip4", host)
-				if err != nil {
-					if targets, err = resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-						// all zju dns failed, so we keep do nothing but use secondary dns
-						// host ipv4 and host ipv6 don't set cache
-						log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead.")
-						return resolve.ResolveWithSecondaryDns(ctx, host)
-					} else {
-						resolve.lock.Lock()
-						resolve.useTCP = true
-						if resolve.timer == nil {
-							resolve.timer = time.AfterFunc(10*time.Minute, func() {
-								resolve.lock.Lock()
-								resolve.useTCP = false
-								resolve.timer = nil
-								resolve.lock.Unlock()
-							})
-						}
-						resolve.lock.Unlock()
+	if config.IsDnsRuleAvailable() {
+		if ip, hasDnsRule := config.GetSingleDnsRule(host); hasDnsRule {
+			ctx = context.WithValue(ctx, "USE_PROXY", true)
+			log.Printf("%s -> %s", host, ip)
+			return ctx, net.ParseIP(ip), nil
+		}
+	}
+
+	if UseZjuDns {
+		resolve.lock.RLock()
+		useTCP := resolve.useTCP
+		resolve.lock.RUnlock()
+
+		if !useTCP {
+			targets, err := resolve.remoteUDPResolver.LookupIP(context.Background(), "ip4", host)
+			if err != nil {
+				if targets, err = resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
+					// all zju dns failed, so we keep do nothing but use secondary dns
+					// host ipv4 and host ipv6 don't set cache
+					log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead.")
+					return resolve.ResolveWithSecondaryDns(ctx, host)
+				} else {
+					resolve.lock.Lock()
+					resolve.useTCP = true
+					if resolve.timer == nil {
+						resolve.timer = time.AfterFunc(10*time.Minute, func() {
+							resolve.lock.Lock()
+							resolve.useTCP = false
+							resolve.timer = nil
+							resolve.lock.Unlock()
+						})
 					}
+					resolve.lock.Unlock()
 				}
-				// set dns cache if tcp or udp dns success
-				//TODO: whether we need all dns records? or only 10.0.0.0/8 ?
+			}
+			// set dns cache if tcp or udp dns success
+			//TODO: whether we need all dns records? or only 10.0.0.0/8 ?
+			SetDnsCache(host, targets[0])
+			log.Printf("%s -> %s", host, targets[0].String())
+			return ctx, targets[0], nil
+		} else {
+			// only try tcp and secondary dns
+			if targets, err := resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
+				log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead.")
+				return resolve.ResolveWithSecondaryDns(ctx, host)
+			} else {
 				SetDnsCache(host, targets[0])
 				log.Printf("%s -> %s", host, targets[0].String())
 				return ctx, targets[0], nil
-			} else {
-				// only try tcp and secondary dns
-				if targets, err := resolve.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-					log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead.")
-					return resolve.ResolveWithSecondaryDns(ctx, host)
-				} else {
-					SetDnsCache(host, targets[0])
-					log.Printf("%s -> %s", host, targets[0].String())
-					return ctx, targets[0], nil
-				}
 			}
 		}
-
 	} else {
 		// because of OS cache, don't need extra dns memory cache
 		return resolve.ResolveWithSecondaryDns(ctx, host)
