@@ -1,12 +1,8 @@
 package core
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"log"
 	"net"
 	"runtime"
@@ -152,7 +148,15 @@ func StartClient(host string, port int, username string, password string, twfId 
 		client.gvisorStack = SetupGvisorStack(client.clientIp, client.gvisorEndpoint)
 
 		StartProtocolWithGvisor(client.gvisorEndpoint, client.server, client.token, &[4]byte{client.clientIp[3], client.clientIp[2], client.clientIp[1], client.clientIp[0]}, DebugDump)
+	}
 
+	for _, singleForwarding := range ForwardingList {
+		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
+	}
+
+	dnsResolve := SetupDnsResolve(ZjuDnsServer, client)
+
+	if !TunMode {
 		for _, customDNS := range CustomDNSList {
 			ipAddr := net.ParseIP(customDNS.IP)
 			if ipAddr == nil {
@@ -162,59 +166,22 @@ func StartClient(host string, port int, username string, password string, twfId 
 			log.Printf("Custom DNS %s -> %s\n", customDNS.HostName, customDNS.IP)
 		}
 
-		dnsResolve := DnsResolve{
-			remoteTCPResolver: &net.Resolver{
-				PreferGo: true,
-				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					addrDns := tcpip.FullAddress{
-						NIC:  defaultNIC,
-						Port: uint16(53),
-						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
-					}
-
-					bind := tcpip.FullAddress{
-						NIC:  defaultNIC,
-						Addr: tcpip.AddrFromSlice(client.clientIp),
-					}
-
-					return gonet.DialUDP(client.gvisorStack, &bind, &addrDns, header.IPv4ProtocolNumber)
-				},
-			},
-			remoteUDPResolver: &net.Resolver{
-				PreferGo: true,
-				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-					addrDns := tcpip.FullAddress{
-						NIC:  defaultNIC,
-						Port: uint16(53),
-						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
-					}
-					return gonet.DialTCP(client.gvisorStack, addrDns, header.IPv4ProtocolNumber)
-				},
-			},
-			useTCP: false,
-			timer:  nil,
-		}
-
 		dialer := Dialer{
 			selfIp:      client.clientIp,
 			gvisorStack: client.gvisorStack,
 		}
 
 		if SocksBind != "" {
-			go ServeSocks5(SocksBind, dialer, &dnsResolve)
+			go ServeSocks5(SocksBind, dialer, dnsResolve)
 		}
 
 		if HttpBind != "" {
-			go ServeHttp(HttpBind, dialer, &dnsResolve)
+			go ServeHttp(HttpBind, dialer, dnsResolve)
 		}
 	}
 
-	for _, singleForwarding := range ForwardingList {
-		go client.ServeForwarding(strings.ToLower(singleForwarding.NetworkType), singleForwarding.BindAddress, singleForwarding.RemoteAddress)
-	}
-
 	if EnableKeepAlive {
-		go KeepAlive(ZjuDnsServer, client)
+		go KeepAlive(dnsResolve.remoteUDPResolver)
 	}
 
 	for {

@@ -3,6 +3,9 @@ package core
 import (
 	"github.com/mythologyli/zju-connect/core/config"
 	"golang.org/x/net/context"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"log"
 	"net"
 	"sync"
@@ -109,4 +112,81 @@ func (resolve *DnsResolve) Resolve(ctx context.Context, host string) (context.Co
 		// because of OS cache, don't need extra dns memory cache
 		return resolve.ResolveWithLocal(ctx, host)
 	}
+}
+
+func SetupDnsResolve(zjuDnsServer string, client *EasyConnectClient) *DnsResolve {
+	var dns DnsResolve
+	if TunMode {
+		dns = DnsResolve{
+			remoteUDPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := net.UDPAddr{
+						IP:   net.ParseIP(zjuDnsServer),
+						Port: 53,
+					}
+
+					bind := net.UDPAddr{
+						IP:   net.IP(client.clientIp),
+						Port: 0,
+					}
+
+					return net.DialUDP(network, &bind, &addrDns)
+				},
+			},
+			remoteTCPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := net.TCPAddr{
+						IP:   net.ParseIP(zjuDnsServer),
+						Port: 53,
+					}
+
+					bind := net.TCPAddr{
+						IP:   net.IP(client.clientIp),
+						Port: 0,
+					}
+
+					return net.DialTCP(network, &bind, &addrDns)
+				},
+			},
+			useTCP: false,
+			timer:  nil,
+		}
+	} else {
+		dns = DnsResolve{
+			remoteUDPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Port: uint16(53),
+						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
+					}
+
+					bind := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Addr: tcpip.AddrFromSlice(client.clientIp),
+					}
+
+					return gonet.DialUDP(client.gvisorStack, &bind, &addrDns, header.IPv4ProtocolNumber)
+				},
+			},
+			remoteTCPResolver: &net.Resolver{
+				PreferGo: true,
+				Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+					addrDns := tcpip.FullAddress{
+						NIC:  defaultNIC,
+						Port: uint16(53),
+						Addr: tcpip.AddrFromSlice(net.ParseIP(ZjuDnsServer).To4()),
+					}
+					return gonet.DialTCP(client.gvisorStack, addrDns, header.IPv4ProtocolNumber)
+				},
+			},
+			useTCP: false,
+			timer:  nil,
+		}
+	}
+
+	return &dns
 }
