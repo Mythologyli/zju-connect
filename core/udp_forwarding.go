@@ -23,7 +23,7 @@ type udpForward struct {
 	destPort     int
 	destString   string
 	ipStack      *stack.Stack
-	client       *net.UDPAddr
+	clientIp     []byte
 	listenerConn *net.UDPConn
 
 	gvisorConnections map[string]*gvisorConnection
@@ -62,6 +62,7 @@ func ServeUdpForwarding(bindAddress string, remoteAddress string, client *EasyCo
 func newUdpForward(src, dest string, client *EasyConnectClient) *udpForward {
 	u := new(udpForward)
 	u.ipStack = client.gvisorStack
+	u.clientIp = client.clientIp
 	u.connectCallback = func(addr string) {}
 	u.disconnectCallback = func(addr string) {}
 	u.connectionsMutex = new(sync.RWMutex)
@@ -289,12 +290,17 @@ func (u *udpForward) handleWithTun(data []byte, addr *net.UDPAddr) {
 		var udpConn *net.UDPConn
 		var err error
 
-		addrTarget := net.UDPAddr{
+		laddr := net.UDPAddr{
+			IP:   u.clientIp,
+			Port: 0,
+		}
+
+		raddr := net.UDPAddr{
 			IP:   u.destHost,
 			Port: u.destPort,
 		}
 
-		udpConn, err = net.DialUDP("udp", nil, &addrTarget)
+		udpConn, err = net.DialUDP("udp", &laddr, &raddr)
 
 		if err != nil {
 			log.Println("UDP forward: failed to dial:", err)
