@@ -103,7 +103,7 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	}
 
 	if TunDnsServer != "" {
-		command := exec.Command("netsh", "interface", "ipv4", "add", "dnsserver", "\"ZJU Connect\"", "address="+TunDnsServer, "index=1")
+		command := exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", TunDnsServer)
 		err = command.Run()
 		if err != nil {
 			log.Printf("Run %s failed: %v", command.String(), err)
