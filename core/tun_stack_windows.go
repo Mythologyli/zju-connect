@@ -28,19 +28,13 @@ func (ep *EasyConnectTunEndpoint) Write(buf []byte) error {
 }
 
 func (ep *EasyConnectTunEndpoint) Read(buf []byte) (int, error) {
-	bufs := make([][]byte, 1)
-	for i := range bufs {
-		bufs[i] = make([]byte, 1500)
-	}
-
-	sizes := make([]int, 1)
+	bufs := [][]byte{buf}
+	sizes := []int{1}
 
 	_, err := ep.dev.Read(bufs, sizes, 0)
 	if err != nil {
 		return 0, err
 	}
-
-	copy(buf, bufs[0][:sizes[0]])
 
 	return sizes[0], nil
 }
@@ -103,10 +97,13 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	}
 
 	if TunDnsServer != "" {
-		command := exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", TunDnsServer)
-		err = command.Run()
-		if err != nil {
-			log.Printf("Run %s failed: %v", command.String(), err)
-		}
+		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", TunDnsServer)
+	} else {
+		command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
+	}
+
+	err = command.Run()
+	if err != nil {
+		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 }
