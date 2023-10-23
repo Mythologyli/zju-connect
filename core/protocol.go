@@ -293,7 +293,7 @@ func BlockRXStreamWithTun(server string, token *[48]byte, ipRev *[4]byte, endpoi
 
 		err = endpoint.Write(reply[:n])
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		if debug {
@@ -369,7 +369,7 @@ func BlockTXStreamWithTun(server string, token *[48]byte, ipRev *[4]byte, endpoi
 func StartProtocolWithTun(endpoint *EasyConnectTunEndpoint, server string, token *[48]byte, ipRev *[4]byte, debug bool) {
 	RX := func() {
 		counter := 0
-		for counter < 50 {
+		for counter < 5 {
 			err := BlockRXStreamWithTun(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while receiving, retrying: " + err.Error())
@@ -383,7 +383,7 @@ func StartProtocolWithTun(endpoint *EasyConnectTunEndpoint, server string, token
 
 	TX := func() {
 		counter := 0
-		for counter < 50 {
+		for counter < 5 {
 			err := BlockTXStreamWithTun(server, token, ipRev, endpoint, debug)
 			if err != nil {
 				log.Print("Error occurred while send, retrying: " + err.Error())
