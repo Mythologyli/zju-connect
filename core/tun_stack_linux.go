@@ -48,6 +48,12 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 		log.Printf("Run %s failed: %v", cmd.String(), err)
 	}
 
+	cmd = exec.Command("ip", "link", "set", "dev", ifce.Name(), "mtu", "1400")
+	err = cmd.Run()
+	if err != nil {
+		log.Printf("Run %s failed: %v", cmd.String(), err)
+	}
+
 	cmd = exec.Command("ip", "addr", "add", fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "dev", ifce.Name())
 	err = cmd.Run()
 	if err != nil {

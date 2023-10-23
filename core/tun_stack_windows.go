@@ -90,7 +90,13 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 		log.Printf("Set IP address failed: %v", err)
 	}
 
-	command := exec.Command("route", "add", "0.0.0.0", "mask", "0.0.0.0", ipStr, "metric", "9999")
+	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", "ZJU Connect", "mtu=1400", "store=persistent")
+	err = command.Run()
+	if err != nil {
+		log.Printf("Run %s failed: %v", command.String(), err)
+	}
+
+	command = exec.Command("route", "add", "0.0.0.0", "mask", "0.0.0.0", ipStr, "metric", "9999")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)

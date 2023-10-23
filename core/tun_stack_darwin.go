@@ -47,4 +47,10 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 	if err != nil {
 		log.Printf("Run %s failed: %v", cmd.String(), err)
 	}
+
+	cmd = exec.Command("ifconfig", ifce.Name(), "mtu", "1400", "up")
+	err = cmd.Run()
+	if err != nil {
+		log.Printf("Run %s failed: %v", cmd.String(), err)
+	}
 }
