@@ -16,7 +16,8 @@ type Endpoint struct {
 	ifce *water.Interface
 	ip   net.IP
 
-	dialer *net.Dialer
+	tcpDialer *net.Dialer
+	udpDialer *net.Dialer
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
@@ -70,8 +71,22 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	}
 
 	// We need this dialer to bind to device otherwise packets will not be sent via TUN
-	s.endpoint.dialer = &net.Dialer{
+	s.endpoint.tcpDialer = &net.Dialer{
 		LocalAddr: &net.TCPAddr{
+			IP:   s.endpoint.ip,
+			Port: 0,
+		},
+		Control: func(network, address string, c syscall.RawConn) error { // By ChenXuzheng
+			return c.Control(func(fd uintptr) {
+				if err = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_RECVIF, ifceIndex); err != nil {
+					log.Println("Warning: failed to bind to interface", s.endpoint.ifce.Name())
+				}
+			})
+		},
+	}
+
+	s.endpoint.udpDialer = &net.Dialer{
+		LocalAddr: &net.UDPAddr{
 			IP:   s.endpoint.ip,
 			Port: 0,
 		},

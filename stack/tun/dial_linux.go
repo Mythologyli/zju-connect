@@ -5,9 +5,9 @@ import (
 )
 
 func (s *Stack) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
-	return s.endpoint.dialer.Dial("tcp4", addr.String())
+	return s.endpoint.tcpDialer.Dial("tcp4", addr.String())
 }
 
 func (s *Stack) DialUDP(addr *net.UDPAddr) (net.Conn, error) {
-	return s.endpoint.dialer.Dial("udp4", addr.String())
+	return s.endpoint.udpDialer.Dial("udp4", addr.String())
 }
