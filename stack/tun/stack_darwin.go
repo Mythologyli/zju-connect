@@ -90,7 +90,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		log.Printf("Run %s failed: %v", cmd.String(), err)
 	}
 
-	if err = s.endpoint.AddRoute("10.0.0.0/8"); err != nil {
+	if err = s.AddRoute("10.0.0.0/8"); err != nil {
 		log.Printf("Run AddRoute 10.0.0.0/8 failed: %v", err)
 	}
 
