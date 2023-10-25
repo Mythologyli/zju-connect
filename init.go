@@ -205,14 +205,14 @@ func init() {
 
 	if showVersion {
 		fmt.Printf("ZJU Connect v%s\n", zjuConnectVersion)
-		return
+		os.Exit(0)
 	}
 
 	if configFile != "" {
 		err := parseTOMLConfig(configFile, &conf)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 	} else {
 		if tcpPortForwarding != "" {
@@ -221,7 +221,7 @@ func init() {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
 					fmt.Println("ZJU Connect: wrong tcp port forwarding format")
-					return
+					os.Exit(1)
 				}
 
 				conf.PortForwardingList = append(conf.PortForwardingList, SinglePortForwarding{
@@ -238,7 +238,7 @@ func init() {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
 					fmt.Println("ZJU Connect: wrong udp port forwarding format")
-					return
+					os.Exit(1)
 				}
 
 				conf.PortForwardingList = append(conf.PortForwardingList, SinglePortForwarding{
@@ -255,7 +255,7 @@ func init() {
 				dnsStringSplit := strings.Split(dnsString, ":")
 				if len(dnsStringSplit) != 2 {
 					fmt.Println("ZJU Connect: wrong custom dns format")
-					return
+					os.Exit(1)
 				}
 
 				conf.CustomDNSList = append(conf.CustomDNSList, SingleCustomDNS{
@@ -273,6 +273,6 @@ func init() {
 		fmt.Println("\nFull usage:")
 		flag.PrintDefaults()
 
-		return
+		os.Exit(1)
 	}
 }
