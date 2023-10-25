@@ -3,10 +3,8 @@ package tun
 import (
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/ipv4"
+	"syscall"
 )
-
-const tcpProtocolNumber = 6
-const udpProtocolNumber = 17
 
 type Stack struct {
 	endpoint *Endpoint
@@ -36,6 +34,7 @@ func (s *Stack) Run() {
 					log.Printf("Error occurred while receiving, retrying: %v", err)
 
 					// Do handshake again and create a new recvConn
+					recvConn.Close()
 					recvConn, err = s.endpoint.easyConnectClient.RecvConn()
 					if err != nil {
 						panic(err)
@@ -68,7 +67,7 @@ func (s *Stack) Run() {
 		}
 
 		// Filter out non-TCP/UDP packets otherwise error may occur
-		if header.Protocol != tcpProtocolNumber && header.Protocol != udpProtocolNumber {
+		if header.Protocol != syscall.IPPROTO_TCP && header.Protocol != syscall.IPPROTO_UDP {
 			continue
 		}
 
@@ -77,6 +76,7 @@ func (s *Stack) Run() {
 				log.Printf("Error occurred while sending, retrying: %v", err)
 
 				// Do handshake again and create a new sendConn
+				sendConn.Close()
 				sendConn, err = s.endpoint.easyConnectClient.SendConn()
 				if err != nil {
 					panic(err)

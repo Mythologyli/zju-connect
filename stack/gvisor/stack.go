@@ -85,6 +85,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 					log.Printf("Error occurred while sending, retrying: %v", err)
 
 					// Do handshake again and create a new sendConn
+					ep.sendConn.Close()
 					ep.sendConn, err = ep.easyConnectClient.SendConn()
 					if err != nil {
 						panic(err)
@@ -171,6 +172,7 @@ func (s *Stack) Run() {
 				log.Printf("Error occurred while receiving, retrying: %v", err)
 
 				// Do handshake again and create a new recvConn
+				s.endpoint.recvConn.Close()
 				s.endpoint.recvConn, err = s.endpoint.easyConnectClient.RecvConn()
 				if err != nil {
 					panic(err)
