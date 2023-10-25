@@ -42,10 +42,15 @@ func SetupTunStack(ip []byte, endpoint *EasyConnectTunEndpoint) {
 
 	endpoint.ifce = ifce
 
-	cmd := exec.Command("ifconfig", ifce.Name(), fmt.Sprintf("%d.%d.%d.%d/8", ip[0], ip[1], ip[2], ip[3]), "up")
+	ipStr := fmt.Sprintf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
+	cmd := exec.Command("ifconfig", ifce.Name(), ipStr, "255.0.0.0", ipStr)
 	err = cmd.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", cmd.String(), err)
+	}
+
+	if err = endpoint.AddRoute("10.0.0.0/8"); err != nil {
+		log.Printf("Run AddRoute 10.0.0.0/8 failed: %v", err)
 	}
 
 	cmd = exec.Command("ifconfig", ifce.Name(), "mtu", "1400", "up")
