@@ -1,59 +1,34 @@
 package tun
 
 import (
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/ipv4"
+	"io"
 	"syscall"
 )
 
 type Stack struct {
 	endpoint *Endpoint
+	rvpnConn io.ReadWriteCloser
 }
 
 func (s *Stack) Run() {
-	sendConn, err := s.endpoint.easyConnectClient.SendConn()
-	if err != nil {
-		panic(err)
-	}
-
-	recvConn, err := s.endpoint.easyConnectClient.RecvConn()
-	if err != nil {
-		panic(err)
-	}
-
-	sendErrCount := 0
-	recvErrCount := 0
+	s.rvpnConn, _ = client.NewRvpnConn(s.endpoint.easyConnectClient)
 
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
 			buf := make([]byte, 1500)
-			n, err := recvConn.Read(buf)
+			n, _ := s.rvpnConn.Read(buf)
+
+			log.DebugPrintf("Recv: read %d bytes", n)
+			log.DebugDumpHex(buf[:n])
+
+			err := s.endpoint.Write(buf[:n])
 			if err != nil {
-				if recvErrCount < 5 {
-					log.Printf("Error occurred while receiving, retrying: %v", err)
-
-					// Do handshake again and create a new recvConn
-					recvConn.Close()
-					recvConn, err = s.endpoint.easyConnectClient.RecvConn()
-					if err != nil {
-						// TODO graceful shutdown
-						panic(err)
-					}
-				} else {
-					panic("recv retry limit exceeded.")
-				}
-
-				recvErrCount++
-			} else {
-				log.DebugPrintf("Recv: read %d bytes", n)
-				log.DebugDumpHex(buf[:n])
-
-				err := s.endpoint.Write(buf[:n])
-				if err != nil {
-					log.Printf("Error occurred while writing to TUN stack: %v", err)
-					panic(err)
-				}
+				log.Printf("Error occurred while writing to TUN stack: %v", err)
+				panic(err)
 			}
 		}
 	}()
@@ -82,23 +57,9 @@ func (s *Stack) Run() {
 			continue
 		}
 
-		if _, err = sendConn.Write(buf[:n]); err != nil {
-			if sendErrCount < 5 {
-				log.Printf("Error occurred while sending, retrying: %v", err)
+		s.rvpnConn.Write(buf[:n])
 
-				// Do handshake again and create a new sendConn
-				sendConn.Close()
-				sendConn, err = s.endpoint.easyConnectClient.SendConn()
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				panic("send retry limit exceeded.")
-			}
-			sendErrCount++
-		} else {
-			log.DebugPrintf("Send: wrote %d bytes", n)
-			log.DebugDumpHex(buf[:n])
-		}
+		log.DebugPrintf("Send: wrote %d bytes", n)
+		log.DebugDumpHex(buf[:n])
 	}
 }

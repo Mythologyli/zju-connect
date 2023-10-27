@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/refraction-networking/utls"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -12,6 +11,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"io"
 )
 
 type Stack struct {
@@ -26,10 +26,7 @@ const MTU uint32 = 1400
 type Endpoint struct {
 	easyConnectClient *client.EasyConnectClient
 
-	sendConn     *tls.UConn
-	recvConn     *tls.UConn
-	sendErrCount int
-	recvErrCount int
+	rvpnConn io.ReadWriteCloser
 
 	dispatcher stack.NetworkDispatcher
 }
@@ -78,27 +75,11 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 			buf = append(buf, t...)
 		}
 
-		if ep.sendConn != nil {
-			n, err := ep.sendConn.Write(buf)
-			if err != nil {
-				if ep.sendErrCount < 5 {
-					log.Printf("Error occurred while sending, retrying: %v", err)
+		if ep.rvpnConn != nil {
+			n, _ := ep.rvpnConn.Write(buf)
 
-					// Do handshake again and create a new sendConn
-					ep.sendConn.Close()
-					ep.sendConn, err = ep.easyConnectClient.SendConn()
-					if err != nil {
-						panic(err)
-					}
-				} else {
-					panic("send retry limit exceeded.")
-				}
-
-				ep.sendErrCount++
-			} else {
-				log.DebugPrintf("Send: wrote %d bytes", n)
-				log.DebugDumpHex(buf[:n])
-			}
+			log.DebugPrintf("Send: wrote %d bytes", n)
+			log.DebugDumpHex(buf[:n])
 		}
 	}
 
@@ -152,45 +133,21 @@ func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
 }
 
 func (s *Stack) Run() {
-	var err error
-	s.endpoint.sendConn, err = s.endpoint.easyConnectClient.SendConn()
-	if err != nil {
-		panic(err)
-	}
 
-	s.endpoint.recvConn, err = s.endpoint.easyConnectClient.RecvConn()
-	if err != nil {
-		panic(err)
-	}
+	s.endpoint.rvpnConn, _ = client.NewRvpnConn(s.endpoint.easyConnectClient)
 
 	// Read from VPN server and send to gVisor stack
 	for {
 		buf := make([]byte, 1500)
-		n, err := s.endpoint.recvConn.Read(buf)
-		if err != nil {
-			if s.endpoint.recvErrCount < 5 {
-				log.Printf("Error occurred while receiving, retrying: %v", err)
+		n, _ := s.endpoint.rvpnConn.Read(buf)
 
-				// Do handshake again and create a new recvConn
-				s.endpoint.recvConn.Close()
-				s.endpoint.recvConn, err = s.endpoint.easyConnectClient.RecvConn()
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				panic("recv retry limit exceeded.")
-			}
+		log.DebugPrintf("Recv: read %d bytes", n)
+		log.DebugDumpHex(buf[:n])
 
-			s.endpoint.recvErrCount++
-		} else {
-			log.DebugPrintf("Recv: read %d bytes", n)
-			log.DebugDumpHex(buf[:n])
-
-			packetBuffer := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: buffer.MakeWithData(buf),
-			})
-			s.endpoint.dispatcher.DeliverNetworkPacket(header.IPv4ProtocolNumber, packetBuffer)
-			packetBuffer.DecRef()
-		}
+		packetBuffer := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buffer.MakeWithData(buf),
+		})
+		s.endpoint.dispatcher.DeliverNetworkPacket(header.IPv4ProtocolNumber, packetBuffer)
+		packetBuffer.DecRef()
 	}
 }
