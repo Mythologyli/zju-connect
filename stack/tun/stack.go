@@ -37,6 +37,7 @@ func (s *Stack) Run() {
 					recvConn.Close()
 					recvConn, err = s.endpoint.easyConnectClient.RecvConn()
 					if err != nil {
+						// TODO graceful shutdown
 						panic(err)
 					}
 				} else {
@@ -50,7 +51,8 @@ func (s *Stack) Run() {
 
 				err := s.endpoint.Write(buf[:n])
 				if err != nil {
-					return
+					log.Printf("Error occurred while writing to TUN stack: %v", err)
+					panic(err)
 				}
 			}
 		}
@@ -60,6 +62,15 @@ func (s *Stack) Run() {
 	for {
 		buf := make([]byte, 1500)
 		n, err := s.endpoint.Read(buf)
+		if err != nil {
+			log.Printf("Error occurred while reading from TUN stack: %v", err)
+			// TODO graceful shutdown
+			panic(err)
+		}
+
+		if n < 20 {
+			continue
+		}
 
 		header, err := ipv4.ParseHeader(buf[:n])
 		if err != nil {
@@ -71,7 +82,7 @@ func (s *Stack) Run() {
 			continue
 		}
 
-		if err != nil {
+		if _, err = sendConn.Write(buf[:n]); err != nil {
 			if sendErrCount < 5 {
 				log.Printf("Error occurred while sending, retrying: %v", err)
 
@@ -84,16 +95,10 @@ func (s *Stack) Run() {
 			} else {
 				panic("send retry limit exceeded.")
 			}
-
 			sendErrCount++
 		} else {
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
-
-			_, err := sendConn.Write(buf[:n])
-			if err != nil {
-				return
-			}
 		}
 	}
 }

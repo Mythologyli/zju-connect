@@ -75,7 +75,7 @@ func main() {
 	if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.TUNDNSServer)
 		if err != nil {
-			log.Fatalf("gVisor stack setup error: %s", err)
+			log.Fatalf("Tun stack setup error: %s", err)
 		}
 
 		if conf.AddRoute && ipResource != nil {
