@@ -1,7 +1,7 @@
 package tun
 
 import (
-	tun "github.com/metacubex/sing-tun"
+	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"net"
@@ -59,7 +59,6 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
-	//zjuPrefix, _ := netip.ParsePrefix("10.0.0.0/8")
 	tunName := "zjuconnect"
 	tunOptions := tun.Options{
 		Name: tunName,
@@ -67,13 +66,10 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},
-		AutoRoute: true,
-		Inet4RouteAddress: []netip.Prefix{
-			//zjuPrefix,
-		},
-		TableIndex: 2022,
+		AutoRoute:  true,
+		TableIndex: 1897,
 	}
-
+	tunName = tun.CalculateInterfaceName(tunName)
 	ifce, err := tun.New(tunOptions)
 	if err != nil {
 		return nil, err
