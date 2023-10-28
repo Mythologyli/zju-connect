@@ -60,6 +60,8 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
 	tunName := "zjuconnect"
+	tunName = tun.CalculateInterfaceName(tunName)
+
 	tunOptions := tun.Options{
 		Name: tunName,
 		MTU:  MTU,
@@ -69,7 +71,6 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		AutoRoute:  true,
 		TableIndex: 1897,
 	}
-	tunName = tun.CalculateInterfaceName(tunName)
 	ifce, err := tun.New(tunOptions)
 	if err != nil {
 		return nil, err
