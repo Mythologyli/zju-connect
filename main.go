@@ -93,8 +93,6 @@ func main() {
 		}
 	}
 
-	go vpnStack.Run()
-
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
 		conf.ZJUDNSServer,
@@ -113,11 +111,15 @@ func main() {
 		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
 		log.Printf("Add custom DNS: %s -> %s\n", customDns.HostName, customDns.IP)
 	}
+	localResolver := service.NewDnsServer(vpnResolver)
+	vpnStack.SetupResolve(localResolver)
+
+	go vpnStack.Run()
 
 	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResource, conf.ProxyAll)
 
 	if conf.DNSServerBind != "" {
-		go service.ServeDNS(conf.DNSServerBind, vpnResolver)
+		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
 
 	if conf.SocksBind != "" {

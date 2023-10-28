@@ -3,6 +3,7 @@ package gvisor
 import (
 	"errors"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -16,6 +17,7 @@ import (
 
 type Stack struct {
 	gvisorStack *stack.Stack
+	resolve     zcdns.LocalServer
 
 	endpoint *Endpoint
 }
@@ -130,6 +132,10 @@ func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
 	s.gvisorStack.AddRoute(tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: NICID})
 
 	return s, nil
+}
+
+func (s *Stack) SetupResolve(r zcdns.LocalServer) {
+	s.resolve = r
 }
 
 func (s *Stack) Run() {

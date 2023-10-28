@@ -110,7 +110,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	}
 
 	// Set MTU to 1400 otherwise error may occur when packets are large
-	cmd = exec.Command("ifconfig", ifce.Name(), "mtu", "1400", "up")
+	cmd = exec.Command("ifconfig", ifce.Name(), "mtu", strconv.Itoa(int(MTU)), "up")
 	err = cmd.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", cmd.String(), err)

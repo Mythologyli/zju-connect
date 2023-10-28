@@ -12,14 +12,29 @@ type DNSServer struct {
 	resolver *resolve.Resolver
 }
 
-func (d DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
+func (d DNSServer) serveDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
 
-	switch r.Opcode {
+	_ = d.handleSingleDNSResolve(context.Background(), r, m)
+
+	_ = w.WriteMsg(m)
+}
+
+func (d DNSServer) HandleDnsMsg(ctx context.Context, requestMsg *dns.Msg) (*dns.Msg, error) {
+	resMsg := new(dns.Msg)
+	resMsg.SetReply(requestMsg)
+	resMsg.Compress = false
+
+	err := d.handleSingleDNSResolve(ctx, requestMsg, resMsg)
+	return resMsg, err
+}
+
+func (d DNSServer) handleSingleDNSResolve(ctx context.Context, requestMsg *dns.Msg, resMsg *dns.Msg) error {
+	switch requestMsg.Opcode {
 	case dns.OpcodeQuery:
-		for _, q := range r.Question {
+		for _, q := range requestMsg.Question {
 			name := q.Name
 			if len(name) > 1 && name[len(name)-1] == '.' {
 				name = name[:len(name)-1]
@@ -27,33 +42,35 @@ func (d DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 			switch q.Qtype {
 			case dns.TypeA:
-				if _, ip, err := d.resolver.Resolve(context.Background(), name); err == nil {
+				if _, ip, err := d.resolver.Resolve(ctx, name); err == nil {
 					if ip.To4() != nil {
 						rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, ip))
 						if err == nil {
-							m.Answer = append(m.Answer, rr)
+							resMsg.Answer = append(resMsg.Answer, rr)
 						}
 					}
 				}
 			case dns.TypeAAAA:
-				if _, ip, err := d.resolver.Resolve(context.Background(), name); err == nil {
+				if _, ip, err := d.resolver.Resolve(ctx, name); err == nil {
 					if ip.To4() == nil {
 						rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, ip))
 						if err == nil {
-							m.Answer = append(m.Answer, rr)
+							resMsg.Answer = append(resMsg.Answer, rr)
 						}
 					}
 				}
 			}
 		}
 	}
-
-	_ = w.WriteMsg(m)
+	return nil
 }
 
-func ServeDNS(bindAddr string, resolver *resolve.Resolver) {
-	dnsServer := &DNSServer{resolver: resolver}
-	dns.HandleFunc(".", dnsServer.handleDNSRequest)
+func NewDnsServer(resolver *resolve.Resolver) DNSServer {
+	return DNSServer{resolver: resolver}
+}
+
+func ServeDNS(bindAddr string, dnsServer DNSServer) {
+	dns.HandleFunc(".", dnsServer.serveDNSRequest)
 
 	server := &dns.Server{Addr: bindAddr, Net: "udp"}
 	log.Printf("Starting DNS server at %s", server.Addr)

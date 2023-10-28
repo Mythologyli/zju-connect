@@ -73,7 +73,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 
-	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, 1400)
+	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, MTU)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	}
 
 	// Set MTU to 1400 otherwise error may occur when packets are large
-	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, "mtu=1400", "store=persistent")
+	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, fmt.Sprintf("mtu=%d", MTU), "store=persistent")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)
