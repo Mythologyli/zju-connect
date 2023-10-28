@@ -111,7 +111,7 @@ func main() {
 		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
 		log.Printf("Add custom DNS: %s -> %s\n", customDns.HostName, customDns.IP)
 	}
-	localResolver := service.NewDnsServer(vpnResolver)
+	localResolver := service.NewDnsServer(vpnResolver, []string{conf.ZJUDNSServer, conf.SecondaryDNSServer})
 	vpnStack.SetupResolve(localResolver)
 
 	go vpnStack.Run()

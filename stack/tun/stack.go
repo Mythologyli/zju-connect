@@ -58,6 +58,7 @@ func (s *Stack) Run() {
 			continue
 		}
 
+		// whether this should be a blocking operation?
 		packet := buf[:n]
 		switch ipVersion := packet[0] >> 4; ipVersion {
 		case zctcpip.IPv4Version:
@@ -86,7 +87,9 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 	}
 }
 
-func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, _ zctcpip.TCPPacket) error {
+func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPPacket) error {
+	log.DebugPrintf("receive tcp %s:%d -> %s:%d", packet.SourceIP(), tcpPacket.SourcePort(), packet.DestinationIP(), tcpPacket.DestinationPort())
+
 	if !packet.DestinationIP().IsGlobalUnicast() {
 		return s.endpoint.Write(packet)
 	}
@@ -98,19 +101,18 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, _ zctcpip.TCPPacket) e
 }
 
 func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPPacket) error {
+	log.DebugPrintf("receive udp %s:%d -> %s:%d", packet.SourceIP(), udpPacket.SourcePort(), packet.DestinationIP(), udpPacket.DestinationPort())
+
 	if !packet.DestinationIP().IsGlobalUnicast() {
 		return s.endpoint.Write(packet)
 	}
-	log.Printf("receive  %s:%d -> %s:%d udp", packet.SourceIP(), udpPacket.SourcePort(), packet.DestinationIP(), udpPacket.DestinationPort())
 
 	if s.shouldHijackUDPDns(packet, udpPacket) {
-		log.Printf("hijack %s:%d -> %s:%d dns query", packet.SourceIP(), udpPacket.SourcePort(), packet.DestinationIP(), udpPacket.DestinationPort())
-		msg := dns.Msg{}
-		if err := msg.Unpack(udpPacket.Payload()); err != nil {
-			return err
-		}
-		resMsg, err := s.resolve.HandleDnsMsg(context.Background(), &msg)
-		fmt.Println(resMsg.String(), err)
+		newPacket := make(zctcpip.IPv4Packet, len(packet))
+		copy(newPacket, packet)
+		newUdpPacket := zctcpip.UDPPacket(newPacket.Payload())
+		// need to be non-blocking
+		go s.doHijackUDPDns(newPacket, newUdpPacket)
 		return nil
 	}
 
@@ -122,7 +124,7 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 }
 
 func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.ICMPPacket) error {
-	log.Printf("icmp %s -> %s", packet.SourceIP(), packet.DestinationIP())
+	log.DebugPrintf("receive icmp %s -> %s", packet.SourceIP(), packet.DestinationIP())
 	if icmpHeader.Type() != zctcpip.ICMPTypePingRequest || icmpHeader.Code() != 0 {
 		return nil
 	}
@@ -142,12 +144,43 @@ func (s *Stack) shouldHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpi
 	if udpHeader.DestinationPort() != 53 {
 		return false
 	}
-	if ipHeader.SourceIP().Equal(s.endpoint.ip) {
-		return false
+	return s.resolve.CheckDnsHijack(ipHeader.DestinationIP())
+}
+
+func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UDPPacket) {
+	log.Printf("hijack dns %s:%d -> %s:%d", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort())
+	msg := dns.Msg{}
+	if err := msg.Unpack(udpHeader.Payload()); err != nil {
+		log.Printf("unpack dns msg error: %v", err)
+		return
 	}
-	if !ipHeader.DestinationIP().IsGlobalUnicast() {
-		return false
+	resMsg, err := s.resolve.HandleDnsMsg(context.Background(), &msg)
+	if err != nil {
+		log.Printf("hijack dns error: %v", err)
+		return
 	}
 
-	return true
+	resByte, err := resMsg.Pack()
+	if err != nil {
+		log.Printf("pack dns msg error: %v", err)
+		return
+	}
+
+	totalLen := int(ipHeader.HeaderLen()) + zctcpip.UDPHeaderSize + len(resByte)
+
+	newPacket := make(zctcpip.IPv4Packet, totalLen)
+	copy(newPacket, ipHeader[:ipHeader.HeaderLen()])
+	newPacket.SetTotalLength(uint16(totalLen))
+	newPacket.SetSourceIP(ipHeader.DestinationIP())
+	newPacket.SetDestinationIP(ipHeader.SourceIP())
+
+	newUDPHeader := zctcpip.UDPPacket(newPacket.Payload())
+	newUDPHeader.SetSourcePort(udpHeader.DestinationPort())
+	newUDPHeader.SetDestinationPort(udpHeader.SourcePort())
+	newUDPHeader.SetLength(zctcpip.UDPHeaderSize + uint16(len(resByte)))
+	copy(newUDPHeader.Payload(), resByte)
+
+	newUDPHeader.ResetChecksum(newPacket.PseudoSum())
+	newPacket.ResetChecksum()
+	_ = s.endpoint.Write(newPacket)
 }

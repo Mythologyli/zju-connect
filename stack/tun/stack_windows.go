@@ -73,7 +73,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 
-	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, MTU)
+	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, int(MTU))
 	if err != nil {
 		return nil, err
 	}

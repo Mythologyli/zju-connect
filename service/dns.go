@@ -6,10 +6,12 @@ import (
 	"github.com/miekg/dns"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
+	"net"
 )
 
 type DNSServer struct {
 	resolver *resolve.Resolver
+	localDNS []net.IP
 }
 
 func (d DNSServer) serveDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
@@ -29,6 +31,15 @@ func (d DNSServer) HandleDnsMsg(ctx context.Context, requestMsg *dns.Msg) (*dns.
 
 	err := d.handleSingleDNSResolve(ctx, requestMsg, resMsg)
 	return resMsg, err
+}
+
+func (d DNSServer) CheckDnsHijack(dstIP net.IP) bool {
+	for _, ip := range d.localDNS {
+		if ip.Equal(dstIP) {
+			return false
+		}
+	}
+	return true
 }
 
 func (d DNSServer) handleSingleDNSResolve(ctx context.Context, requestMsg *dns.Msg, resMsg *dns.Msg) error {
@@ -65,8 +76,14 @@ func (d DNSServer) handleSingleDNSResolve(ctx context.Context, requestMsg *dns.M
 	return nil
 }
 
-func NewDnsServer(resolver *resolve.Resolver) DNSServer {
-	return DNSServer{resolver: resolver}
+func NewDnsServer(resolver *resolve.Resolver, dnsServers []string) DNSServer {
+	netIPs := make([]net.IP, len(dnsServers))
+	for _, dnsServer := range dnsServers {
+		if net.ParseIP(dnsServer) != nil {
+			netIPs = append(netIPs, net.ParseIP(dnsServer))
+		}
+	}
+	return DNSServer{resolver: resolver, localDNS: netIPs}
 }
 
 func ServeDNS(bindAddr string, dnsServer DNSServer) {
