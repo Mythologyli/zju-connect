@@ -3,21 +3,27 @@ package client
 import (
 	"github.com/mythologyli/zju-connect/log"
 	"io"
+	"sync"
 )
 
 type RvpnConn struct {
 	easyConnectClient *EasyConnectClient
 
 	sendConn     io.WriteCloser
+	sendLock     sync.Mutex
 	sendErrCount int
 
 	recvConn     io.ReadCloser
+	recvLock     sync.Mutex
 	recvErrCount int
 }
 
 // always success or panic
 func (r *RvpnConn) Read(p []byte) (n int, err error) {
+	r.recvLock.Lock()
+	defer r.recvLock.Unlock()
 	for n, err = r.recvConn.Read(p); err != nil && r.recvErrCount < 5; {
+
 		log.Printf("Error occurred while receiving, retrying: %v", err)
 
 		// Do handshake again and create a new recvConn
@@ -37,6 +43,8 @@ func (r *RvpnConn) Read(p []byte) (n int, err error) {
 
 // always success or panic
 func (r *RvpnConn) Write(p []byte) (n int, err error) {
+	r.sendLock.Lock()
+	defer r.sendLock.Unlock()
 	for n, err = r.sendConn.Write(p); err != nil && r.sendErrCount < 5; {
 		log.Printf("Error occurred while sending, retrying: %v", err)
 

@@ -7,25 +7,32 @@ import (
 	"net"
 	"os/exec"
 	"strconv"
+	"sync"
 	"syscall"
 )
 
 type Endpoint struct {
 	easyConnectClient *client.EasyConnectClient
 
-	ifce *water.Interface
-	ip   net.IP
+	ifce      *water.Interface
+	readLock  sync.Mutex
+	writeLock sync.Mutex
+	ip        net.IP
 
 	tcpDialer *net.Dialer
 	udpDialer *net.Dialer
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
+	ep.writeLock.Lock()
+	defer ep.writeLock.Unlock()
 	_, err := ep.ifce.Write(buf)
 	return err
 }
 
 func (ep *Endpoint) Read(buf []byte) (int, error) {
+	ep.readLock.Lock()
+	defer ep.readLock.Unlock()
 	return ep.ifce.Read(buf)
 }
 

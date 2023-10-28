@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os/exec"
+	"sync"
 )
 
 const guid = "{4F5CDE94-D2A3-4AA5-A4A3-0FE6CB909E83}"
@@ -18,11 +19,15 @@ const interfaceName = "ZJU Connect"
 type Endpoint struct {
 	easyConnectClient *client.EasyConnectClient
 
-	dev tun.Device
-	ip  net.IP
+	dev       tun.Device
+	readLock  sync.Mutex
+	writeLock sync.Mutex
+	ip        net.IP
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
+	ep.writeLock.Lock()
+	defer ep.writeLock.Unlock()
 	bufs := [][]byte{buf}
 
 	_, err := ep.dev.Write(bufs, 0)
@@ -34,6 +39,8 @@ func (ep *Endpoint) Write(buf []byte) error {
 }
 
 func (ep *Endpoint) Read(buf []byte) (int, error) {
+	ep.readLock.Lock()
+	defer ep.readLock.Unlock()
 	bufs := [][]byte{buf}
 	sizes := []int{1}
 
