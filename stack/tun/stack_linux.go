@@ -1,12 +1,12 @@
 package tun
 
 import (
+	tun "github.com/metacubex/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/songgao/water"
 	"net"
+	"net/netip"
 	"os/exec"
-	"strconv"
 	"sync"
 	"syscall"
 )
@@ -14,7 +14,8 @@ import (
 type Endpoint struct {
 	easyConnectClient *client.EasyConnectClient
 
-	ifce      *water.Interface
+	ifce      tun.Tun
+	ifceName  string
 	readLock  sync.Mutex
 	writeLock sync.Mutex
 	ip        net.IP
@@ -37,7 +38,7 @@ func (ep *Endpoint) Read(buf []byte) (int, error) {
 }
 
 func (s *Stack) AddRoute(target string) error {
-	command := exec.Command("ip", "route", "add", target, "dev", s.endpoint.ifce.Name())
+	command := exec.Command("ip", "route", "add", target, "dev", s.endpoint.ifceName)
 	err := command.Run()
 	if err != nil {
 		return err
@@ -47,27 +48,39 @@ func (s *Stack) AddRoute(target string) error {
 }
 
 func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
+	var err error
 	s := &Stack{}
-
-	ifce, err := water.New(water.Config{
-		DeviceType: water.TUN,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Interface Name: %s\n", ifce.Name())
-
 	s.endpoint = &Endpoint{
 		easyConnectClient: easyConnectClient,
 	}
-
-	s.endpoint.ifce = ifce
 
 	s.endpoint.ip, err = easyConnectClient.IP()
 	if err != nil {
 		return nil, err
 	}
+	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
+	//zjuPrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+	tunName := "zjuconnect"
+	tunOptions := tun.Options{
+		Name: tunName,
+		MTU:  MTU,
+		Inet4Address: []netip.Prefix{
+			ipPrefix,
+		},
+		AutoRoute: true,
+		Inet4RouteAddress: []netip.Prefix{
+			//zjuPrefix,
+		},
+		TableIndex: 2022,
+	}
+
+	ifce, err := tun.New(tunOptions)
+	if err != nil {
+		return nil, err
+	}
+	s.endpoint.ifce = ifce
+	s.endpoint.ifceName = tunName
+	log.Printf("Interface Name: %s\n", tunName)
 
 	// We need this dialer to bind to device otherwise packets will not be sent via TUN
 	s.endpoint.tcpDialer = &net.Dialer{
@@ -77,8 +90,8 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		},
 		Control: func(network, address string, c syscall.RawConn) error {
 			return c.Control(func(fd uintptr) {
-				if err := syscall.BindToDevice(int(fd), s.endpoint.ifce.Name()); err != nil {
-					log.Println("Warning: failed to bind to interface", s.endpoint.ifce.Name())
+				if err := syscall.BindToDevice(int(fd), s.endpoint.ifceName); err != nil {
+					log.Println("Warning: failed to bind to interface", s.endpoint.ifceName)
 				}
 			})
 		},
@@ -91,30 +104,11 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		},
 		Control: func(network, address string, c syscall.RawConn) error {
 			return c.Control(func(fd uintptr) {
-				if err := syscall.BindToDevice(int(fd), s.endpoint.ifce.Name()); err != nil {
-					log.Println("Warning: failed to bind to interface", s.endpoint.ifce.Name())
+				if err := syscall.BindToDevice(int(fd), s.endpoint.ifceName); err != nil {
+					log.Println("Warning: failed to bind to interface", s.endpoint.ifceName)
 				}
 			})
 		},
-	}
-
-	cmd := exec.Command("ip", "link", "set", ifce.Name(), "up")
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Run %s failed: %v", cmd.String(), err)
-	}
-
-	// Set MTU to 1400 otherwise error may occur when packets are large
-	cmd = exec.Command("ip", "link", "set", "dev", ifce.Name(), "mtu", strconv.Itoa(int(MTU)))
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Run %s failed: %v", cmd.String(), err)
-	}
-
-	cmd = exec.Command("ip", "addr", "add", s.endpoint.ip.String()+"/8", "dev", ifce.Name())
-	err = cmd.Run()
-	if err != nil {
-		log.Printf("Run %s failed: %v", cmd.String(), err)
 	}
 
 	return s, nil
