@@ -3,8 +3,7 @@ package tun
 import (
 	"context"
 	"fmt"
-	"io"
-
+	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
@@ -30,11 +29,11 @@ func (s *Stack) Run() {
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
-			buf := make([]byte, MTU)
+			buf := make([]byte, MTU+tun.PacketOffset)
 			n, _ := s.rvpnConn.Read(buf)
 
 			log.DebugPrintf("Recv: read %d bytes", n)
-			log.DebugDumpHex(buf[:n])
+			//log.DebugDumpHex(buf[:n])
 
 			err := s.endpoint.Write(buf[:n])
 			if err != nil {
@@ -46,7 +45,7 @@ func (s *Stack) Run() {
 
 	// Read from TUN stack and send to VPN server
 	for {
-		buf := make([]byte, MTU)
+		buf := make([]byte, MTU+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
 			log.Printf("Error occurred while reading from TUN stack: %v", err)
@@ -59,7 +58,7 @@ func (s *Stack) Run() {
 		}
 
 		// whether this should be a blocking operation?
-		packet := buf[:n]
+		packet := buf[tun.PacketOffset:n]
 		switch ipVersion := packet[0] >> 4; ipVersion {
 		case zctcpip.IPv4Version:
 			err = s.processIPV4(packet)

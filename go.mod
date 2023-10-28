@@ -8,7 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.2.1
 	github.com/beevik/etree v1.2.0
 	github.com/cloverstd/tcping v0.1.1
-	github.com/cxz66666/sing-tun v0.0.0-20231028165655-820f8b07a342
+	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
 	github.com/miekg/dns v1.1.56
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/things-go/go-socks5 v0.0.4

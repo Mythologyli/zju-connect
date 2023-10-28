@@ -8,8 +8,8 @@ github.com/cloudflare/circl v1.3.5 h1:g+wWynZqVALYAlpSQFAa7TscDnUK8mKYtrxMpw6AUK
 github.com/cloudflare/circl v1.3.5/go.mod h1:5XYMA4rFBvNIrhs50XuiBJ15vF2pZn4nnUKZrLbUZFA=
 github.com/cloverstd/tcping v0.1.1 h1:3Yp9nvSDI7Z63zoVQDJzVk1PUczrF9tJoOrKGV30iOk=
 github.com/cloverstd/tcping v0.1.1/go.mod h1:NYXTrTDwlwuOKQ0vwksUVUbIr0sxDDsf1J6aFpScCBo=
-github.com/cxz66666/sing-tun v0.0.0-20231028165655-820f8b07a342 h1:Sb4Srr66DCozGDTaRKcM3isgHOZZ7g4qSv1Vb3pgeDo=
-github.com/cxz66666/sing-tun v0.0.0-20231028165655-820f8b07a342/go.mod h1:MBoiGEiPODP6YZko83BH5Nhnp2IqRIclCYNyFdLocWM=
+github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292 h1:ualmTq9VM4rYWNYgr7/9Pg6SHz1uXWHKmI2Ufd8sEQY=
+github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292/go.mod h1:MBoiGEiPODP6YZko83BH5Nhnp2IqRIclCYNyFdLocWM=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dvyukov/go-fuzz v0.0.0-20210103155950-6a8e9d1f2415/go.mod h1:11Gm+ccJnvAhCNLlf5+cS9KjtbaD5I5zaZpFMsTHWTw=
