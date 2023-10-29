@@ -61,6 +61,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
+	zjuPrefix, _ := netip.ParsePrefix("10.0.0.0/8")
 	tunName := "utun0"
 	tunName = tun.CalculateInterfaceName(tunName)
 	tunOptions := tun.Options{
@@ -69,7 +70,10 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},
-		AutoRoute:  false,
+		Inet4RouteAddress: []netip.Prefix{
+			zjuPrefix,
+		},
+		AutoRoute:  true,
 		TableIndex: 1897,
 	}
 
@@ -86,7 +90,6 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 
 	s.endpoint.ifceIndex = netIfce.Index
 	log.Printf("Interface Name: %s, index %d\n", tunName, netIfce.Index)
-	s.AddRoute("10.0.0.0/8")
 
 	// We need this dialer to bind to device otherwise packets will not be sent via TUN
 	s.endpoint.tcpDialer = &net.Dialer{

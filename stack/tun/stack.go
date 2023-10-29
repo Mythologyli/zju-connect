@@ -3,6 +3,8 @@ package tun
 import (
 	"context"
 	"fmt"
+	"io"
+
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
 	"github.com/mythologyli/zju-connect/client"
