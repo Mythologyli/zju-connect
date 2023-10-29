@@ -33,7 +33,7 @@ func (s *Stack) Run() {
 			n, _ := s.rvpnConn.Read(buf)
 
 			log.DebugPrintf("Recv: read %d bytes", n)
-			//log.DebugDumpHex(buf[:n])
+			log.DebugDumpHex(buf[:n])
 
 			err := s.endpoint.Write(buf[:n])
 			if err != nil {

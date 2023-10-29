@@ -61,7 +61,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
-	tunName := "utun10"
+	tunName := "utun0"
 	tunName = tun.CalculateInterfaceName(tunName)
 	tunOptions := tun.Options{
 		Name: tunName,
