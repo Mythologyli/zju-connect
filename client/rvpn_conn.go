@@ -21,7 +21,7 @@ func (r *RvpnConn) Read(p []byte) (n int, err error) {
 		log.Printf("Error occurred while receiving, retrying: %v", err)
 
 		// Do handshake again and create a new recvConn
-		r.recvConn.Close()
+		_ = r.recvConn.Close()
 		r.recvConn, err = r.easyConnectClient.RecvConn()
 		if err != nil {
 			// TODO graceful shutdown
@@ -41,7 +41,7 @@ func (r *RvpnConn) Write(p []byte) (n int, err error) {
 		log.Printf("Error occurred while sending, retrying: %v", err)
 
 		// Do handshake again and create a new sendConn
-		r.sendConn.Close()
+		_ = r.sendConn.Close()
 		r.sendConn, err = r.easyConnectClient.SendConn()
 		if err != nil {
 			// TODO graceful shutdown
@@ -57,10 +57,10 @@ func (r *RvpnConn) Write(p []byte) (n int, err error) {
 
 func (r *RvpnConn) Close() error {
 	if r.sendConn != nil {
-		r.sendConn.Close()
+		_ = r.sendConn.Close()
 	}
 	if r.recvConn != nil {
-		r.recvConn.Close()
+		_ = r.recvConn.Close()
 	}
 	return nil
 }

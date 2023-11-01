@@ -57,7 +57,7 @@ func (s *Stack) Run() {
 			continue
 		}
 
-		s.rvpnConn.Write(buf[:n])
+		_, _ = s.rvpnConn.Write(buf[:n])
 
 		log.DebugPrintf("Send: wrote %d bytes", n)
 		log.DebugDumpHex(buf[:n])
