@@ -1,31 +1,26 @@
-package core
+package service
 
 import (
 	"fmt"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"log"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/stack"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-const bufferSize = 40960
+const BufferSize = 40960
 const DefaultTimeout = time.Minute * 5
 
-type udpForward struct {
+type UDPForward struct {
 	src          *net.UDPAddr
-	dest         *tcpip.FullAddress
-	destString   string
-	ipStack      *stack.Stack
+	dest         *net.UDPAddr
+	stack        stack.Stack
 	client       *net.UDPAddr
 	listenerConn *net.UDPConn
 
-	connections      map[string]*connection
+	connections      map[string]*UDPConnection
 	connectionsMutex *sync.RWMutex
 
 	connectCallback    func(addr string)
@@ -36,70 +31,71 @@ type udpForward struct {
 	closed bool
 }
 
-type connection struct {
+type UDPConnection struct {
 	available  chan struct{}
-	udp        *gonet.UDPConn
+	udp        net.Conn
 	lastActive time.Time
 }
 
-func ServeUdpForwarding(bindAddress string, remoteAddress string, ipStack *stack.Stack) {
-	udpForward := newUdpForward(bindAddress, remoteAddress, ipStack)
-	udpForward.StartUdpForward()
-}
-
-func newUdpForward(src, dest string, ipStack *stack.Stack) *udpForward {
-	u := new(udpForward)
-	u.ipStack = ipStack
+func newUDPForward(stack stack.Stack, src, dest string) *UDPForward {
+	u := new(UDPForward)
+	u.stack = stack
 	u.connectCallback = func(addr string) {}
 	u.disconnectCallback = func(addr string) {}
 	u.connectionsMutex = new(sync.RWMutex)
-	u.connections = make(map[string]*connection)
+	u.connections = make(map[string]*UDPConnection)
 	u.timeout = DefaultTimeout
 
 	var err error
 	u.src, err = net.ResolveUDPAddr("udp", src)
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		panic(err)
 	}
 
-	parts := strings.Split(dest, ":")
-	host := parts[0]
-	port, err := strconv.Atoi(parts[1])
+	host, portStr, err := net.SplitHostPort(dest)
+	if err != nil {
+		panic(err)
+	}
 
-	u.destString = dest
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(err)
+	}
 
-	u.dest = &tcpip.FullAddress{
-		NIC:  defaultNIC,
-		Port: uint16(port),
-		Addr: tcpip.Address(net.ParseIP(host).To4()),
+	ip := net.ParseIP(host)
+	if ip == nil {
+		panic(fmt.Errorf("invalid host: %s", host))
+	}
+
+	u.dest = &net.UDPAddr{
+		IP:   ip,
+		Port: port,
 	}
 
 	u.listenerConn, err = net.ListenUDP("udp", u.src)
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		panic(err)
 	}
 
 	return u
 }
 
-func (u *udpForward) StartUdpForward() {
+func (u *UDPForward) startUDPForward() {
 	go u.janitor()
 	for {
-		buf := make([]byte, bufferSize)
+		buf := make([]byte, BufferSize)
 		n, addr, err := u.listenerConn.ReadFromUDP(buf)
 		if err != nil {
 			log.Println("UDP forward: failed to read, terminating:", err)
 			return
 		}
 
-		log.Printf("Port forwarding (udp): %s -> %s -> %s", addr.String(), u.src.String(), u.destString)
+		log.Printf("Port forwarding (UDP): %s -> %s -> %s", addr.String(), u.src.String(), u.dest.String())
 		go u.handle(buf[:n], addr)
 	}
 }
 
-func (u *udpForward) janitor() {
+func (u *UDPForward) janitor() {
 	for !u.closed {
 		time.Sleep(u.timeout)
 		var keysToDelete []string
@@ -125,11 +121,11 @@ func (u *udpForward) janitor() {
 	}
 }
 
-func (u *udpForward) handle(data []byte, addr *net.UDPAddr) {
+func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 	u.connectionsMutex.Lock()
 	conn, found := u.connections[addr.String()]
 	if !found {
-		u.connections[addr.String()] = &connection{
+		u.connections[addr.String()] = &UDPConnection{
 			available:  make(chan struct{}),
 			udp:        nil,
 			lastActive: time.Now(),
@@ -138,16 +134,13 @@ func (u *udpForward) handle(data []byte, addr *net.UDPAddr) {
 	u.connectionsMutex.Unlock()
 
 	if !found {
-		var udpConn *gonet.UDPConn
+		var udpConn net.Conn
 		var err error
 
-		addrTarget := tcpip.FullAddress{
-			NIC:  defaultNIC,
+		udpConn, err = u.stack.DialUDP(&net.UDPAddr{
+			IP:   u.dest.IP,
 			Port: u.dest.Port,
-			Addr: u.dest.Addr,
-		}
-
-		udpConn, err = gonet.DialUDP(u.ipStack, nil, &addrTarget, header.IPv4ProtocolNumber)
+		})
 
 		if err != nil {
 			log.Println("UDP forward: failed to dial:", err)
@@ -169,7 +162,7 @@ func (u *udpForward) handle(data []byte, addr *net.UDPAddr) {
 		}
 
 		for {
-			buf := make([]byte, bufferSize)
+			buf := make([]byte, BufferSize)
 			n, err := udpConn.Read(buf)
 			if err != nil {
 				u.connectionsMutex.Lock()
@@ -215,4 +208,11 @@ func (u *udpForward) handle(data []byte, addr *net.UDPAddr) {
 		}
 		u.connectionsMutex.Unlock()
 	}
+}
+
+func ServeUDPForwarding(stack stack.Stack, bindAddress string, remoteAddress string) {
+	log.Printf("UDP port forwarding: %s -> %s", bindAddress, remoteAddress)
+
+	udpForward := newUDPForward(stack, bindAddress, remoteAddress)
+	udpForward.startUDPForward()
 }

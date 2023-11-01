@@ -1,9 +1,10 @@
-package core
+package service
 
 import (
 	"context"
+	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/log"
 	"io"
-	"log"
 	"net"
 	"net/http"
 )
@@ -29,13 +30,14 @@ import (
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-func ServeHttp(bindAddr string, dialer Dialer, zjuDnsResolve *DnsResolve) {
+func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, net, addr string) (net.Conn, error) {
-				return dialer.Dial(ctx, zjuDnsResolve, "tcp", addr)
+				return dialer.Dial(ctx, net, addr)
 			},
 		},
+		// We must pass redirect response to browser
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -43,18 +45,18 @@ func ServeHttp(bindAddr string, dialer Dialer, zjuDnsResolve *DnsResolve) {
 
 	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == "CONNECT" {
-			serverConn, err := dialer.Dial(context.Background(), zjuDnsResolve, "tcp", req.Host)
+			serverConn, err := dialer.Dial(context.Background(), "tcp", req.Host)
 			if err != nil {
 				w.WriteHeader(500)
-				w.Write([]byte(err.Error() + "\n"))
+				_, _ = w.Write([]byte(err.Error() + "\n"))
 				return
 			}
 
 			hijacker, ok := w.(http.Hijacker)
 			if !ok {
-				serverConn.Close()
+				_ = serverConn.Close()
 				w.WriteHeader(500)
-				w.Write([]byte("Failed cast to Hijacker\n"))
+				_, _ = w.Write([]byte("Failed cast to hijacker\n"))
 				return
 			}
 
@@ -63,21 +65,24 @@ func ServeHttp(bindAddr string, dialer Dialer, zjuDnsResolve *DnsResolve) {
 			_, bio, err := hijacker.Hijack()
 			if err != nil {
 				w.WriteHeader(500)
-				w.Write([]byte(err.Error() + "\n"))
-				serverConn.Close()
+				_, _ = w.Write([]byte(err.Error() + "\n"))
+				_ = serverConn.Close()
 				return
 			}
 
-			go io.Copy(serverConn, bio)
-			go io.Copy(bio, serverConn)
+			go func() {
+				_, _ = io.Copy(serverConn, bio)
+			}()
+			go func() {
+				_, _ = io.Copy(bio, serverConn)
+			}()
 		} else {
-			// Server-Only field; we get an error fi we pass this to `client.Do`.
 			req.RequestURI = ""
 
 			resp, err := client.Do(req)
 			if err != nil {
 				w.WriteHeader(500)
-				w.Write([]byte(err.Error() + "\n"))
+				_, _ = w.Write([]byte(err.Error() + "\n"))
 				return
 			}
 
@@ -88,7 +93,7 @@ func ServeHttp(bindAddr string, dialer Dialer, zjuDnsResolve *DnsResolve) {
 
 			w.WriteHeader(resp.StatusCode)
 
-			io.Copy(w, resp.Body)
+			_, _ = io.Copy(w, resp.Body)
 		}
 	})
 

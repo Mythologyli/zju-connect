@@ -220,11 +220,21 @@ $ docker compose up -d
 
 + `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
 
++ `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
+
++ `add_route`: 启用 TUN 模式时根据服务端下发配置添加路由
+
 + `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
 
 + `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
 
 + `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`
+
++ `secondary_dns_server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `tun_dns_server` 时必须设置
+
++ `dns_server_bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
+
++ `tun_dns_server`: 启用 TUN 模式时使用的 DNS 服务器，不带端口。例如：`127.0.0.1`。可配合 `dns_server_bind` 实现 TUN 模式下正确的 DNS 解析。目前仅支持 Windows 系统
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 
@@ -237,6 +247,16 @@ $ docker compose up -d
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
 + `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
+
+### TUN 模式注意事项
+
+1. 需要管理员权限运行
+
+2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
+
+3. Linux 和 macOS 暂不支持通过 `tun_dns_server` 自动配置系统 DNS。为保证 `*.zju.edu.cn` 解析正确，建议配置 `dns_server_bind` 并手动配置系统 DNS
+
+4. macOS 暂不支持通过 TUN 接口访问 `10.0.0.0/8` 外的地址
 
 ### 计划表
 
@@ -255,8 +275,12 @@ $ docker compose up -d
 - [x] UDP 端口转发功能
 - [x] 通过配置文件启动
 - [x] 定时保活
+- [x] TUN 模式
 
 #### To Do
+
+- [ ] 自动劫持 DNS
+- [ ] Fake IP 模式
 
 ### 贡献者
 
