@@ -14,10 +14,6 @@ assignees: Mythologyli
 + 如果你可以访问 CC98，请确保你已经阅读过以下说明：
     + [使用 ZJU Connect 代替 EasyConnect 提升你的 RVPN 体验](https://www.cc98.org/topic/5521873)
     + [端口转发、定时保活、自动选线、密码保存](https://www.cc98.org/topic/5570875)
-+ 如果你可以访问 CC98 并且你的问题与配合 ZJU Rule 有关，请确保你已阅读过：
-    + [使用 Clash+ZJU Rule](https://www.cc98.org/topic/5257184)
-    + [Clash+ZJU Rule 的常见问题与解决方案](https://www.cc98.org/topic/5677200)
-    + [ZJU Rule Github](https://github.com/Mythologyli/ZJU-Rule) 说明及 [Issues](https://github.com/Mythologyli/ZJU-Rule/issues?q=is%3Aissue)
 + 你已搜索过现有的 [Issues](https://github.com/Mythologyli/zju-connect/issues?q=is%3Aissue) 并且未发现重复
 
 **确认无误后，请删除下方横线及以上内容。之后，请修改下方的模版并提交功能请求**
