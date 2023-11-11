@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 	"net"
 	"net/netip"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -53,11 +54,15 @@ func (s *Stack) AddRoute(target string) error {
 }
 
 func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
-	command := exec.Command("echo", "nameserver", dnsServer, ">", fmt.Sprintf("/etc/resolver/%s", targetHost))
-	err := command.Run()
+	fileName := fmt.Sprintf("/etc/resolver/%s", targetHost)
+	file, err := os.Create(fileName)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
+
+	file.WriteString(fmt.Sprintf("nameserver %s\n", dnsServer))
+
 	terminal_func.RegisterTerminalFunc("DelDnsServer_"+targetHost, func(ctx context.Context) error {
 		delCommand := exec.Command("rm", fmt.Sprintf("/etc/resolver/%s", targetHost))
 		delErr := delCommand.Run()
