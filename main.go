@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
@@ -12,6 +14,9 @@ import (
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"inet.af/netaddr"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var conf Config
@@ -141,8 +146,18 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		service.KeepAlive(vpnResolver)
+		go service.KeepAlive(vpnResolver)
 	}
 
-	select {}
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutdown ZJU-Connect ......")
+	if errs := terminal_func.ExecTerminalFunc(context.Background()); errs != nil {
+		for _, err := range errs {
+			log.Printf("Shutdown ZJU-Connect failed:", err)
+		}
+	} else {
+		log.Println("Shutdown ZJU-Connect success, Bye~")
+	}
 }

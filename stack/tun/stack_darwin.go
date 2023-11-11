@@ -1,8 +1,11 @@
 package tun
 
 import (
+	"context"
+	"fmt"
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/unix"
 	"net"
@@ -49,6 +52,23 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
+func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
+	command := exec.Command("echo", "nameserver", dnsServer, ">", fmt.Sprintf("/etc/resolver/%s", targetHost))
+	err := command.Run()
+	if err != nil {
+		return err
+	}
+	terminal_func.RegisterTerminalFunc("DelDnsServer_"+targetHost, func(ctx context.Context) error {
+		delCommand := exec.Command("rm", fmt.Sprintf("/etc/resolver/%s", targetHost))
+		delErr := delCommand.Run()
+		if delErr != nil {
+			return delErr
+		}
+		return nil
+	})
+	return nil
+}
+
 func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
 	var err error
 	s := &Stack{}
@@ -92,6 +112,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	log.Printf("Interface Name: %s, index %d\n", tunName, netIfce.Index)
 
 	// We need this dialer to bind to device otherwise packets will not be sent via TUN
+	// Doesn't work on macos. See  https://github.com/Mythologyli/zju-connect/pull/44#issuecomment-1784050022
 	s.endpoint.tcpDialer = &net.Dialer{
 		LocalAddr: &net.TCPAddr{
 			IP:   s.endpoint.ip,
@@ -106,6 +127,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		},
 	}
 
+	// Doesn't work on macos. See  https://github.com/Mythologyli/zju-connect/pull/44#issuecomment-1784050022
 	s.endpoint.udpDialer = &net.Dialer{
 		LocalAddr: &net.UDPAddr{
 			IP:   s.endpoint.ip,
@@ -120,5 +142,11 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		},
 	}
 
+	if err = s.AddDnsServer(s.endpoint.ip.String(), "zju.edu.cn"); err != nil {
+		log.Printf("AddDnsServer failed: %v", err)
+	}
+	if err = s.AddDnsServer(s.endpoint.ip.String(), "cc98.org"); err != nil {
+		log.Printf("AddDnsServer failed: %v", err)
+	}
 	return s, nil
 }
