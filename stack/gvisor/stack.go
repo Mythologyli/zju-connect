@@ -78,8 +78,10 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		}
 
 		if ep.rvpnConn != nil {
-			n, _ := ep.rvpnConn.Write(buf)
-
+			n, err := ep.rvpnConn.Write(buf)
+			if err != nil {
+				panic(err)
+			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
 		}
@@ -139,14 +141,18 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) Run() {
-
-	s.endpoint.rvpnConn, _ = client.NewRvpnConn(s.endpoint.easyConnectClient)
-
+	var connErr error
+	s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	if connErr != nil {
+		panic(connErr)
+	}
 	// Read from VPN server and send to gVisor stack
 	for {
-		buf := make([]byte, 1500)
-		n, _ := s.endpoint.rvpnConn.Read(buf)
-
+		buf := make([]byte, MTU)
+		n, err := s.endpoint.rvpnConn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])
 

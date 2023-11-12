@@ -26,18 +26,23 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) Run() {
-	s.rvpnConn, _ = client.NewRvpnConn(s.endpoint.easyConnectClient)
-
+	var connErr error
+	s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	if connErr != nil {
+		panic(connErr)
+	}
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
 			buf := make([]byte, MTU+tun.PacketOffset)
-			n, _ := s.rvpnConn.Read(buf)
-
+			n, err := s.rvpnConn.Read(buf)
+			if err != nil {
+				panic(err)
+			}
 			log.DebugPrintf("Recv: read %d bytes", n)
 			log.DebugDumpHex(buf[:n])
 
-			err := s.endpoint.Write(buf[:n])
+			err = s.endpoint.Write(buf[:n])
 			if err != nil {
 				log.Printf("Error occurred while writing to TUN stack: %v", err)
 				panic(err)
@@ -95,6 +100,9 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 		return s.endpoint.Write(packet)
 	}
 	n, err := s.rvpnConn.Write(packet)
+	if err != nil {
+		panic(err)
+	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
 	log.DebugDumpHex(packet[:n])
 
@@ -118,6 +126,9 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 	}
 
 	n, err := s.rvpnConn.Write(packet)
+	if err != nil {
+		panic(err)
+	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
 	log.DebugDumpHex(packet[:n])
 

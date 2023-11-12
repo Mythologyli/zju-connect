@@ -18,7 +18,7 @@ type RvpnConn struct {
 	recvErrCount int
 }
 
-// always success or panic
+// try best to read, if return err!=nil, please panic
 func (r *RvpnConn) Read(p []byte) (n int, err error) {
 	r.recvLock.Lock()
 	defer r.recvLock.Unlock()
@@ -30,18 +30,17 @@ func (r *RvpnConn) Read(p []byte) (n int, err error) {
 		_ = r.recvConn.Close()
 		r.recvConn, err = r.easyConnectClient.RecvConn()
 		if err != nil {
-			// TODO graceful shutdown
-			panic(err)
+			return 0, err
 		}
 		r.recvErrCount++
 		if r.recvErrCount >= 5 {
-			panic("recv retry limit exceeded.")
+			return 0, err
 		}
 	}
 	return
 }
 
-// always success or panic
+// try best to write, if return err!=nil, please panic
 func (r *RvpnConn) Write(p []byte) (n int, err error) {
 	r.sendLock.Lock()
 	defer r.sendLock.Unlock()
@@ -52,12 +51,11 @@ func (r *RvpnConn) Write(p []byte) (n int, err error) {
 		_ = r.sendConn.Close()
 		r.sendConn, err = r.easyConnectClient.SendConn()
 		if err != nil {
-			// TODO graceful shutdown
-			panic(err)
+			return 0, err
 		}
 		r.sendErrCount++
 		if r.sendErrCount >= 5 {
-			panic("send retry limit exceeded.")
+			return 0, err
 		}
 	}
 	return
@@ -84,13 +82,13 @@ func NewRvpnConn(ec *EasyConnectClient) (*RvpnConn, error) {
 	c.sendConn, err = ec.SendConn()
 	if err != nil {
 		log.Printf("Error occurred while creating sendConn: %v", err)
-		panic(err)
+		return nil, err
 	}
 
 	c.recvConn, err = ec.RecvConn()
 	if err != nil {
 		log.Printf("Error occurred while creating recvConn: %v", err)
-		panic(err)
+		return nil, err
 	}
 	return c, nil
 }
