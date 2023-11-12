@@ -78,7 +78,7 @@ func main() {
 
 	var vpnStack stack.Stack
 	if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.TUNDNSServer)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
 		if err != nil {
 			log.Fatalf("Tun stack setup error: %s", err)
 		}
@@ -125,6 +125,10 @@ func main() {
 
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
+	}
+	if conf.TUNMode {
+		clientIP, _ := vpnClient.IP()
+		go service.ServeDNS(clientIP.String()+":53", localResolver)
 	}
 
 	if conf.SocksBind != "" {

@@ -3,6 +3,7 @@ package tun
 import (
 	"context"
 	"fmt"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"io"
 
 	tun "github.com/cxz66666/sing-tun"
@@ -44,8 +45,12 @@ func (s *Stack) Run() {
 
 			err = s.endpoint.Write(buf[:n])
 			if err != nil {
-				log.Printf("Error occurred while writing to TUN stack: %v", err)
-				panic(err)
+				if terminal_func.IsTermianl() {
+					return
+				} else {
+					log.Printf("Error occurred while writing to TUN stack: %v", err)
+					panic(err)
+				}
 			}
 		}
 	}()
@@ -55,9 +60,13 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
-			log.Printf("Error occurred while reading from TUN stack: %v", err)
-			// TODO graceful shutdown
-			panic(err)
+			if terminal_func.IsTermianl() {
+				return
+			} else {
+				log.Printf("Error occurred while reading from TUN stack: %v", err)
+				// TODO graceful shutdown
+				panic(err)
+			}
 		}
 
 		if n < zctcpip.IPv4PacketMinLength {

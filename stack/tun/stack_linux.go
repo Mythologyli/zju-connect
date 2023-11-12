@@ -1,8 +1,10 @@
 package tun
 
 import (
+	"context"
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"net"
 	"net/netip"
@@ -47,7 +49,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.endpoint = &Endpoint{
@@ -59,7 +61,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
-	tunName := "zjuconnect"
+	tunName := "ZJU-Connect"
 	tunName = tun.CalculateInterfaceName(tunName)
 
 	tunOptions := tun.Options{
@@ -68,13 +70,18 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},
-		AutoRoute:  true,
-		TableIndex: 1897,
+	}
+	if dnsHijack {
+		tunOptions.AutoRoute = true
+		tunOptions.TableIndex = 1897
 	}
 	ifce, err := tun.New(tunOptions)
 	if err != nil {
 		return nil, err
 	}
+	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+		return ifce.Close()
+	})
 	s.endpoint.ifce = ifce
 	s.endpoint.ifceName = tunName
 	log.Printf("Interface Name: %s\n", tunName)

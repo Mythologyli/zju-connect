@@ -31,7 +31,7 @@ type (
 		ZJUDNSServer        string
 		SecondaryDNSServer  string
 		DNSServerBind       string
-		TUNDNSServer        string
+		DNSHijack           bool
 		DebugDump           bool
 		PortForwardingList  []SinglePortForwarding
 		CustomDNSList       []SingleCustomDNS
@@ -72,7 +72,7 @@ type (
 		ZJUDNSServer        *string                    `toml:"zju_dns_server"`
 		SecondaryDNSServer  *string                    `toml:"secondary_dns_server"`
 		DNSServerBind       *string                    `toml:"dns_server_bind"`
-		TUNDNSServer        *string                    `toml:"tun_dns_server"`
+		DNSHijack           *bool                      `toml:"dns_hijack"`
 		DebugDump           *bool                      `toml:"debug_dump"`
 		PortForwarding      []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
@@ -127,7 +127,7 @@ func parseTOMLConfig(configFile string, conf *Config) error {
 	conf.ZJUDNSServer = getTOMLVal(confTOML.ZJUDNSServer, "10.10.0.21")
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
-	conf.TUNDNSServer = getTOMLVal(confTOML.TUNDNSServer, "")
+	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -193,7 +193,7 @@ func init() {
 	flag.StringVar(&conf.ZJUDNSServer, "zju-dns-server", "10.10.0.21", "ZJU DNS server address")
 	flag.StringVar(&conf.SecondaryDNSServer, "secondary-dns-server", "114.114.114.114", "Secondary DNS server address. Leave empty to use system default DNS server")
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
-	flag.StringVar(&conf.TUNDNSServer, "tun-dns-server", "", "DNS Server address for TUN interface (e.g. 127.0.0.1). You should not specify the port")
+	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")

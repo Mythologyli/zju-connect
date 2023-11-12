@@ -1,8 +1,10 @@
 package tun
 
 import (
+	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/tun"
@@ -72,7 +74,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
 	s := &Stack{}
 
 	guid, err := windows.GUIDFromString(guid)
@@ -125,8 +127,8 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
-	if dnsServer != "" {
-		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", dnsServer)
+	if dnsHijack {
+		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", s.endpoint.ip.String())
 	} else {
 		command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
 	}
@@ -135,5 +137,10 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
+	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+		dev.Close()
+		closeCommand := exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
+		return closeCommand.Run()
+	})
 	return s, nil
 }

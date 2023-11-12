@@ -13,6 +13,8 @@ type TerminalItem struct {
 
 var terminalFuncList []TerminalItem
 
+var terminalBegin = false
+
 func RegisterTerminalFunc(execName string, fun TerminalFunc) {
 	terminalFuncList = append(terminalFuncList, TerminalItem{
 		f:    fun,
@@ -23,6 +25,7 @@ func RegisterTerminalFunc(execName string, fun TerminalFunc) {
 
 func ExecTerminalFunc(ctx context.Context) []error {
 	var errList []error
+	terminalBegin = true
 	for _, item := range terminalFuncList {
 		log.Println("Exec func on terminal:", item.name)
 		if err := item.f(ctx); err != nil {
@@ -33,4 +36,8 @@ func ExecTerminalFunc(ctx context.Context) []error {
 		}
 	}
 	return errList
+}
+
+func IsTermianl() bool {
+	return terminalBegin
 }

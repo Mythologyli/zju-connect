@@ -3,6 +3,7 @@ package gvisor
 import (
 	"errors"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -80,7 +81,11 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		if ep.rvpnConn != nil {
 			n, err := ep.rvpnConn.Write(buf)
 			if err != nil {
-				panic(err)
+				if terminal_func.IsTermianl() {
+					return list.Len(), nil
+				} else {
+					panic(err)
+				}
 			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
@@ -151,7 +156,11 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU)
 		n, err := s.endpoint.rvpnConn.Read(buf)
 		if err != nil {
-			panic(err)
+			if terminal_func.IsTermianl() {
+				return
+			} else {
+				panic(err)
+			}
 		}
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])

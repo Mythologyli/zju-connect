@@ -74,7 +74,7 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.endpoint = &Endpoint{
@@ -106,6 +106,9 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	if err != nil {
 		return nil, err
 	}
+	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+		return ifce.Close()
+	})
 	s.endpoint.ifce = ifce
 	s.endpoint.ifceName = tunName
 	netIfce, err := net.InterfaceByName(tunName)
@@ -146,12 +149,13 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 			})
 		},
 	}
-
-	if err = s.AddDnsServer(s.endpoint.ip.String(), "zju.edu.cn"); err != nil {
-		log.Printf("AddDnsServer failed: %v", err)
-	}
-	if err = s.AddDnsServer(s.endpoint.ip.String(), "cc98.org"); err != nil {
-		log.Printf("AddDnsServer failed: %v", err)
+	if dnsHijack {
+		if err = s.AddDnsServer(s.endpoint.ip.String(), "zju.edu.cn"); err != nil {
+			log.Printf("AddDnsServer failed: %v", err)
+		}
+		if err = s.AddDnsServer(s.endpoint.ip.String(), "cc98.org"); err != nil {
+			log.Printf("AddDnsServer failed: %v", err)
+		}
 	}
 	return s, nil
 }
