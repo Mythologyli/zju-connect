@@ -82,7 +82,7 @@ func (s *Stack) Run() {
 			err = fmt.Errorf("unsupport IP version %d", ipVersion)
 		}
 		if err != nil {
-			log.Printf("Error occurred while processing IP packet: %v", err)
+			log.DebugPrintf("Error occurred while processing IP packet: %v", err)
 			continue
 		}
 
