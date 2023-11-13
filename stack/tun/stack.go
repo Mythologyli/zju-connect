@@ -45,7 +45,7 @@ func (s *Stack) Run() {
 
 			err = s.endpoint.Write(buf[:n])
 			if err != nil {
-				if terminal_func.IsTermianl() {
+				if terminal_func.IsTerminal() {
 					return
 				} else {
 					log.Printf("Error occurred while writing to TUN stack: %v", err)
@@ -60,7 +60,7 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
-			if terminal_func.IsTermianl() {
+			if terminal_func.IsTerminal() {
 				return
 			} else {
 				log.Printf("Error occurred while reading from TUN stack: %v", err)

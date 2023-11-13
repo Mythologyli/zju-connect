@@ -81,7 +81,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		if ep.rvpnConn != nil {
 			n, err := ep.rvpnConn.Write(buf)
 			if err != nil {
-				if terminal_func.IsTermianl() {
+				if terminal_func.IsTerminal() {
 					return list.Len(), nil
 				} else {
 					panic(err)
@@ -156,7 +156,7 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU)
 		n, err := s.endpoint.rvpnConn.Read(buf)
 		if err != nil {
-			if terminal_func.IsTermianl() {
+			if terminal_func.IsTerminal() {
 				return
 			} else {
 				panic(err)

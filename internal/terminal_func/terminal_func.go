@@ -38,6 +38,6 @@ func ExecTerminalFunc(ctx context.Context) []error {
 	return errList
 }
 
-func IsTermianl() bool {
+func IsTerminal() bool {
 	return terminalBegin
 }
