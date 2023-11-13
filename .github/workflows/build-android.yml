@@ -1,0 +1,91 @@
+name: Build Android
+
+on:
+  release:
+    types: [ published ]
+  push:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/*.yml"
+  pull_request:
+    types:
+      - opened
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+
+permissions: write-all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        run: |
+          wget https://go.dev/dl/go1.21.3.linux-amd64.tar.gz
+          sudo tar -C /usr/local -xzf go1.21.3.linux-amd64.tar.gz
+          export PATH=$PATH:/usr/local/go/bin
+
+      - name: Get project dependencies
+        run: go mod download
+
+      - name: Build Android AAR
+        run: |
+          go env
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go get golang.org/x/mobile/bind@latest
+          export PATH="/home/runner/go/bin:${PATH}"
+          mkdir -p build_assets
+          sudo apt update && sudo apt install openjdk-17-jdk
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          export NDK_LTS_VERSION=23.2.8568313
+          export SDK_TOOLS_VERSION=10406996
+          export ANDROID_PLATFORM_VERSION=24
+          export ANDROID_HOME="/home/runner/android-sdk"
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export CMDLINE_TOOLS_ROOT="${ANDROID_HOME}/cmdline-tools/latest/bin"
+          export ADB_INSTALL_TIMEOUT=120
+          export PATH="${ANDROID_HOME}/emulator:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/tools:${ANDROID_HOME}/tools/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/platform-tools/bin:${PATH}"
+          export ANDROID_NDK_HOME="/home/runner/android-sdk/ndk/${NDK_LTS_VERSION}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_HOME}"
+          mkdir -p ${ANDROID_HOME}/cmdline-tools 
+          mkdir ${ANDROID_HOME}/platforms
+          mkdir ${ANDROID_HOME}/ndk
+          wget -O /tmp/cmdline-tools.zip -t 5 --no-verbose "https://dl.google.com/android/repository/commandlinetools-linux-${SDK_TOOLS_VERSION}_latest.zip"
+          unzip -q /tmp/cmdline-tools.zip -d ${ANDROID_HOME}/cmdline-tools
+          rm /tmp/cmdline-tools.zip
+          mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest
+          echo y | ${CMDLINE_TOOLS_ROOT}/sdkmanager "build-tools;${ANDROID_PLATFORM_VERSION}.0.0"
+          echo y | ${CMDLINE_TOOLS_ROOT}/sdkmanager "platforms;android-${ANDROID_PLATFORM_VERSION}"
+          echo y | ${CMDLINE_TOOLS_ROOT}/sdkmanager "ndk;${NDK_LTS_VERSION}"
+          sudo apt install -y --no-install-recommends g++ libc6-dev
+          gomobile init
+          gomobile bind -target=android -o build_assets/zju-connect.aar ./mobile
+
+      - name: Upload artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v3
+        with:
+          name: zju-connect-android-aar
+          path: build_assets/*
+
+      - name: Create ZIP archive
+        if: github.event_name == 'release'
+        run: |
+          pushd build_assets || exit 1
+          zip -9vr ../zju-connect-android-aar.zip .
+          popd || exit 1
+
+      - name: Upload release binary
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} zju-connect-android-aar.zip
