@@ -1,8 +1,10 @@
 package tun
 
 import (
+	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/tun"
@@ -10,6 +12,7 @@ import (
 	"net"
 	"net/netip"
 	"os/exec"
+	"sync"
 )
 
 const guid = "{4F5CDE94-D2A3-4AA5-A4A3-0FE6CB909E83}"
@@ -18,11 +21,15 @@ const interfaceName = "ZJU Connect"
 type Endpoint struct {
 	easyConnectClient *client.EasyConnectClient
 
-	dev tun.Device
-	ip  net.IP
+	dev       tun.Device
+	readLock  sync.Mutex
+	writeLock sync.Mutex
+	ip        net.IP
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
+	ep.writeLock.Lock()
+	defer ep.writeLock.Unlock()
 	bufs := [][]byte{buf}
 
 	_, err := ep.dev.Write(bufs, 0)
@@ -34,6 +41,8 @@ func (ep *Endpoint) Write(buf []byte) error {
 }
 
 func (ep *Endpoint) Read(buf []byte) (int, error) {
+	ep.readLock.Lock()
+	defer ep.readLock.Unlock()
 	bufs := [][]byte{buf}
 	sizes := []int{1}
 
@@ -65,7 +74,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
 	s := &Stack{}
 
 	guid, err := windows.GUIDFromString(guid)
@@ -73,7 +82,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		return nil, err
 	}
 
-	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, 1400)
+	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, int(MTU))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +113,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 	}
 
 	// Set MTU to 1400 otherwise error may occur when packets are large
-	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, "mtu=1400", "store=persistent")
+	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, fmt.Sprintf("mtu=%d", MTU), "store=persistent")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)
@@ -118,8 +127,8 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
-	if dnsServer != "" {
-		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", dnsServer)
+	if dnsHijack {
+		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", s.endpoint.ip.String())
 	} else {
 		command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
 	}
@@ -128,5 +137,10 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsServer string) (*S
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
+	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+		dev.Close()
+		closeCommand := exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
+		return closeCommand.Run()
+	})
 	return s, nil
 }

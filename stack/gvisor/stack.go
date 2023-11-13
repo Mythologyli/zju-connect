@@ -3,6 +3,8 @@ package gvisor
 import (
 	"errors"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -16,6 +18,7 @@ import (
 
 type Stack struct {
 	gvisorStack *stack.Stack
+	resolve     zcdns.LocalServer
 
 	endpoint *Endpoint
 }
@@ -76,8 +79,14 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		}
 
 		if ep.rvpnConn != nil {
-			n, _ := ep.rvpnConn.Write(buf)
-
+			n, err := ep.rvpnConn.Write(buf)
+			if err != nil {
+				if terminal_func.IsTerminal() {
+					return list.Len(), nil
+				} else {
+					panic(err)
+				}
+			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
 		}
@@ -132,15 +141,27 @@ func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
 	return s, nil
 }
 
+func (s *Stack) SetupResolve(r zcdns.LocalServer) {
+	s.resolve = r
+}
+
 func (s *Stack) Run() {
-
-	s.endpoint.rvpnConn, _ = client.NewRvpnConn(s.endpoint.easyConnectClient)
-
+	var connErr error
+	s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	if connErr != nil {
+		panic(connErr)
+	}
 	// Read from VPN server and send to gVisor stack
 	for {
-		buf := make([]byte, 1500)
-		n, _ := s.endpoint.rvpnConn.Read(buf)
-
+		buf := make([]byte, MTU)
+		n, err := s.endpoint.rvpnConn.Read(buf)
+		if err != nil {
+			if terminal_func.IsTerminal() {
+				return
+			} else {
+				panic(err)
+			}
+		}
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])
 

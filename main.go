@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/internal/terminal_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
@@ -12,6 +14,9 @@ import (
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"inet.af/netaddr"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var conf Config
@@ -73,7 +78,7 @@ func main() {
 
 	var vpnStack stack.Stack
 	if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.TUNDNSServer)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
 		if err != nil {
 			log.Fatalf("Tun stack setup error: %s", err)
 		}
@@ -93,8 +98,6 @@ func main() {
 		}
 	}
 
-	go vpnStack.Run()
-
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
 		conf.ZJUDNSServer,
@@ -113,11 +116,19 @@ func main() {
 		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
 		log.Printf("Add custom DNS: %s -> %s\n", customDns.HostName, customDns.IP)
 	}
+	localResolver := service.NewDnsServer(vpnResolver, []string{conf.ZJUDNSServer, conf.SecondaryDNSServer})
+	vpnStack.SetupResolve(localResolver)
+
+	go vpnStack.Run()
 
 	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResource, conf.ProxyAll)
 
 	if conf.DNSServerBind != "" {
-		go service.ServeDNS(conf.DNSServerBind, vpnResolver)
+		go service.ServeDNS(conf.DNSServerBind, localResolver)
+	}
+	if conf.TUNMode {
+		clientIP, _ := vpnClient.IP()
+		go service.ServeDNS(clientIP.String()+":53", localResolver)
 	}
 
 	if conf.SocksBind != "" {
@@ -139,8 +150,18 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		service.KeepAlive(vpnResolver)
+		go service.KeepAlive(vpnResolver)
 	}
 
-	select {}
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutdown ZJU-Connect ......")
+	if errs := terminal_func.ExecTerminalFunc(context.Background()); errs != nil {
+		for _, err := range errs {
+			log.Printf("Shutdown ZJU-Connect failed:", err)
+		}
+	} else {
+		log.Println("Shutdown ZJU-Connect success, Bye~")
+	}
 }
