@@ -147,6 +147,19 @@ func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (co
 	}
 }
 
+func (r *Resolver) CleanCache(duration time.Duration) {
+	for {
+		time.Sleep(duration)
+		// dnsCache already cleaned
+		// r.dnsCache.DeleteExpired()
+		r.concurResolveLock.Range(func(key, value any) bool {
+			r.concurResolveLock.Delete(key)
+			return true
+		})
+		log.Printf("Clean DNS Cache: OK")
+	}
+}
+
 func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResource map[string]bool, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
 	resolver := &Resolver{
 		remoteUDPResolver: &net.Resolver{
@@ -189,6 +202,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 			PreferGo: true,
 		}
 	}
-
+	// sleep 10 times ttl
+	go resolver.CleanCache(time.Duration(ttl) * time.Second * 10)
 	return resolver
 }
