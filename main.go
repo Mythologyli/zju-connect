@@ -21,7 +21,7 @@ import (
 
 var conf Config
 
-const zjuConnectVersion = "0.5.0"
+const zjuConnectVersion = "0.6.0"
 
 func main() {
 	log.Init()
