@@ -86,7 +86,6 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 		return nil, err
 	}
 	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
-	zjuPrefix, _ := netip.ParsePrefix("10.0.0.0/8")
 	tunName := "utun0"
 	tunName = tun.CalculateInterfaceName(tunName)
 	tunOptions := tun.Options{
@@ -96,7 +95,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 			ipPrefix,
 		},
 		Inet4RouteAddress: []netip.Prefix{
-			zjuPrefix,
+			netip.MustParsePrefix("10.0.0.0/8"),
 		},
 		AutoRoute:  true,
 		TableIndex: 1897,
