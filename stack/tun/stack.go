@@ -170,7 +170,7 @@ func (s *Stack) shouldHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpi
 }
 
 func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UDPPacket) {
-	log.Printf("hijack dns %s:%d -> %s:%d", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort())
+	log.DebugPrintf("hijack dns %s:%d -> %s:%d", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort())
 	msg := dns.Msg{}
 	if err := msg.Unpack(udpHeader.Payload()); err != nil {
 		log.Printf("unpack dns msg error: %v", err)
@@ -178,7 +178,7 @@ func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UD
 	}
 	resMsg, err := s.resolve.HandleDnsMsg(context.Background(), &msg)
 	if err != nil {
-		log.Printf("hijack dns error: %v", err)
+		log.Printf("hijack dns %s:%d -> %s:%d error: %v", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort(), err)
 		return
 	}
 
