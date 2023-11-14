@@ -8,7 +8,7 @@
 
 **本程序基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)（现已停止维护）完成，感谢原作者 [lyc8503](https://github.com/lyc8503)。**
 
-**[电报交流群](https://t.me/zjuers)**，欢迎来自 ZJU 的使用者加入交流。
+**QQ 交流群：946190505**，欢迎来自 ZJU 的使用者加入交流。
 
 ### 使用方法
 
@@ -18,11 +18,13 @@
 
 1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
 
-2. 以 Linux 平台为例，解压出可执行文件 `zju-connect`。
+2. 以 macOS 为例，解压出可执行文件 `zju-connect`。
 
-3. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
+3. macOS 需要先解除安全限制。命令行运行：`sudo xattr -rd com.apple.quarantine zju-connect`。
 
-4. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。
+4. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
+
+5. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。如需更改默认端口，请参考参数说明。
 
 #### 作为服务运行
 
@@ -63,7 +65,9 @@
 
 2. 将可执行文件放置于 `/usr/local/bin/` 目录并赋予可执行权限。
 
-3. 参考 [com.zju.connect.plist](com.zju.connect.plist) 建立 macOS 系统服务配置文件，plist 文件为二进制文件，建议使用 PlistEdict Pro 编辑，其中关键配置参数如下：
+3. 解除安全限制：`sudo xattr -rd com.apple.quarantine zju-connect`。
+
+4. 参考 [com.zju.connect.plist](com.zju.connect.plist) 建立 macOS 系统服务配置文件，plist 文件为二进制文件，建议使用 PlistEdict Pro 编辑，其中关键配置参数如下：
 
    + `UserName`: 后台运行 zju-connect 的的用户默认为 `root`，建议修改为你自己的用户名
    + `ProgramArguments`: zju-connect 运行参数
@@ -77,18 +81,18 @@
    + [plist 配置参数文档](https://keith.github.io/xcode-man-pages/launchd.plist.5.html#OnDemand)
    + [Apple开发者文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/Introduction.html#//apple_ref/doc/uid/10000172i-SW1-SW1)
 
-4. 移动配置文件至 `/Library/LaunchDaemons/` 目录，同时执行以下命令:
+5. 移动配置文件至 `/Library/LaunchDaemons/` 目录，同时执行以下命令:
    ```zsh
    $ cd /Library/LaunchDaemons
    $ sudo chown root:wheel com.zju.connect.plist
    ```
 
-5. 执行以下命令启用服务并设置自启：
+6. 执行以下命令启用服务并设置自启：
    ```zsh
    $ sudo launchctl load com.zju.connect.plist
    ```
 
-6. 执行以下命令关闭自启动服务：
+7. 执行以下命令关闭自启动服务：
    ```zsh
    $ sudo launchctl unload com.zju.connect.plist
    ```
@@ -230,7 +234,7 @@ $ docker compose up -d
 
 + `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`
 
-+ `secondary-dns-server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `tun_dns_server` 时必须设置
++ `secondary-dns-server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
 
 + `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
 
