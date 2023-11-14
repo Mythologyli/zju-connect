@@ -66,7 +66,6 @@ func (s *Stack) Run() {
 				return
 			} else {
 				log.Printf("Error occurred while reading from TUN stack: %v", err)
-				// TODO graceful shutdown
 				panic(err)
 			}
 		}
