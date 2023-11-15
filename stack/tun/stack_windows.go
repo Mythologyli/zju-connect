@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/tun"
@@ -137,7 +137,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
-	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+	hook_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
 		dev.Close()
 		closeCommand := exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
 		return closeCommand.Run()

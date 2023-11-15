@@ -3,7 +3,7 @@ package gvisor
 import (
 	"errors"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -81,7 +81,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		if ep.rvpnConn != nil {
 			n, err := ep.rvpnConn.Write(buf)
 			if err != nil {
-				if terminal_func.IsTerminal() {
+				if hook_func.IsTerminal() {
 					return list.Len(), nil
 				} else {
 					panic(err)
@@ -156,7 +156,7 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU)
 		n, err := s.endpoint.rvpnConn.Read(buf)
 		if err != nil {
-			if terminal_func.IsTerminal() {
+			if hook_func.IsTerminal() {
 				return
 			} else {
 				panic(err)

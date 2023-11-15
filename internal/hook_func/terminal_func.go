@@ -1,4 +1,4 @@
-package terminal_func
+package hook_func
 
 import (
 	"context"

@@ -6,7 +6,7 @@ import (
 	"context"
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"net"
 	"net/netip"
@@ -81,7 +81,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 	if err != nil {
 		return nil, err
 	}
-	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+	hook_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
 		return ifce.Close()
 	})
 	s.endpoint.ifce = ifce

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/unix"
 	"net"
@@ -63,7 +63,7 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 
 	file.WriteString(fmt.Sprintf("nameserver %s\n", dnsServer))
 
-	terminal_func.RegisterTerminalFunc("DelDnsServer_"+targetHost, func(ctx context.Context) error {
+	hook_func.RegisterTerminalFunc("DelDnsServer_"+targetHost, func(ctx context.Context) error {
 		delCommand := exec.Command("rm", fmt.Sprintf("/etc/resolver/%s", targetHost))
 		delErr := delCommand.Run()
 		if delErr != nil {
@@ -105,7 +105,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 	if err != nil {
 		return nil, err
 	}
-	terminal_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
+	hook_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {
 		return ifce.Close()
 	})
 	s.endpoint.ifce = ifce

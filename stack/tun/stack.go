@@ -5,7 +5,7 @@ package tun
 import (
 	"context"
 	"fmt"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"io"
 
 	tun "github.com/cxz66666/sing-tun"
@@ -47,7 +47,7 @@ func (s *Stack) Run() {
 
 			err = s.endpoint.Write(buf[:n])
 			if err != nil {
-				if terminal_func.IsTerminal() {
+				if hook_func.IsTerminal() {
 					return
 				} else {
 					log.Printf("Error occurred while writing to TUN stack: %v", err)
@@ -62,7 +62,7 @@ func (s *Stack) Run() {
 		buf := make([]byte, MTU+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
-			if terminal_func.IsTerminal() {
+			if hook_func.IsTerminal() {
 				return
 			} else {
 				log.Printf("Error occurred while reading from TUN stack: %v", err)

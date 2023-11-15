@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/internal/terminal_func"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
@@ -29,6 +29,13 @@ func main() {
 	log.Println("Start ZJU Connect v" + zjuConnectVersion)
 	if conf.DebugDump {
 		log.EnableDebug()
+	}
+
+	if errs := hook_func.ExecInitialFunc(context.Background()); errs != nil {
+		for _, err := range errs {
+			log.Printf("Initial ZJU-Connect failed:", err)
+		}
+		os.Exit(1)
 	}
 
 	vpnClient := client.NewEasyConnectClient(
@@ -80,7 +87,7 @@ func main() {
 	if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
 		if err != nil {
-			log.Fatalf("Tun stack setup error: %s", err)
+			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
 
 		if conf.AddRoute && ipResource != nil {
@@ -157,7 +164,7 @@ func main() {
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutdown ZJU-Connect ......")
-	if errs := terminal_func.ExecTerminalFunc(context.Background()); errs != nil {
+	if errs := hook_func.ExecTerminalFunc(context.Background()); errs != nil {
 		for _, err := range errs {
 			log.Printf("Shutdown ZJU-Connect failed:", err)
 		}
