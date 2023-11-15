@@ -25,7 +25,12 @@ type Resolver struct {
 
 	timer  *time.Timer
 	useTCP bool
-	lock   sync.RWMutex
+	// check to use tcp resolver or udp resolver
+	tcpLock sync.RWMutex
+	// check to handle concurrent same dns query
+	// only the goroutine which get the lock can use remoteResolver
+	// MUST handler lock/unlock carefully!
+	concurResolveLock sync.Map
 }
 
 // Resolve ip address. If the host should be visited via VPN, this function set a USE_VPN value in context
@@ -56,45 +61,61 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (context.Context, n
 	}
 
 	if r.useRemoteDNS {
-		r.lock.RLock()
+		r.tcpLock.RLock()
 		useTCP := r.useTCP
-		r.lock.RUnlock()
-
-		if !useTCP {
-			ips, err := r.remoteUDPResolver.LookupIP(context.Background(), "ip4", host)
-			if err != nil {
-				if ips, err = r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-					// All remote DNS failed, so we keep do nothing but use secondary dns
-					log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead")
-					return r.ResolveWithSecondaryDNS(ctx, host)
-				} else {
-					r.lock.Lock()
-					r.useTCP = true
-					if r.timer == nil {
-						r.timer = time.AfterFunc(10*time.Minute, func() {
-							r.lock.Lock()
-							r.useTCP = false
-							r.timer = nil
-							r.lock.Unlock()
-						})
+		r.tcpLock.RUnlock()
+		resolveLockItem, _ := r.concurResolveLock.LoadOrStore(host, new(sync.Mutex))
+		resolveLock := resolveLockItem.(*sync.Mutex)
+		if resolveLock.TryLock() {
+			if !useTCP {
+				ips, err := r.remoteUDPResolver.LookupIP(context.Background(), "ip4", host)
+				if err != nil {
+					if ips, err = r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
+						resolveLock.Unlock()
+						// All remote DNS failed, so we keep do nothing but use secondary dns
+						log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead")
+						return r.ResolveWithSecondaryDNS(ctx, host)
+					} else {
+						r.tcpLock.Lock()
+						r.useTCP = true
+						if r.timer == nil {
+							r.timer = time.AfterFunc(10*time.Minute, func() {
+								r.tcpLock.Lock()
+								r.useTCP = false
+								r.timer = nil
+								r.tcpLock.Unlock()
+							})
+						}
+						r.tcpLock.Unlock()
 					}
-					r.lock.Unlock()
 				}
-			}
-			// Set DNS cache if tcp or udp DNS success
-			r.setDNSCache(host, ips[0])
-			log.Printf("%s -> %s", host, ips[0].String())
-			return ctx, ips[0], nil
-		} else {
-			// Only try tcp and secondary DNS
-			if ips, err := r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
-				log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead")
-				return r.ResolveWithSecondaryDNS(ctx, host)
-			} else {
+				// Set DNS cache if tcp or udp DNS success
 				r.setDNSCache(host, ips[0])
+				resolveLock.Unlock()
 				log.Printf("%s -> %s", host, ips[0].String())
 				return ctx, ips[0], nil
+			} else {
+				// Only try tcp and secondary DNS
+				if ips, err := r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
+					resolveLock.Unlock()
+					log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead")
+					return r.ResolveWithSecondaryDNS(ctx, host)
+				} else {
+					r.setDNSCache(host, ips[0])
+					resolveLock.Unlock()
+					log.Printf("%s -> %s", host, ips[0].String())
+					return ctx, ips[0], nil
+				}
 			}
+		} else {
+			// waiting dns query for remoteResolve finish
+			resolveLock.Lock()
+			resolveLock.Unlock()
+			// if host handled by remoteResolver, it must exist in DNSCache
+			if cachedIP, found := r.getDNSCache(host); found {
+				return ctx, cachedIP, nil
+			}
+			return r.ResolveWithSecondaryDNS(ctx, host)
 		}
 	} else {
 		return r.ResolveWithSecondaryDNS(ctx, host)
@@ -123,6 +144,19 @@ func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (co
 	} else {
 		log.Printf("%s -> %s", host, targets[0].String())
 		return ctx, targets[0], nil
+	}
+}
+
+func (r *Resolver) CleanCache(duration time.Duration) {
+	for {
+		time.Sleep(duration)
+		// dnsCache already cleaned
+		// r.dnsCache.DeleteExpired()
+		r.concurResolveLock.Range(func(key, value any) bool {
+			r.concurResolveLock.Delete(key)
+			return true
+		})
+		log.Printf("Clean DNS Cache: OK")
 	}
 }
 
@@ -168,6 +202,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 			PreferGo: true,
 		}
 	}
-
+	// sleep 10 times ttl
+	go resolver.CleanCache(time.Duration(ttl) * time.Second * 10)
 	return resolver
 }
