@@ -109,13 +109,16 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 		return dialDirect(ctx, network, addr)
 	}
 
-	ctx, ip, err := d.resolver.Resolve(ctx, host)
-	if err != nil {
-		return dialDirect(ctx, network, addr)
-	}
+	var ip net.IP
+	if ip = net.ParseIP(host); ip == nil {
+		ctx, ip, err = d.resolver.Resolve(ctx, host)
+		if err != nil {
+			return dialDirect(ctx, network, addr)
+		}
 
-	if strings.Count(ip.String(), ":") > 0 {
-		return dialDirect(ctx, network, addr)
+		if strings.Count(ip.String(), ":") > 0 {
+			return dialDirect(ctx, network, addr)
+		}
 	}
 
 	return d.DialIPPort(ctx, network, ip.String()+":"+port)
