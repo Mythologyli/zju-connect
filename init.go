@@ -24,6 +24,7 @@ type (
 		SocksUser           string
 		SocksPasswd         string
 		HTTPBind            string
+		ShadowsocksURL      string
 		TUNMode             bool
 		AddRoute            bool
 		DNSTTL              uint64
@@ -65,6 +66,7 @@ type (
 		SocksUser           *string                    `toml:"socks_user"`
 		SocksPasswd         *string                    `toml:"socks_passwd"`
 		HTTPBind            *string                    `toml:"http_bind"`
+		ShadowsocksURL      *string                    `toml:"shadowsocks_url"`
 		TUNMode             *bool                      `toml:"tun_mode"`
 		AddRoute            *bool                      `toml:"add_route"`
 		DNSTTL              *uint64                    `toml:"dns_ttl"`
@@ -119,6 +121,7 @@ func parseTOMLConfig(configFile string, conf *Config) error {
 	conf.SocksUser = getTOMLVal(confTOML.SocksUser, "")
 	conf.SocksPasswd = getTOMLVal(confTOML.SocksPasswd, "")
 	conf.HTTPBind = getTOMLVal(confTOML.HTTPBind, ":1081")
+	conf.ShadowsocksURL = getTOMLVal(confTOML.ShadowsocksURL, "")
 	conf.TUNMode = getTOMLVal(confTOML.TUNMode, false)
 	conf.AddRoute = getTOMLVal(confTOML.AddRoute, false)
 	conf.DNSTTL = getTOMLVal(confTOML.DNSTTL, uint64(3600))
@@ -185,6 +188,7 @@ func init() {
 	flag.StringVar(&conf.SocksUser, "socks-user", "", "SOCKS5 username, default is don't use auth")
 	flag.StringVar(&conf.SocksPasswd, "socks-passwd", "", "SOCKS5 password, default is don't use auth")
 	flag.StringVar(&conf.HTTPBind, "http-bind", ":1081", "The address HTTP server listens on (e.g. 127.0.0.1:1081)")
+	flag.StringVar(&conf.ShadowsocksURL, "shadowsocks-url", "", "The address Shadowsocks server listens on (e.g. ss://method:password@host:port)")
 	flag.BoolVar(&conf.TUNMode, "tun-mode", false, "Enable TUN mode (experimental)")
 	flag.BoolVar(&conf.AddRoute, "add-route", false, "Add route from rules for TUN interface")
 	flag.Uint64Var(&conf.DNSTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")

@@ -11,7 +11,9 @@ require (
 	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
 	github.com/miekg/dns v1.1.56
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/shadowsocks/go-shadowsocks2 v0.1.5
 	github.com/things-go/go-socks5 v0.0.4
+	golang.org/x/net v0.17.0
 	golang.org/x/sys v0.13.0
 	golang.zx2c4.com/wireguard v0.0.0-20231022001213-2e0774f246fb
 	golang.zx2c4.com/wireguard/windows v0.5.3
@@ -29,6 +31,7 @@ require (
 	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/metacubex/gvisor v0.0.0-20231001104248-0f672c3fb8d8 // indirect
 	github.com/quic-go/quic-go v0.39.1 // indirect
+	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/sagernet/go-tun2socks v1.16.12-0.20220818015926-16cb67876a61 // indirect
 	github.com/sagernet/netlink v0.0.0-20220905062125-8043b4a9aa97 // indirect
 	github.com/sagernet/sing v0.2.14 // indirect
@@ -38,7 +41,6 @@ require (
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/mod v0.13.0 // indirect
-	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
