@@ -39,7 +39,7 @@ func parseURL(s string) (addr, cipher, password string, err error) {
 func ServeShadowsocks(dialer *dial.Dialer, url string) {
 	addr, cipher, password, err := parseURL(url)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	ciph, err := core.PickCipher(cipher, []byte{}, password)
@@ -56,7 +56,7 @@ func ServeShadowsocks(dialer *dial.Dialer, url string) {
 func tcpRemote(addr string, shadow func(net.Conn) net.Conn, dialer *dial.Dialer) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	for {
@@ -89,9 +89,9 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn, dialer *dial.Dialer)
 			}
 			defer rc.Close()
 
-			log.Printf("proxy %s <-> %s", c.RemoteAddr(), tgt)
+			log.Printf("[SS][TCP] %s <-> %s", c.RemoteAddr(), tgt)
 			if err = relay(sc, rc); err != nil {
-				log.Printf("relay error: %v", err)
+				log.DebugPrintf("SS TCP relay error: %v", err)
 			}
 		}()
 	}
@@ -124,8 +124,7 @@ func relay(left, right net.Conn) error {
 func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dialer *dial.Dialer) {
 	c, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		log.Printf("UDP remote listen error: %v", err)
-		return
+		log.Fatal(err)
 	}
 	defer func(c net.PacketConn) {
 		_ = c.Close()
@@ -135,7 +134,6 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dialer *
 	nm := newNATMap(udpTimeout)
 	buf := make([]byte, udpBufSize)
 
-	log.Printf("listening UDP on %s", addr)
 	for {
 		n, raddr, err := c.ReadFrom(buf)
 		if err != nil {
@@ -167,6 +165,7 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dialer *
 			}()
 		}
 
+		log.Printf("[SS][UDP] %s <-> %s", raddr, targetAddr)
 		_, err = targetConn.Write(payload) // accept only UDPAddr despite the signature
 		if err != nil {
 			log.Printf("UDP remote write error: %v", err)
