@@ -224,6 +224,8 @@ $ docker compose up -d
 
 + `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
 
++ `shadowsocks-url`: Shadowsocks 服务端 URL。例如：`ss://aes-128-gcm:password@server:port`。格式[参考此处](https://github.com/shadowsocks/go-shadowsocks2)
+
 + `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
 
 + `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由
@@ -270,6 +272,7 @@ $ docker compose up -d
 - [x] 代理 UDP 流量
 - [x] SOCKS5 代理服务
 - [x] HTTP 代理服务
+- [x] Shadowsocks 代理服务
 - [x] ZJU DNS 解析
 - [x] ZJU 规则添加
 - [x] 支持 IPv6 直连
