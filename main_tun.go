@@ -1,4 +1,4 @@
-//go:build !tun
+//go:build tun
 
 package main
 
@@ -11,8 +11,6 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
-	"github.com/mythologyli/zju-connect/stack"
-	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"inet.af/netaddr"
 	"net"
@@ -23,7 +21,7 @@ import (
 
 var conf Config
 
-const zjuConnectVersion = "0.6.0"
+const zjuConnectVersion = "0.6.0-tun-only"
 
 func main() {
 	log.Init()
@@ -85,25 +83,15 @@ func main() {
 		ipResource, _ = ipSetBuilder.IPSet()
 	}
 
-	var vpnStack stack.Stack
-	if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
-		if err != nil {
-			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
-		}
+	vpnStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
+	if err != nil {
+		log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
+	}
 
-		if conf.AddRoute && ipResource != nil {
-			for _, prefix := range ipResource.Prefixes() {
-				log.Printf("Add route to %s", prefix.String())
-				_ = vpnTUNStack.AddRoute(prefix.String())
-			}
-		}
-
-		vpnStack = vpnTUNStack
-	} else {
-		vpnStack, err = gvisor.NewStack(vpnClient)
-		if err != nil {
-			log.Fatalf("gVisor stack setup error: %s", err)
+	if conf.AddRoute && ipResource != nil {
+		for _, prefix := range ipResource.Prefixes() {
+			log.Printf("Add route to %s", prefix.String())
+			_ = vpnStack.AddRoute(prefix.String())
 		}
 	}
 

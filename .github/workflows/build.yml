@@ -26,45 +26,42 @@ jobs:
         # Include amd64 on all platforms.
         goos: [ windows, linux, darwin ]
         goarch: [ amd64, 386 ]
+        build_tag: [ full, tun ]
         exclude:
           # Exclude i386 on darwin.
           - goarch: 386
             goos: darwin
         include:
           # BEGIN Linux ARM 5 6 7
-          - goos: linux
-            goarch: arm
-            goarm: 7
-          - goos: linux
-            goarch: arm
-            goarm: 6
-          - goos: linux
-            goarch: arm
-            goarm: 5
+          - { goos: linux, goarch: arm, goarm: 7, build_tag: full }
+          - { goos: linux, goarch: arm, goarm: 7, build_tag: tun }
+          - { goos: linux, goarch: arm, goarm: 6, build_tag: full }
+          - { goos: linux, goarch: arm, goarm: 6, build_tag: tun }
+          - { goos: linux, goarch: arm, goarm: 5, build_tag: full }
+          - { goos: linux, goarch: arm, goarm: 5, build_tag: tun }
           # END Linux ARM 5 6 7
           # BEGIN Windows ARM 7
-          - goos: windows
-            goarch: arm
-            goarm: 7
+          - { goos: windows, goarch: arm, goarm: 7, build_tag: full }
+          - { goos: windows, goarch: arm, goarm: 7, build_tag: tun }
           # END Windows ARM 7
           # BEGIN Other architectures
-          - goos: darwin
-            goarch: arm64
-          - goos: linux
-            goarch: arm64
-          - goos: linux
-            goarch: riscv64
-          - goos: windows
-            goarch: arm64
+          - { goos: darwin, goarch: arm64, build_tag: full }
+          - { goos: darwin, goarch: arm64, build_tag: tun }
+          - { goos: linux, goarch: arm64, build_tag: full }
+          - { goos: linux, goarch: arm64, build_tag: tun }
+          - { goos: linux, goarch: riscv64, build_tag: full }
+          - { goos: linux, goarch: riscv64, build_tag: tun }
+          - { goos: windows, goarch: arm64, build_tag: full }
+          - { goos: windows, goarch: arm64, build_tag: tun }
           # BEGIN MIPS
-          - goos: linux
-            goarch: mips64
-          - goos: linux
-            goarch: mips64le
-          - goos: linux
-            goarch: mipsle
-          - goos: linux
-            goarch: mips
+          - { goos: linux, goarch: mips64, build_tag: full }
+          - { goos: linux, goarch: mips64, build_tag: tun }
+          - { goos: linux, goarch: mips64le, build_tag: full }
+          - { goos: linux, goarch: mips64le, build_tag: tun }
+          - { goos: linux, goarch: mipsle, build_tag: full }
+          - { goos: linux, goarch: mipsle, build_tag: tun }
+          - { goos: linux, goarch: mips, build_tag: full }
+          - { goos: linux, goarch: mips, build_tag: tun }
           # END MIPS
           # END Other architectures
       fail-fast: false
@@ -83,7 +80,7 @@ jobs:
       - name: Show workflow information
         id: get_filename
         run: |
-          export _NAME=$GOOS-$GOARCH$GOARM
+          [[ "${{ matrix.build_tag }}" = "full" ]] && export _NAME=$GOOS-$GOARCH$GOARM || export _NAME=$GOOS-$GOARCH$GOARM-tun-only
           echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $_NAME"
           echo "ASSET_NAME=$_NAME" >> $GITHUB_OUTPUT
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
@@ -99,7 +96,7 @@ jobs:
       - name: Build
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/zju-connect -trimpath -ldflags "-s -w -buildid=" .
+          go build -tags ${{ matrix.build_tag }} -v -o build_assets/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
       - name: Rename Windows zju-connect
         if: matrix.goos == 'windows'
