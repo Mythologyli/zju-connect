@@ -146,6 +146,10 @@ func main() {
 		go service.ServeHTTP(conf.HTTPBind, vpnDialer)
 	}
 
+	if conf.ShadowsocksURL != "" {
+		go service.ServeShadowsocks(vpnDialer, conf.ShadowsocksURL)
+	}
+
 	for _, portForwarding := range conf.PortForwardingList {
 		if portForwarding.NetworkType == "tcp" {
 			go service.ServeTCPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
