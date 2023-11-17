@@ -123,10 +123,8 @@ func main() {
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
-	if conf.TUNMode {
-		clientIP, _ := vpnClient.IP()
-		go service.ServeDNS(clientIP.String()+":53", localResolver)
-	}
+	clientIP, _ := vpnClient.IP()
+	go service.ServeDNS(clientIP.String()+":53", localResolver)
 
 	if conf.SocksBind != "" {
 		go service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd)
