@@ -4,7 +4,7 @@ ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
-
+ARG build_tag=full
 RUN go env -w GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /src
@@ -21,7 +21,7 @@ RUN --mount=target=. \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     # go build -ldflags="-w -s" -o /app/main ./cmd/openwrt-wan-reconnect/*.go
-    go build -v -o /app/zju-connect -trimpath -ldflags "-s -w -buildid=" .
+    go build -tags ${build_tag} -v -o /app/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
 # Import the binary from build stage
 FROM gcr.dockerproxy.com/distroless/static:nonroot as prd
