@@ -6,6 +6,8 @@
 
 ---
 
+中文 | [English](README_en.md)
+
 **本程序基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)（现已停止维护）完成，感谢原作者 [lyc8503](https://github.com/lyc8503)。**
 
 **QQ 交流群：946190505**，欢迎来自 ZJU 的使用者加入交流。
@@ -248,7 +250,7 @@ $ docker compose up -d
 
 + `udp-port-forwarding`: UDP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:53-10.10.0.21:53`。多个转发用 `,` 分隔
 
-+ `custom-dns`: 指定自定义DNS解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔:
++ `custom-dns`: 指定自定义DNS解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔
 
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
