@@ -11,6 +11,7 @@ require (
 	github.com/beevik/etree v1.2.0
 	github.com/cloverstd/tcping v0.1.1
 	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
+	github.com/golang-infrastructure/go-domain-suffix-trie v0.0.2
 	github.com/miekg/dns v1.1.57
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5

@@ -3,11 +3,11 @@ package resolve
 import (
 	"context"
 	"errors"
+	domainsuffixtrie "github.com/golang-infrastructure/go-domain-suffix-trie"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/patrickmn/go-cache"
 	"net"
-	"strings"
 	"sync"
 	"time"
 )
@@ -17,7 +17,7 @@ type Resolver struct {
 	remoteTCPResolver *net.Resolver
 	secondaryResolver *net.Resolver
 	ttl               uint64
-	domainResource    map[string]bool
+	domainResource    *domainsuffixtrie.DomainSuffixTrieNode[bool]
 	dnsResource       map[string]net.IP
 	useRemoteDNS      bool
 
@@ -37,11 +37,8 @@ type Resolver struct {
 func (r *Resolver) Resolve(ctx context.Context, host string) (context.Context, net.IP, error) {
 	var useVPN = false
 	if r.domainResource != nil {
-		for domain := range r.domainResource {
-			if strings.Contains(host, domain) {
-				useVPN = true
-				break
-			}
+		if r.domainResource.FindMatchDomainSuffixPayload(host) {
+			useVPN = true
 		}
 	}
 
@@ -161,6 +158,11 @@ func (r *Resolver) CleanCache(duration time.Duration) {
 }
 
 func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResource map[string]bool, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
+	domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
+	for domain := range domainResource {
+		_ = domainSuffixTree.AddDomainSuffix(domain, true)
+	}
+
 	resolver := &Resolver{
 		remoteUDPResolver: &net.Resolver{
 			PreferGo: true,
@@ -181,7 +183,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 			},
 		},
 		ttl:            ttl,
-		domainResource: domainResource,
+		domainResource: domainSuffixTree,
 		dnsResource:    dnsResource,
 		dnsCache:       cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
 		useRemoteDNS:   useRemoteDNS,
