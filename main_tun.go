@@ -83,6 +83,10 @@ func main() {
 		ipResource, _ = ipSetBuilder.IPSet()
 	}
 
+	for _, customProxyDomain := range conf.CustomProxyDomain {
+		domainResource[customProxyDomain] = true
+	}
+
 	vpnStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
 	if err != nil {
 		log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
