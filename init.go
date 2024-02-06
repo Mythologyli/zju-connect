@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -36,6 +37,7 @@ type (
 		DebugDump           bool
 		PortForwardingList  []SinglePortForwarding
 		CustomDNSList       []SingleCustomDNS
+		CustomProxyDomain   []string
 		TwfID               string
 	}
 
@@ -78,6 +80,7 @@ type (
 		DebugDump           *bool                      `toml:"debug_dump"`
 		PortForwarding      []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
+		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 	}
 
 	SinglePortForwardingTOML struct {
@@ -168,11 +171,20 @@ func parseTOMLConfig(configFile string, conf *Config) error {
 		})
 	}
 
+	for _, singleCustomProxyDomain := range confTOML.CustomProxyDomain {
+		var domainRegex = regexp.MustCompile(`^[a-zA-Zd-]+(.[a-zA-Zd-]+)*.[a-zA-Z]{2,}$`)
+		if !domainRegex.MatchString(singleCustomProxyDomain) {
+			fmt.Printf("ZJU Connect: %s is not a valid domain\n", singleCustomProxyDomain)
+			return errors.New(fmt.Sprintf("ZJU Connect: %s is not a valid domain", singleCustomProxyDomain))
+		}
+		conf.CustomProxyDomain = append(conf.CustomProxyDomain, singleCustomProxyDomain)
+	}
+
 	return nil
 }
 
 func init() {
-	configFile, tcpPortForwarding, udpPortForwarding, customDns := "", "", "", ""
+	configFile, tcpPortForwarding, udpPortForwarding, customDns, customProxyDomain := "", "", "", "", ""
 	showVersion := false
 
 	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
@@ -202,6 +214,7 @@ func init() {
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
+	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 
@@ -266,6 +279,18 @@ func init() {
 					HostName: dnsStringSplit[0],
 					IP:       dnsStringSplit[1],
 				})
+			}
+		}
+
+		if customProxyDomain != "" {
+			domainList := strings.Split(customProxyDomain, ",")
+			for _, domain := range domainList {
+				var domainRegex = regexp.MustCompile(`^[a-zA-Zd-]+(.[a-zA-Zd-]+)*.[a-zA-Z]{2,}$`)
+				if !domainRegex.MatchString(domain) {
+					fmt.Printf("ZJU Connect: %s is not a valid domain\n", domain)
+					os.Exit(1)
+				}
+				conf.CustomProxyDomain = append(conf.CustomProxyDomain, domain)
 			}
 		}
 	}

@@ -85,6 +85,10 @@ func main() {
 		ipResource, _ = ipSetBuilder.IPSet()
 	}
 
+	for _, customProxyDomain := range conf.CustomProxyDomain {
+		domainResource[customProxyDomain] = true
+	}
+
 	var vpnStack stack.Stack
 	if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)

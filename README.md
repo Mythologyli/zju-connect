@@ -252,6 +252,8 @@ $ docker compose up -d
 
 + `custom-dns`: 指定自定义DNS解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔
 
++ `custom-proxy-domain`: 指定自定义域名使用RVPN代理，格式为 `域名,域名,...`，例如 `nature.com,science.org`。多个域名用 `,` 分隔
+
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
 + `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效

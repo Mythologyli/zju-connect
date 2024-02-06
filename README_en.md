@@ -358,6 +358,8 @@ docker compose up -d
 
 + `custom-dns`: Specify custom DNS resolution results, format is `domain name:IP,domain name:IP,...`, for example `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`. Multiple resolutions are separated by `,`
 
++ `custom-proxy-domain`: Specify custom domains which use RVPN proxy, format is `domain,domain,...`, for example `nature.com,science.org`. Multiple resolutions are separated by `,`
+
 + `twf-id`: twfID login, for debugging purposes, generally no need to add this argument
 
 + `config`: Specify the configuration file, the content refers to `config.toml.example`. Other parameters are ignored when the configuration file is enabled

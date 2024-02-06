@@ -35,3 +35,8 @@ custom_dns = [
 #    { host_name = "appservice.zju.edu.cn", ip = "10.203.8.198"},
 #    { host_name = "www.cc98.org", ip = "10.10.98.98"}
 ]
+
+custom_proxy_domain = [
+#    "science.org",
+#    "nature.com"
+]
