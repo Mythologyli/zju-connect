@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
@@ -19,7 +20,7 @@ import (
 	"syscall"
 )
 
-var conf Config
+var conf configs.Config
 
 const zjuConnectVersion = "0.7.0-tun-only"
 
@@ -31,9 +32,9 @@ func main() {
 		log.EnableDebug()
 	}
 
-	if errs := hook_func.ExecInitialFunc(context.Background()); errs != nil {
+	if errs := hook_func.ExecInitialFunc(context.Background(), conf); errs != nil {
 		for _, err := range errs {
-			log.Printf("Initial ZJU-Connect failed:", err)
+			log.Printf("Initial ZJU-Connect failed: %s", err)
 		}
 		os.Exit(1)
 	}
@@ -162,7 +163,7 @@ func main() {
 	log.Println("Shutdown ZJU-Connect ......")
 	if errs := hook_func.ExecTerminalFunc(context.Background()); errs != nil {
 		for _, err := range errs {
-			log.Printf("Shutdown ZJU-Connect failed:", err)
+			log.Printf("Shutdown ZJU-Connect failed: %s", err)
 		}
 	} else {
 		log.Println("Shutdown ZJU-Connect success, Bye~")

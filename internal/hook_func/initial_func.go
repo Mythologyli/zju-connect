@@ -2,10 +2,11 @@ package hook_func
 
 import (
 	"context"
+	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
 )
 
-type InitialFunc func(ctx context.Context) error
+type InitialFunc func(ctx context.Context, config configs.Config) error
 type InitialItem struct {
 	f    InitialFunc
 	name string
@@ -22,11 +23,11 @@ func RegisterInitialFunc(execName string, fun InitialFunc) {
 	})
 }
 
-func ExecInitialFunc(ctx context.Context) []error {
+func ExecInitialFunc(ctx context.Context, config configs.Config) []error {
 	var errList []error
 	for _, item := range initialFuncList {
 		log.Println("Exec func on initial:", item.name)
-		if err := item.f(ctx); err != nil {
+		if err := item.f(ctx, config); err != nil {
 			errList = append(errList, err)
 			log.Println("Exec func on initial ", item.name, "failed:", err)
 		} else {
