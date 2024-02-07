@@ -123,7 +123,7 @@ func main() {
 
 	go vpnStack.Run()
 
-	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResource, conf.ProxyAll)
+	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResource, conf.ProxyAll, conf.DialDirectProxy)
 
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
