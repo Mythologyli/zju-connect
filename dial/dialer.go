@@ -24,33 +24,6 @@ type Dialer struct {
 	dialDirectSocksProxy string // WORKING IN PROCESS
 }
 
-// usedAddr maybe ip:port or hostname:port, it doesn't matter
-func (d *Dialer) dialDirectWithHTTPProxy(ctx context.Context, usedAddr string) (net.Conn, error) {
-	goDialer := &net.Dialer{}
-	goDial := goDialer.DialContext
-
-	log.Printf("%s -> PROXY[%s]", usedAddr, d.dialDirectHTTPProxy)
-	conn, err := goDial(ctx, "tcp", d.dialDirectHTTPProxy)
-	if err != nil {
-		return nil, err
-	}
-	_, _ = conn.Write([]byte("CONNECT " + usedAddr + " HTTP/1.1\r\n\r\n"))
-	connBuf := make([]byte, 256)
-	n, _ := conn.Read(connBuf)
-	if strings.Contains(string(connBuf[:n]), "200") {
-		return conn, nil
-	} else {
-		return nil, errors.New("PROXY CONNECT ERROR")
-	}
-}
-
-func (d *Dialer) dialDirectWithoutProxy(ctx context.Context, network, addr string) (net.Conn, error) {
-	goDialer := &net.Dialer{}
-	goDial := goDialer.DialContext
-	log.Printf("%s -> DIRECT", addr)
-	return goDial(ctx, network, addr)
-}
-
 // dialDirectIP need have a `hostAddr` parameter, which will be passed to PROXY. But `hostAddr` maybe empty, ipAddr never be empty.
 func (d *Dialer) dialDirectIP(ctx context.Context, network, ipAddr string, hostAddr string) (net.Conn, error) {
 	// only support http proxy now and tcp network type
@@ -60,6 +33,13 @@ func (d *Dialer) dialDirectIP(ctx context.Context, network, ipAddr string, hostA
 			usedAddr = hostAddr
 		}
 		return d.dialDirectWithHTTPProxy(ctx, usedAddr)
+		// only support tcp for socks proxy
+	} else if d.dialDirectSocksProxy != "" && network == "tcp" {
+		if hostAddr != "" {
+			return d.dialDirectWithSocksProxy(ctx, network, hostAddr, false)
+		} else {
+			return d.dialDirectWithSocksProxy(ctx, network, ipAddr, true)
+		}
 	} else {
 		return d.dialDirectWithoutProxy(ctx, network, ipAddr)
 	}
@@ -69,6 +49,9 @@ func (d *Dialer) dialDirectHost(ctx context.Context, network, hostAddr string) (
 	// only support http proxy now and tcp network type
 	if d.dialDirectHTTPProxy != "" && network == "tcp" {
 		return d.dialDirectWithHTTPProxy(ctx, hostAddr)
+		// only support tcp for socks proxy
+	} else if d.dialDirectSocksProxy != "" && network == "tcp" {
+		return d.dialDirectWithSocksProxy(ctx, network, hostAddr, false)
 	} else {
 		return d.dialDirectWithoutProxy(ctx, network, hostAddr)
 	}
@@ -179,18 +162,21 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 }
 
 func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResource *netaddr.IPSet, alwaysUseVPN bool, dialDirectProxy string) *Dialer {
+	dialHttpProxy := ""
+	dialSocksProxy := ""
 	if strings.HasPrefix(dialDirectProxy, "http://") {
-		dialDirectProxy = strings.TrimPrefix(dialDirectProxy, "http://")
+		dialHttpProxy = strings.TrimPrefix(dialDirectProxy, "http://")
+	} else if strings.HasPrefix(dialDirectProxy, "socks://") {
+		dialSocksProxy = strings.TrimPrefix(dialDirectProxy, "socks://")
 	} else if len(dialDirectProxy) > 0 {
-		log.Println("暂不支持除[http]之外的DialDirectProxy，忽略该配置项")
-		dialDirectProxy = ""
+		log.Println("暂不支持除[http/socks]之外的DialDirectProxy，忽略该配置项")
 	}
 	return &Dialer{
 		stack:                stack,
 		resolver:             resolver,
 		ipResource:           ipResource,
 		alwaysUseVPN:         alwaysUseVPN,
-		dialDirectHTTPProxy:  dialDirectProxy,
-		dialDirectSocksProxy: "",
+		dialDirectHTTPProxy:  dialHttpProxy,
+		dialDirectSocksProxy: dialSocksProxy,
 	}
 }
