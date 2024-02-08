@@ -24,56 +24,53 @@ type Dialer struct {
 	dialDirectSocksProxy string // WORKING IN PROCESS
 }
 
-// dialDirectIP need have a `hostAddr` parameter, which will be passed to PROXY. But `hostAddr` maybe empty, ipAddr never be empty.
-func (d *Dialer) dialDirectIP(ctx context.Context, network, ipAddr string, hostAddr string) (net.Conn, error) {
+// usedAddr maybe ip:port or hostname:port, it doesn't matter
+func (d *Dialer) dialDirectWithHTTPProxy(ctx context.Context, usedAddr string) (net.Conn, error) {
 	goDialer := &net.Dialer{}
 	goDial := goDialer.DialContext
+
+	log.Printf("%s -> PROXY[%s]", usedAddr, d.dialDirectHTTPProxy)
+	conn, err := goDial(ctx, "tcp", d.dialDirectHTTPProxy)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = conn.Write([]byte("CONNECT " + usedAddr + " HTTP/1.1\r\n\r\n"))
+	connBuf := make([]byte, 256)
+	n, _ := conn.Read(connBuf)
+	if strings.Contains(string(connBuf[:n]), "200") {
+		return conn, nil
+	} else {
+		return nil, errors.New("PROXY CONNECT ERROR")
+	}
+}
+
+func (d *Dialer) dialDirectWithoutProxy(ctx context.Context, network, addr string) (net.Conn, error) {
+	goDialer := &net.Dialer{}
+	goDial := goDialer.DialContext
+	log.Printf("%s -> DIRECT", addr)
+	return goDial(ctx, network, addr)
+}
+
+// dialDirectIP need have a `hostAddr` parameter, which will be passed to PROXY. But `hostAddr` maybe empty, ipAddr never be empty.
+func (d *Dialer) dialDirectIP(ctx context.Context, network, ipAddr string, hostAddr string) (net.Conn, error) {
 	// only support http proxy now and tcp network type
 	if d.dialDirectHTTPProxy != "" && network == "tcp" {
 		usedAddr := ipAddr
 		if hostAddr != "" {
 			usedAddr = hostAddr
 		}
-		log.Printf("%s -> PROXY[%s]", usedAddr, d.dialDirectHTTPProxy)
-		conn, err := goDial(ctx, network, d.dialDirectHTTPProxy)
-		if err != nil {
-			return nil, err
-		}
-		_, _ = conn.Write([]byte("CONNECT " + usedAddr + " HTTP/1.1\r\n\r\n"))
-		connBuf := make([]byte, 256)
-		n, _ := conn.Read(connBuf)
-		if strings.Contains(string(connBuf[:n]), "200") {
-			return conn, nil
-		} else {
-			return nil, errors.New("PROXY CONNECT ERROR")
-		}
+		return d.dialDirectWithHTTPProxy(ctx, usedAddr)
 	} else {
-		log.Printf("%s -> DIRECT", ipAddr)
-		return goDial(ctx, network, ipAddr)
+		return d.dialDirectWithoutProxy(ctx, network, ipAddr)
 	}
 }
 
 func (d *Dialer) dialDirectHost(ctx context.Context, network, hostAddr string) (net.Conn, error) {
-	goDialer := &net.Dialer{}
-	goDial := goDialer.DialContext
 	// only support http proxy now and tcp network type
 	if d.dialDirectHTTPProxy != "" && network == "tcp" {
-		log.Printf("%s -> PROXY[%s]", hostAddr, d.dialDirectHTTPProxy)
-		conn, err := goDial(ctx, network, d.dialDirectHTTPProxy)
-		if err != nil {
-			return nil, err
-		}
-		_, _ = conn.Write([]byte("CONNECT " + hostAddr + " HTTP/1.1\r\n\r\n"))
-		connBuf := make([]byte, 256)
-		n, _ := conn.Read(connBuf)
-		if strings.Contains(string(connBuf[:n]), "200") {
-			return conn, nil
-		} else {
-			return nil, errors.New("PROXY CONNECT ERROR")
-		}
+		return d.dialDirectWithHTTPProxy(ctx, hostAddr)
 	} else {
-		log.Printf("%s -> DIRECT", hostAddr)
-		return goDial(ctx, network, hostAddr)
+		return d.dialDirectWithoutProxy(ctx, network, hostAddr)
 	}
 }
 
