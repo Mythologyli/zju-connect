@@ -16,6 +16,7 @@ type (
 		SocksPasswd         string
 		HTTPBind            string
 		ShadowsocksURL      string
+		DialDirectProxy     string
 		TUNMode             bool
 		AddRoute            bool
 		DNSTTL              uint64
@@ -59,6 +60,7 @@ type (
 		SocksPasswd         *string                    `toml:"socks_passwd"`
 		HTTPBind            *string                    `toml:"http_bind"`
 		ShadowsocksURL      *string                    `toml:"shadowsocks_url"`
+		DialDirectProxy     *string                    `toml:"dial_direct_proxy"`
 		TUNMode             *bool                      `toml:"tun_mode"`
 		AddRoute            *bool                      `toml:"add_route"`
 		DNSTTL              *uint64                    `toml:"dns_ttl"`

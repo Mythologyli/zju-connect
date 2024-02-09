@@ -228,6 +228,8 @@ $ docker compose up -d
 
 + `shadowsocks-url`: Shadowsocks 服务端 URL。例如：`ss://aes-128-gcm:password@server:port`。格式[参考此处](https://github.com/shadowsocks/go-shadowsocks2)
 
++ `dial-direct-proxy`: 当URL未命中RVPN规则，切换到直连时使用代理，常用于与其他代理工具配合的场景，目前仅支持http代理。 例如：`http://127.0.0.1:7890"`，为 `""` 时不启用
+
 + `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
 
 + `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由

@@ -334,6 +334,8 @@ docker compose up -d
 
 + `shadowsocks-url`: Shadowsocks server URL. For example: `ss://aes-128-gcm:password@server:port`. Format [refer to here](https://github.com/shadowsocks/go-shadowsocks2)
 
++ `dial-direct-proxy`: When a URL does not match RVPN rules and switches to direct connection, it uses a proxy, typically in scenarios where it works in conjunction with other proxy tools. Currently, only HTTP proxies are supported. For example: `http://127.0.0.1:7890`, setting it to empty string (`""`) will disable its use.
+
 + `tun-mode`: TUN mode (experimental). Please read the TUN mode precautions below
 
 + `add-route`: Add route according to the configuration issued by the server when TUN mode is enabled

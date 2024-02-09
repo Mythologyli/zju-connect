@@ -14,6 +14,7 @@ socks_user = ""
 socks_passwd = ""
 http_bind = ":1081"
 shadowsocks_url = "" # "ss://aes-128-gcm:password@:1082"
+dial_direct_proxy = "" # "http://127.0.0.1:7890" or "socks://127.0.0.1:7890"
 tun_mode = false
 add_route = false
 dns_ttl = 3600

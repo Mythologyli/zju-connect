@@ -33,8 +33,13 @@ type Resolver struct {
 	concurResolveLock sync.Map
 }
 
-// Resolve ip address. If the host should be visited via VPN, this function set a USE_VPN value in context
-func (r *Resolver) Resolve(ctx context.Context, host string) (context.Context, net.IP, error) {
+// Resolve ip address. If the host should be visited via VPN, this function set a USE_VPN value in context. If resolve success, this function set a RESOLVE_HOST value in context.
+func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Context, resIP net.IP, resErr error) {
+	defer func() {
+		if resErr == nil {
+			resCtx = context.WithValue(resCtx, "RESOLVE_HOST", host)
+		}
+	}()
 	var useVPN = false
 	if r.domainResource != nil {
 		if r.domainResource.FindMatchDomainSuffixPayload(host) {
