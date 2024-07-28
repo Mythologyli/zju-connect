@@ -34,12 +34,16 @@ type Endpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-func (ep *Endpoint) ParseHeader(stack.PacketBufferPtr) bool {
+func (ep *Endpoint) ParseHeader(*stack.PacketBuffer) bool {
 	return true
 }
 
 func (ep *Endpoint) MTU() uint32 {
 	return MTU
+}
+
+func (ep *Endpoint) SetMTU(mtu uint32) {
+	log.Println("don't support change MTU from %d to %d", MTU, mtu)
 }
 
 func (ep *Endpoint) MaxHeaderLength() uint16 {
@@ -49,6 +53,8 @@ func (ep *Endpoint) MaxHeaderLength() uint16 {
 func (ep *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
+
+func (ep *Endpoint) SetLinkAddress(addr tcpip.LinkAddress) {}
 
 func (ep *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return stack.CapabilityNone
@@ -68,7 +74,11 @@ func (ep *Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone
 }
 
-func (ep *Endpoint) AddHeader(stack.PacketBufferPtr) {}
+func (ep *Endpoint) AddHeader(*stack.PacketBuffer) {}
+
+func (ep *Endpoint) Close() {}
+
+func (ep *Endpoint) SetOnCloseAction(func()) {}
 
 // WritePackets is called when get packets from gVisor stack. Then it sends them to VPN server
 func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
