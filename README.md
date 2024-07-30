@@ -198,6 +198,20 @@ services:
 $ docker compose up -d
 ```
 
+### ⚠️Warning
+
+1. 当使用其他开启了Tun模式的代理工具，同时配合zju-connect作为下游代理时，请注意务必提供正确的校网分流规则，参考[此issue](https://github.com/Mythologyli/zju-connect/issues/57)
+
+### ⚠️TUN 模式注意事项
+
+1. 需要管理员权限运行
+
+2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
+
+3. 为保证 `*.zju.edu.cn` 解析正确，建议配置 `dns-hijack` 劫持系统 DNS
+
+4. macOS 暂不支持通过 TUN 接口访问 `10.0.0.0/8` 外的地址
+
 ### 参数说明
 
 + `server`: SSL VPN 服务端地址，默认为 `rvpn.zju.edu.cn`
@@ -259,16 +273,6 @@ $ docker compose up -d
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
 + `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
-
-### TUN 模式注意事项
-
-1. 需要管理员权限运行
-
-2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
-
-3. 为保证 `*.zju.edu.cn` 解析正确，建议配置 `dns-hijack` 劫持系统 DNS
-
-4. macOS 暂不支持通过 TUN 接口访问 `10.0.0.0/8` 外的地址
 
 ### 计划表
 

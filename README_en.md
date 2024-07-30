@@ -198,111 +198,19 @@ And run the following command in the same directory:
 docker compose up -d
 ```
 
+### ⚠️Warning
 
-<!-- ### 参数说明
+1. When using other proxy tools with Tun mode enabled and zju-connect as a downstream proxy, please be sure to provide the correct ZJU network diversion rules, refer to [this issue](https://github.com/Mythologyli/zju-connect/issues/57)
 
-+ `server`: SSL VPN 服务端地址，默认为 `rvpn.zju.edu.cn`
+### ⚠️TUN mode precautions
 
-+ `port`: SSL VPN 服务端端口，默认为 `443`
+1. Need to run with administrator privileges
 
-+ `username`: 网络账户。例如：学号
+2. Windows system needs to go to [Wintun official website](https://www.wintun.net) to download `wintun.dll` and place it in the same directory as the executable file
 
-+ `password`: 网络账户密码
+3. To ensure that `*.zju.edu.cn` is resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
 
-+ `disable-server-config`: 禁用服务端配置，一般不需要加此参数
-
-+ `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数
-
-+ `disable-zju-dns`: 禁用 ZJU DNS 改用本地 DNS，一般不需要加此参数
-
-+ `disable-multi-line`: 禁用自动根据延时选择线路。加此参数后，使用 `server` 参数指定的线路
-
-+ `proxy-all`: 是否代理所有流量，一般不需要加此参数
-
-+ `socks-bind`: SOCKS5 代理监听地址，默认为 `:1080`
-
-+ `socks-user`: SOCKS5 代理用户名，不填则不需要认证
-
-+ `socks-passwd`: SOCKS5 代理密码，不填则不需要认证
-
-+ `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
-
-+ `shadowsocks-url`: Shadowsocks 服务端 URL。例如：`ss://aes-128-gcm:password@server:port`。格式[参考此处](https://github.com/shadowsocks/go-shadowsocks2)
-
-+ `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
-
-+ `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由
-
-+ `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
-
-+ `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
-
-+ `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`
-
-+ `secondary-dns-server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
-
-+ `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
-
-+ `dns-hijack`: 启用 TUN 模式时劫持 DNS 请求，建议在启用 TUN 模式时添加此参数
-
-+ `debug-dump`: 是否开启调试，一般不需要加此参数
-
-+ `tcp-port-forwarding`: TCP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:9898-10.10.98.98:80,0.0.0.0:9899-10.10.98.98:80`。多个转发用 `,` 分隔
-
-+ `udp-port-forwarding`: UDP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:53-10.10.0.21:53`。多个转发用 `,` 分隔
-
-+ `custom-dns`: 指定自定义DNS解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔:
-
-+ `twf-id`: twfID 登录，调试用途，一般不需要加此参数
-
-+ `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
-
-### TUN 模式注意事项
-
-1. 需要管理员权限运行
-
-2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
-
-3. 为保证 `*.zju.edu.cn` 解析正确，建议配置 `dns-hijack` 劫持系统 DNS
-
-4. macOS 暂不支持通过 TUN 接口访问 `10.0.0.0/8` 外的地址
-
-### 计划表
-
-#### 已完成
-
-- [x] 代理 TCP 流量
-- [x] 代理 UDP 流量
-- [x] SOCKS5 代理服务
-- [x] HTTP 代理服务
-- [x] Shadowsocks 代理服务
-- [x] ZJU DNS 解析
-- [x] ZJU 规则添加
-- [x] 支持 IPv6 直连
-- [x] DNS 缓存加速
-- [x] 自动选择线路
-- [x] TCP 端口转发功能
-- [x] UDP 端口转发功能
-- [x] 通过配置文件启动
-- [x] 定时保活
-- [x] TUN 模式
-- [x] 自动劫持 DNS
-
-#### To Do
-
-- [ ] Fake IP 模式
-
-### 贡献者
-
-<a href="https://github.com/mythologyli/zju-connect/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=mythologyli/zju-connect" />
-</a>
-
-### 感谢
-
-+ [EasierConnect](https://github.com/lyc8503/EasierConnect)
-
-+ [socks2http](https://github.com/zenhack/socks2http) -->
+4. macOS does not currently support accessing addresses outside of `10.0.0.0/8` through the TUN interface
 
 ### Arguments
 
@@ -365,16 +273,6 @@ docker compose up -d
 + `twf-id`: twfID login, for debugging purposes, generally no need to add this argument
 
 + `config`: Specify the configuration file, the content refers to `config.toml.example`. Other parameters are ignored when the configuration file is enabled
-
-### TUN mode precautions
-
-1. Need to run with administrator privileges
-
-2. Windows system needs to go to [Wintun official website](https://www.wintun.net) to download `wintun.dll` and place it in the same directory as the executable file
-
-3. To ensure that `*.zju.edu.cn` is resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
-
-4. macOS does not currently support accessing addresses outside of `10.0.0.0/8` through the TUN interface
 
 ### Schedule
 
