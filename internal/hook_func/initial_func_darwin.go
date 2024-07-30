@@ -25,4 +25,5 @@ func init() {
 		}
 		return nil
 	})
+	RegisterInitialFunc("check bind port", checkBindPortLegal)
 }
