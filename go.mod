@@ -13,6 +13,7 @@ require (
 	github.com/miekg/dns v1.1.61
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
+	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/things-go/go-socks5 v0.0.5
 	golang.org/x/net v0.27.0
 	golang.org/x/sys v0.22.0
@@ -36,6 +37,7 @@ require (
 	github.com/sagernet/sing v0.4.2 // indirect
 	github.com/scjalliance/comshim v0.0.0-20240712181150-e070933cb68e // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
+	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
 	golang.org/x/crypto v0.25.0 // indirect

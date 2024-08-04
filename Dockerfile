@@ -5,7 +5,7 @@ ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
 ARG build_tag=full
-RUN go env -w GOPROXY=https://goproxy.cn,direct
+# RUN go env -w GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /src
 COPY go.* .
@@ -24,7 +24,7 @@ RUN --mount=target=. \
     go build -tags ${build_tag} -v -o /app/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
 # Import the binary from build stage
-FROM gcr.dockerproxy.com/distroless/static:nonroot as prd
+FROM gcr.io/distroless/static:nonroot as prd
 WORKDIR /home/nonroot
 COPY --from=build /app/zju-connect /home/nonroot
 # this is the numeric version of user nonroot:nonroot to check runAsNonRoot in kubernetes

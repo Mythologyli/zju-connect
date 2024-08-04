@@ -2,8 +2,12 @@ package hook_func
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
+	netstat "github.com/shirou/gopsutil/net"
+	"net"
 )
 
 type InitialFunc func(ctx context.Context, config configs.Config) error
@@ -40,4 +44,54 @@ func ExecInitialFunc(ctx context.Context, config configs.Config) []error {
 
 func IsInitial() bool {
 	return initialEnd
+}
+
+func checkBindPortLegal(ctx context.Context, config configs.Config) error {
+	var checkTCPPorts, checkUDPPorts []uint32
+	checkTCPPortsStr := []string{config.HTTPBind, config.SocksBind}
+	checkUDPPortsStr := []string{config.DNSServerBind}
+
+	for _, addrStr := range checkTCPPortsStr {
+		if len(addrStr) != 0 {
+			addr, err := net.ResolveTCPAddr("tcp", addrStr)
+			if err != nil || addr.Port == 0 {
+				return errors.New(fmt.Sprintf("配置项中 %s 填写错误，请参考Readme中填写", addr))
+			}
+			checkTCPPorts = append(checkTCPPorts, uint32(addr.Port))
+		}
+	}
+
+	for _, addrStr := range checkUDPPortsStr {
+		if len(addrStr) != 0 {
+			addr, err := net.ResolveUDPAddr("udp", addrStr)
+			if err != nil || addr.Port == 0 {
+				return errors.New(fmt.Sprintf("配置项中 %s 填写错误，请参考Readme中填写", addr))
+			}
+			checkUDPPorts = append(checkUDPPorts, uint32(addr.Port))
+		}
+	}
+
+	for _, kind := range []string{"tcp", "udp"} {
+		connectionStats, err := netstat.Connections(kind)
+		if err != nil {
+			// skip this check due to lack of information
+			return nil
+		}
+		var targetCheckPorts []uint32
+		if kind == "tcp" {
+			targetCheckPorts = checkTCPPorts
+		} else {
+			targetCheckPorts = checkUDPPorts
+		}
+		for _, conn := range connectionStats {
+			for _, checkPort := range targetCheckPorts {
+				// darwin "*" means "0.0.0.0"
+				if checkPort == conn.Laddr.Port && (conn.Laddr.IP == "::" || conn.Laddr.IP == "*" ||
+					conn.Laddr.IP == "0.0.0.0" || conn.Laddr.IP == "127.0.0.1") {
+					return errors.New(fmt.Sprintf("%s端口%s已经被进程%d占用，请更换端口或结束占用该端口的进程", kind, conn.Laddr.String(), conn.Pid))
+				}
+			}
+		}
+	}
+	return nil
 }
