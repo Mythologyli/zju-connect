@@ -192,6 +192,25 @@ services:
          - ./config.toml:/home/nonroot/config.toml
 ```
 
+Additionally, you can also use [configs top-level elements](https://docs.docker.com/compose/compose-file/08-configs/) to directly write the configuration files of zju-connect into docker-compose.yml, as shown below:
+
+```yaml
+services:
+   zju-connect:
+      container_name: zju-connect
+      image: mythologyli/zju-connect
+      restart: unless-stopped
+      ports: [1080:1080, 1081:1081]
+      configs: [{ source: zju-connect-config, target: /home/nonroot/config.toml }]
+
+configs:
+   zju-connect-config:
+      content: |
+         username = ""
+         password = ""
+         # other configs ...
+```
+
 And run the following command in the same directory:
 
 ```shell
