@@ -24,7 +24,7 @@ RUN --mount=target=. \
     go build -tags ${build_tag} -v -o /app/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
 # Import the binary from build stage
-FROM gcr.io/distroless/static:nonroot as prd
+FROM gcr.io/distroless/static as prd
 WORKDIR /home/nonroot
 COPY --from=build /app/zju-connect /home/nonroot
 # this is the numeric version of user nonroot:nonroot to check runAsNonRoot in kubernetes
