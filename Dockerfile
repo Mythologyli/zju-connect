@@ -24,9 +24,8 @@ RUN --mount=target=. \
     go build -tags ${build_tag} -v -o /app/zju-connect -trimpath -ldflags "-s -w -buildid=" .
 
 # Import the binary from build stage
+# use root container, but still use /home/nonroot to keep backward support
 FROM gcr.io/distroless/static as prd
 WORKDIR /home/nonroot
 COPY --from=build /app/zju-connect /home/nonroot
-# this is the numeric version of user nonroot:nonroot to check runAsNonRoot in kubernetes
-USER 65532:65532
 ENTRYPOINT ["/home/nonroot/zju-connect" ,"-config", "/home/nonroot/config.toml"]
