@@ -83,6 +83,9 @@ type Endpoint struct {
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	_, err := ep.readWriteCloser.Write(buf)
 	return err
 }

@@ -29,6 +29,9 @@ type Endpoint struct {
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	ep.writeLock.Lock()
 	defer ep.writeLock.Unlock()
 	_, err := ep.ifce.Write(buf)
