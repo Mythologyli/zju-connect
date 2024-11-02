@@ -22,7 +22,7 @@ import (
 
 var conf configs.Config
 
-const zjuConnectVersion = "0.7.0-tun-only"
+const zjuConnectVersion = "0.7.1-tun-only"
 
 func main() {
 	log.Init()
