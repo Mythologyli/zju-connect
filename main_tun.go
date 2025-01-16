@@ -158,7 +158,7 @@ func main() {
 	}
 
 	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	<-quit
 	log.Println("Shutdown ZJU-Connect ......")
 	if errs := hook_func.ExecTerminalFunc(context.Background()); errs != nil {
