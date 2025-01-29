@@ -43,6 +43,7 @@ func main() {
 		conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
 		conf.Username,
 		conf.Password,
+		conf.TOTPSecret,
 		conf.TwfID,
 		!conf.DisableMultiLine,
 		!conf.DisableServerConfig,
