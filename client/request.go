@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/mythologyli/zju-connect/log"
-	utls "github.com/refraction-networking/utls"
 	"io"
 	"math/big"
 	"net"
@@ -20,15 +18,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mythologyli/zju-connect/log"
+	utls "github.com/refraction-networking/utls"
 )
 
 var errSMSRequired = errors.New("SMS code required")
+var errTOTPRequired = errors.New("TOTP required")
 
 func (c *EasyConnectClient) requestTwfID() error {
 	err := c.loginAuthAndPsw()
 	if err != nil {
 		if errors.Is(err, errSMSRequired) {
 			err = c.loginSMS()
+			if err != nil {
+				return err
+			}
+		} else if errors.Is(err, errTOTPRequired) {
+			err = c.loginTOTP()
 			if err != nil {
 				return err
 			}
@@ -144,6 +151,12 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 		return errSMSRequired
 	}
 
+	if strings.Contains(buf.String(), "<NextService>auth/token</NextService>") || strings.Contains(buf.String(), "<NextAuth>7</NextAuth>") {
+		log.Print("TOTP required")
+
+		return errTOTPRequired
+	}
+
 	if strings.Contains(buf.String(), "<NextAuth>-1</NextAuth>") || !strings.Contains(buf.String(), "<NextAuth>") {
 		log.Print("No NextAuth found")
 	} else {
@@ -228,6 +241,51 @@ func (c *EasyConnectClient) loginSMS() error {
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Print("SMS code verification success")
+
+	return nil
+}
+
+func (c *EasyConnectClient) loginTOTP() error {
+	fmt.Print("Please enter your TOTP code:")
+	totpCode := ""
+	_, err := fmt.Scan(&totpCode)
+	if err != nil {
+		return err
+	}
+
+	addr := "https://" + c.server + "/por/login_token.csp"
+	log.Printf("TOTP Request: %s", addr)
+	form := url.Values{
+		"svpn_inputtoken": {totpCode},
+	}
+	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	buf.Reset()
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if !strings.Contains(buf.String(), "Totp auth succ") {
+		debug.PrintStack()
+		return errors.New("TOTP verification failed: " + buf.String())
+	}
+
+	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	log.Print("TOTP verification succeed")
 
 	return nil
 }
