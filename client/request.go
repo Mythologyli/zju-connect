@@ -7,6 +7,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/pquerna/otp/totp"
+	utls "github.com/refraction-networking/utls"
 	"io"
 	"math/big"
 	"net"
@@ -18,9 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mythologyli/zju-connect/log"
-	utls "github.com/refraction-networking/utls"
 )
 
 var errSMSRequired = errors.New("SMS code required")
@@ -246,9 +246,15 @@ func (c *EasyConnectClient) loginSMS() error {
 }
 
 func (c *EasyConnectClient) loginTOTP() error {
-	fmt.Print("Please enter your TOTP code:")
-	totpCode := ""
-	_, err := fmt.Scan(&totpCode)
+	var totpCode string
+	var err error
+	if c.totpSecret == "" {
+		fmt.Print("Please enter your TOTP code:")
+		_, err = fmt.Scan(&totpCode)
+	} else {
+		totpCode, err = totp.GenerateCode(c.totpSecret, time.Now())
+		fmt.Println("Generate TOTP code:", totpCode)
+	}
 	if err != nil {
 		return err
 	}
@@ -285,7 +291,7 @@ func (c *EasyConnectClient) loginTOTP() error {
 	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
-	log.Print("TOTP verification succeed")
+	log.Print("TOTP verification success")
 
 	return nil
 }

@@ -14,6 +14,7 @@ type EasyConnectClient struct {
 	server        string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username      string
 	password      string
+	totpSecret    string
 	testMultiLine bool
 	parseResource bool
 
@@ -32,11 +33,12 @@ type EasyConnectClient struct {
 	ipReverse []byte
 }
 
-func NewEasyConnectClient(server, username, password, twfID string, testMultiLine, parseResource bool) *EasyConnectClient {
+func NewEasyConnectClient(server, username, password, totpSecret, twfID string, testMultiLine, parseResource bool) *EasyConnectClient {
 	return &EasyConnectClient{
 		server:        server,
 		username:      username,
 		password:      password,
+		totpSecret:    totpSecret,
 		testMultiLine: testMultiLine,
 		parseResource: parseResource,
 		httpClient: &http.Client{
