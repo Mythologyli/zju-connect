@@ -241,6 +241,8 @@ docker compose up -d
 
 + `password`: Network account password
 
++ `totp-secret`: TOTP secret. If the server doesn't need TOTP verification, or you want to manually enter the verification code, no need to add this argument
+
 + `disable-server-config`: Disable server configuration, generally no need to add this argument
 
 + `disable-zju-config`: Disable ZJU related configuration, generally no need to add this argument
