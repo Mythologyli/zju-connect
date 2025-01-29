@@ -6,6 +6,7 @@ type (
 		ServerPort          int
 		Username            string
 		Password            string
+		TOTPSecret          string
 		DisableServerConfig bool
 		DisableZJUConfig    bool
 		DisableZJUDNS       bool
@@ -50,6 +51,7 @@ type (
 		ServerPort          *int                       `toml:"server_port"`
 		Username            *string                    `toml:"username"`
 		Password            *string                    `toml:"password"`
+		TOTPSecret          *string                    `toml:"totp_secret"`
 		DisableServerConfig *bool                      `toml:"disable_server_config"`
 		DisableZJUConfig    *bool                      `toml:"disable_zju_config"`
 		DisableZJUDNS       *bool                      `toml:"disable_zju_dns"`

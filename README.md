@@ -241,6 +241,8 @@ $ docker compose up -d
 
 + `password`: 网络账户密码
 
++ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
+
 + `disable-server-config`: 禁用服务端配置，一般不需要加此参数
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数

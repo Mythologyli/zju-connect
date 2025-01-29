@@ -14,6 +14,7 @@ require (
 	github.com/golang-infrastructure/go-domain-suffix-trie v0.0.2
 	github.com/miekg/dns v1.1.62
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/pquerna/otp v1.4.0
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/things-go/go-socks5 v0.0.5
@@ -27,6 +28,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cloudflare/circl v1.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
