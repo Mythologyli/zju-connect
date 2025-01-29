@@ -16,6 +16,7 @@ func Login(server string, username string, password string) string {
 		username,
 		password,
 		"",
+		"",
 		false,
 		false,
 	)
@@ -42,6 +43,7 @@ func DebugLogin(server string, username string, password string) string {
 		server,
 		username,
 		password,
+		"",
 		"",
 		false,
 		false,
