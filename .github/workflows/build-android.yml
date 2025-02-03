@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload artifact
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zju-connect-android-aar
           path: build_assets/*
