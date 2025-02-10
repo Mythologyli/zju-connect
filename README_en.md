@@ -18,6 +18,10 @@
 
 *Windows users can use the GUI version [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows) (There's only Chinese GUI).*
 
+*macOS users can try the GUI client [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo).*
+
+*How to run the terminal version:*
+
 1. Download the latest version of the corresponding platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page.
 
 2. Take macOS as an example, unzip the executable file `zju-connect`.

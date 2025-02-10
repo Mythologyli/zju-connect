@@ -16,7 +16,11 @@
 
 #### 直接运行
 
-*Windows 用户可以使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
+*Windows 用户推荐使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
+
+*macOS 用户可以尝试使用 [kowyo](https://github.com/kowyo) 开发的 GUI 客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。*
+
+*以下为命令行版本的运行方法：*
 
 1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
 
