@@ -73,16 +73,6 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("TWFID: %s", c.twfID)
 
-	// Now we need to do authentication
-	rndImg := string(regexp.MustCompile(`<RndImg>(.*)</RndImg>`).FindSubmatch(buf.Bytes())[1])
-	if rndImg == "1" {
-		log.Print("Due to too many login failures, the server has activated risk control for this IP")
-		log.Print("Continuing to log in may cause this IP to be banned. The program has stopped the login process")
-		log.Print("You can wait a minute and try again")
-
-		return errors.New("too many login failures")
-	}
-
 	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("RSA key: %s", rsaKey)
 
