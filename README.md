@@ -32,6 +32,12 @@
 
 5. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。如需更改默认端口，请参考参数说明。
 
+*注意！如果你要连接非 ZJU 的 EasyConnect 服务器，你可能需要使用以下命令运行：*
+
+`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -disable-zju-dns`
+
+*详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
+
 #### 作为服务运行
 
 **请先直接运行，确保无误后再创建服务，避免反复登录失败导致 IP 被临时封禁！**

@@ -26,11 +26,17 @@
 
 2. Take macOS as an example, unzip the executable file `zju-connect`.
 
-3. macOS needs to remove security restrictions first. Run in the command line: `sudo xattr -rd com.apple.quarantine zju-connect`.
+3. macOS needs to remove security restrictions first. Run: `sudo xattr -rd com.apple.quarantine zju-connect`.
 
-4. Run in the command line: `./zju-connect -username <username> -password <password>`.
+4. Run: `./zju-connect -username <username> -password <password>`.
 
 5. At this time, port `1080` is the Socks5 proxy, and port `1081` is the HTTP proxy. If you need to change the default port, please refer to [Arguments](#Arguments).
+
+*If you want to connect to a non-ZJU EasyConnect server, you may need to use the following command:*
+
+`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -disable-zju-dns`
+
+*For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
 #### Run as a service
 
