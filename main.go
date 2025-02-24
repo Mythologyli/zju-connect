@@ -49,6 +49,7 @@ func main() {
 		conf.TwfID,
 		!conf.DisableMultiLine,
 		!conf.DisableServerConfig,
+		!conf.SkipDomainResource,
 	)
 	err := vpnClient.Setup()
 	if err != nil {

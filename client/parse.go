@@ -116,13 +116,15 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 			hostStr := strings.Split(hostStr, "/")[0]
 			ip, err := netaddr.ParseIP(hostStr)
 			if err != nil {
-				if hostStr == "" {
-					continue
+				if c.useDomainResource {
+					if hostStr == "" {
+						continue
+					}
+
+					c.domainResource[hostStr] = true
+
+					log.DebugPrintf("Add domain: %s", hostStr)
 				}
-
-				c.domainResource[hostStr] = true
-
-				log.DebugPrintf("Add domain: %s", hostStr)
 			} else {
 				ipSetBuilder.Add(ip)
 

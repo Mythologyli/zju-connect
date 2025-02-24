@@ -8,6 +8,7 @@ type (
 		Password            string
 		TOTPSecret          string
 		DisableServerConfig bool
+		SkipDomainResource  bool
 		DisableZJUConfig    bool
 		DisableZJUDNS       bool
 		DisableMultiLine    bool
@@ -53,6 +54,7 @@ type (
 		Password            *string                    `toml:"password"`
 		TOTPSecret          *string                    `toml:"totp_secret"`
 		DisableServerConfig *bool                      `toml:"disable_server_config"`
+		SkipDomainResource  *bool                      `toml:"skip_domain_resource"`
 		DisableZJUConfig    *bool                      `toml:"disable_zju_config"`
 		DisableZJUDNS       *bool                      `toml:"disable_zju_dns"`
 		DisableMultiLine    *bool                      `toml:"disable_multi_line"`

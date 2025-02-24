@@ -11,12 +11,13 @@ import (
 )
 
 type EasyConnectClient struct {
-	server        string // Example: rvpn.zju.edu.cn:443. No protocol prefix
-	username      string
-	password      string
-	totpSecret    string
-	testMultiLine bool
-	parseResource bool
+	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
+	username          string
+	password          string
+	totpSecret        string
+	testMultiLine     bool
+	parseResource     bool
+	useDomainResource bool
 
 	httpClient *http.Client
 
@@ -33,14 +34,15 @@ type EasyConnectClient struct {
 	ipReverse []byte
 }
 
-func NewEasyConnectClient(server, username, password, totpSecret, twfID string, testMultiLine, parseResource bool) *EasyConnectClient {
+func NewEasyConnectClient(server, username, password, totpSecret, twfID string, testMultiLine, parseResource, useDomainResource bool) *EasyConnectClient {
 	return &EasyConnectClient{
-		server:        server,
-		username:      username,
-		password:      password,
-		totpSecret:    totpSecret,
-		testMultiLine: testMultiLine,
-		parseResource: parseResource,
+		server:            server,
+		username:          username,
+		password:          password,
+		totpSecret:        totpSecret,
+		testMultiLine:     testMultiLine,
+		parseResource:     parseResource,
+		useDomainResource: useDomainResource,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},

@@ -6,6 +6,7 @@ totp_secret = ""
 server_address = "rvpn.zju.edu.cn"
 server_port = 443
 disable_server_config = false
+skip_domain_resource = false
 disable_zju_config = false
 disable_zju_dns = false
 disable_multi_line = false

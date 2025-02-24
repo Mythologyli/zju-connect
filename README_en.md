@@ -34,7 +34,7 @@
 
 *If you want to connect to a non-ZJU EasyConnect server, you may need to use the following command:*
 
-`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -disable-zju-dns`
+`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -disable-zju-dns`
 
 *For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
@@ -254,6 +254,8 @@ docker compose up -d
 + `totp-secret`: TOTP secret. If the server doesn't need TOTP verification, or you want to manually enter the verification code, no need to add this argument
 
 + `disable-server-config`: Disable server configuration, generally no need to add this argument
+
++ `skip-domain-resource`: Do not use the domain resource provided by the server to decide whether to use RVPN, generally no need to add this argument
 
 + `disable-zju-config`: Disable ZJU related configuration, generally no need to add this argument
 

@@ -34,7 +34,7 @@
 
 *注意！如果你要连接非 ZJU 的 EasyConnect 服务器，你可能需要使用以下命令运行：*
 
-`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -disable-zju-dns`
+`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -disable-zju-dns`
 
 *详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
@@ -254,6 +254,8 @@ $ docker compose up -d
 + `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
 
 + `disable-server-config`: 禁用服务端配置，一般不需要加此参数
+
++ `skip-domain-resource`: 不使用服务端下发的域名资源分流，一般不需要加此参数
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数
 
