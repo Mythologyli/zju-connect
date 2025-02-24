@@ -34,7 +34,7 @@
 
 *If you want to connect to a non-ZJU EasyConnect server, you may need to use the following command:*
 
-`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -disable-zju-dns`
+`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
 *For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
@@ -285,7 +285,7 @@ docker compose up -d
 
 + `disable-keep-alive`: Disable periodic keep-alive, generally no need to add this argument
 
-+ `zju-dns-server`: ZJU DNS server address, default is `10.10.0.21`
++ `zju-dns-server`: ZJU DNS server address, default is `10.10.0.21`. Set to `auto` to use the DNS server obtained from the server, and disable ZJU DNS if it fails to obtain
 
 + `secondary-dns-server`: Standby DNS server used when ZJU DNS server cannot be used, default is `114.114.114.114`. Leave blank to use the system default DNS, but must be set when `dns-hijack` is enabled
 

@@ -34,7 +34,7 @@
 
 *注意！如果你要连接非 ZJU 的 EasyConnect 服务器，你可能需要使用以下命令运行：*
 
-`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -disable-zju-dns`
+`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
 *详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
@@ -285,7 +285,7 @@ $ docker compose up -d
 
 + `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
 
-+ `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`
++ `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`。设置为 auto 时使用从服务端获取的 DNS 服务器，如果未能获取则禁用 ZJU DNS
 
 + `secondary-dns-server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
 

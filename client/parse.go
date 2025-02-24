@@ -169,5 +169,12 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 		return err
 	}
 
+	dnsServerStr := element.SelectAttr("dnsserver")
+	if dnsServerStr == nil {
+		return errors.New("no Dns dnsserver attribute found")
+	}
+
+	c.dnsServer = strings.Split(dnsServerStr.Value, ";")[0]
+
 	return nil
 }
