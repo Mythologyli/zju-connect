@@ -70,6 +70,9 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 
 	log.DebugPrintln("Response:", buf.String())
 
+	vpnVersion := string(regexp.MustCompile(`<VPNVERSION>(.*)</VPNVERSION>`).FindSubmatch(buf.Bytes())[1])
+	log.Printf("VPN server version: %s", vpnVersion)
+
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("TWFID: %s", c.twfID)
 

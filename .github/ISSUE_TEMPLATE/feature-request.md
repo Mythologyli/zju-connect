@@ -29,4 +29,7 @@ Windows 10 x64/Windows 11/Ubuntu 22.04/OpenWrt 22.03/Docker/...
 **服务端地址**
 rvpn.zju.edu.cn:443
 
+**服务端版本** (例如 `M7.6.8R2`。查看日志中的 `VPN server version`)
+
+
 **功能请求描述** (建议结合图片说明)
