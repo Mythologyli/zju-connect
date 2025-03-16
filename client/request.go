@@ -122,6 +122,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 
 	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
 
 	resp, err = c.httpClient.Do(req)
 	if err != nil {
@@ -175,6 +176,7 @@ func (c *EasyConnectClient) loginSMS() error {
 	log.Printf("SMS request: " + addr)
 	req, err := http.NewRequest("POST", addr, nil)
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -212,6 +214,7 @@ func (c *EasyConnectClient) loginSMS() error {
 
 	req, err = http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
 
 	resp, err = c.httpClient.Do(req)
 	if err != nil {
@@ -261,6 +264,7 @@ func (c *EasyConnectClient) loginTOTP() error {
 		return err
 	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
