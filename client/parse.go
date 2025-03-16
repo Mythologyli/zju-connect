@@ -176,5 +176,10 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 
 	c.dnsServer = strings.Split(dnsServerStr.Value, ";")[0]
 
+	if c.dnsServer == "0.0.0.0" {
+		c.dnsServer = ""
+		return errors.New("DNS server invalid")
+	}
+
 	return nil
 }
