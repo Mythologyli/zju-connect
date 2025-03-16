@@ -183,7 +183,11 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		go service.KeepAlive(vpnResolver)
+		if !useZJUDNS {
+			log.Println("Keep alive is disabled because ZJU DNS is disabled")
+		} else {
+			go service.KeepAlive(vpnResolver)
+		}
 	}
 
 	quit := make(chan os.Signal)
