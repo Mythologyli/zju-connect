@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
-	netstat "github.com/shirou/gopsutil/net"
+	netstat "github.com/shirou/gopsutil/v4/net"
 	"net"
 )
 

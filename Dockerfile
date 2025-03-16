@@ -1,5 +1,5 @@
 # get modules, if they don't change the cache can be used for faster builds
-FROM golang:1.23 AS base
+FROM golang:1.24 AS base
 ENV GO111MODULE=on
 ENV CGO_ENABLED=0
 ENV GOOS=linux
