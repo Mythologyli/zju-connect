@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"crypto/tls"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack/tun"
@@ -16,6 +17,7 @@ func Login(server string, username string, password string) string {
 		username,
 		password,
 		"",
+		tls.Certificate{},
 		"",
 		false,
 		false,
@@ -45,6 +47,7 @@ func DebugLogin(server string, username string, password string) string {
 		username,
 		password,
 		"",
+		tls.Certificate{},
 		"",
 		false,
 		false,
