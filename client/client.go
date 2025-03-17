@@ -15,6 +15,7 @@ type EasyConnectClient struct {
 	username          string
 	password          string
 	totpSecret        string
+	tlsCert           tls.Certificate
 	testMultiLine     bool
 	parseResource     bool
 	useDomainResource bool
@@ -35,12 +36,13 @@ type EasyConnectClient struct {
 	ipReverse []byte
 }
 
-func NewEasyConnectClient(server, username, password, totpSecret, twfID string, testMultiLine, parseResource, useDomainResource bool) *EasyConnectClient {
+func NewEasyConnectClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *EasyConnectClient {
 	return &EasyConnectClient{
 		server:            server,
 		username:          username,
 		password:          password,
 		totpSecret:        totpSecret,
+		tlsCert:           tlsCert,
 		testMultiLine:     testMultiLine,
 		parseResource:     parseResource,
 		useDomainResource: useDomainResource,

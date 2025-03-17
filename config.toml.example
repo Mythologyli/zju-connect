@@ -1,6 +1,8 @@
 username = "username"
 password = "password"
 totp_secret = ""
+cert_file = ""
+cert_password = ""
 
 # Advanced settings
 server_address = "rvpn.zju.edu.cn"

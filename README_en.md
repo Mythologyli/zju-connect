@@ -253,6 +253,10 @@ docker compose up -d
 
 + `totp-secret`: TOTP secret. If the server doesn't need TOTP verification, or you want to manually enter the verification code, no need to add this argument
 
++ `cert-file`: p12 certificate file path, if the server requires certificate verification, this parameter needs to be configured
+
++ `cert-password`: Certificate password
+
 + `disable-server-config`: Disable server configuration, generally no need to add this argument
 
 + `skip-domain-resource`: Do not use the domain resource provided by the server to decide whether to use RVPN, generally no need to add this argument

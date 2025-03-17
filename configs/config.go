@@ -7,6 +7,8 @@ type (
 		Username            string
 		Password            string
 		TOTPSecret          string
+		CertFile            string
+		CertPassword        string
 		DisableServerConfig bool
 		SkipDomainResource  bool
 		DisableZJUConfig    bool
@@ -53,6 +55,8 @@ type (
 		Username            *string                    `toml:"username"`
 		Password            *string                    `toml:"password"`
 		TOTPSecret          *string                    `toml:"totp_secret"`
+		CertFile            *string                    `toml:"cert_file"`
+		CertPassword        *string                    `toml:"cert_password"`
 		DisableServerConfig *bool                      `toml:"disable_server_config"`
 		SkipDomainResource  *bool                      `toml:"skip_domain_resource"`
 		DisableZJUConfig    *bool                      `toml:"disable_zju_config"`

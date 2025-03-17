@@ -253,6 +253,10 @@ $ docker compose up -d
 
 + `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
 
++ `cert-file`: p12 证书文件路径，如果服务器要求证书验证，需要配置此参数
+
++ `cert-password`: 证书密码
+
 + `disable-server-config`: 禁用服务端配置，一般不需要加此参数
 
 + `skip-domain-resource`: 不使用服务端下发的域名资源分流，一般不需要加此参数

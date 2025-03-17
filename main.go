@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto"
+	"crypto/tls"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/configs"
@@ -15,6 +17,7 @@ import (
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tun"
+	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
 	"net"
 	"os"
@@ -41,11 +44,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	tlsCert := tls.Certificate{}
+	if conf.CertFile != "" {
+		p12Data, err := os.ReadFile(conf.CertFile)
+		if err != nil {
+			log.Fatalf("Read certificate file error: %s", err)
+		}
+
+		key, cert, err := pkcs12.Decode(p12Data, conf.CertPassword)
+		if err != nil {
+			log.Fatalf("Decode certificate file error: %s", err)
+		}
+
+		tlsCert = tls.Certificate{
+			Certificate: [][]byte{cert.Raw},
+			PrivateKey:  key.(crypto.PrivateKey),
+			Leaf:        cert,
+		}
+	}
+
 	vpnClient := client.NewEasyConnectClient(
 		conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
 		conf.Username,
 		conf.Password,
 		conf.TOTPSecret,
+		tlsCert,
 		conf.TwfID,
 		!conf.DisableMultiLine,
 		!conf.DisableServerConfig,

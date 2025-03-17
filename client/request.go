@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 
 var errSMSRequired = errors.New("SMS code required")
 var errTOTPRequired = errors.New("TOTP required")
+var errCertRequired = errors.New("cert required")
 
 func (c *EasyConnectClient) requestTwfID() error {
 	err := c.loginAuthAndPsw()
@@ -36,6 +39,11 @@ func (c *EasyConnectClient) requestTwfID() error {
 			}
 		} else if errors.Is(err, errTOTPRequired) {
 			err = c.loginTOTP()
+			if err != nil {
+				return err
+			}
+		} else if errors.Is(err, errCertRequired) {
+			err = c.loginCert()
 			if err != nil {
 				return err
 			}
@@ -151,6 +159,12 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 		log.Print("TOTP required")
 
 		return errTOTPRequired
+	}
+
+	if strings.Contains(buf.String(), "<NextAuth>0</NextAuth>") {
+		log.Print("Cert required")
+
+		return errCertRequired
 	}
 
 	if strings.Contains(buf.String(), "<NextAuth>-1</NextAuth>") || !strings.Contains(buf.String(), "<NextAuth>") {
@@ -291,6 +305,79 @@ func (c *EasyConnectClient) loginTOTP() error {
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Print("TOTP verification success")
+
+	return nil
+}
+
+func (c *EasyConnectClient) loginCert() error {
+	addr := "https://" + c.server + "/com/server.crt"
+	log.Printf("Get server cert: %s", addr)
+	req, err := http.NewRequest("POST", addr, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	buf.Reset()
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	caCertPool := x509.NewCertPool()
+	ok := caCertPool.AppendCertsFromPEM(buf.Bytes())
+	if !ok {
+		return errors.New("failed to parse server certificate")
+	}
+
+	c.httpClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			Renegotiation:      tls.RenegotiateOnceAsClient,
+			Certificates:       []tls.Certificate{c.tlsCert},
+			RootCAs:            caCertPool,
+		},
+	}
+
+	addr = "https://" + c.server + "/por/login_cert.csp?anti_replay=1&encrypt=1&type=cs"
+	log.Printf("Cert Request: %s", addr)
+	req, err = http.NewRequest("POST", addr, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
+
+	resp, err = c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	buf.Reset()
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if !strings.Contains(buf.String(), "<Result>1</Result>") {
+		debug.PrintStack()
+		return errors.New("Cert verification failed: " + buf.String())
+	}
+
+	log.Print("Cert verification success")
 
 	return nil
 }
