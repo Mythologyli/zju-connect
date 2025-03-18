@@ -106,8 +106,9 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipRes
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},
-		AutoRoute:  true,
-		TableIndex: 1897,
+		// Inet4Address and Inet4RouteAddress must be set concurrently if we want to enable AutoRoute
+		// otherwise the sing-tun will add weird router
+		AutoRoute: false,
 	}
 
 	ifce, err := tun.New(tunOptions)
