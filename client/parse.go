@@ -6,6 +6,7 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -63,7 +64,8 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 	}
 
 	ipSetBuilder := netaddr.IPSetBuilder{}
-	c.domainResource = make(map[string]bool)
+	c.ipResources = make([]IPResource, 0)
+	c.domainResources = make(map[string]DomainResource)
 	c.dnsResource = make(map[string]net.IP)
 
 	element := doc.SelectElement("Resource").SelectElement("Rcs")
@@ -72,63 +74,117 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 	}
 
 	for _, rc := range element.SelectElements("Rc") {
-		hostListStr := rc.SelectAttr("host")
-		if hostListStr == nil {
-			continue
-		}
-
-		for _, hostStr := range strings.Split(hostListStr.Value, ";") {
-			if strings.Contains(hostStr, "*") {
-				hostStr = strings.ReplaceAll(hostStr, "*", "")
+		if rc.SelectAttr("type").Value == "1" || rc.SelectAttr("type").Value == "2" {
+			var protocol string
+			protoStr := rc.SelectAttr("proto").Value
+			if protoStr == "-1" {
+				protocol = "all"
+			} else if protoStr == "0" {
+				protocol = "tcp"
+			} else if protoStr == "1" {
+				protocol = "udp"
+			} else if protoStr == "2" {
+				protocol = "icmp"
+			} else {
+				log.DebugPrintf("Unknown protocol: %s", protoStr)
 			}
 
-			if hostStr == "" {
+			hostListStr := rc.SelectAttr("host")
+			if hostListStr == nil {
+				continue
+			}
+			hostList := strings.Split(hostListStr.Value, ";")
+
+			portRangeListStr := rc.SelectAttr("port")
+			if portRangeListStr == nil {
+				continue
+			}
+			portRangeList := strings.Split(portRangeListStr.Value, ";")
+
+			if len(hostList) != len(portRangeList) {
+				log.DebugPrintln("Host and port list length mismatch, skip")
 				continue
 			}
 
-			// IP range
-			if strings.Contains(hostStr, "~") {
-				startIPStr := strings.Split(hostStr, "~")[0]
-				endIPStr := strings.Split(hostStr, "~")[1]
-
-				startIP, err := netaddr.ParseIP(startIPStr)
+			for i, host := range hostList {
+				portRangeStr := portRangeList[i]
+				portRange := strings.Split(portRangeStr, "~")
+				if len(portRange) != 2 {
+					log.DebugPrintf("Invalid port range: %s", portRangeStr)
+					continue
+				}
+				portMin, err := strconv.Atoi(portRange[0])
 				if err != nil {
+					log.DebugPrintf("Invalid port range: %s", portRangeStr)
+					continue
+				}
+				portMax, err := strconv.Atoi(portRange[1])
+				if err != nil {
+					log.DebugPrintf("Invalid port range: %s", portRangeStr)
 					continue
 				}
 
-				endIP, err := netaddr.ParseIP(endIPStr)
-				if err != nil {
-					continue
-				}
+				isDomain := false
+				var ipMin net.IP
+				var ipMax net.IP
+				if strings.Contains(host, "~") {
+					ipList := strings.Split(host, "~")
+					if len(ipList) != 2 {
+						log.DebugPrintf("Invalid IP range: %s", host)
+						continue
+					}
+					ipMin = net.ParseIP(ipList[0])
+					if ipMin == nil {
+						log.DebugPrintf("Invalid IP range: %s", host)
+						continue
+					}
+					ipMax = net.ParseIP(ipList[1])
 
-				ipSetBuilder.AddRange(netaddr.IPRangeFrom(startIP, endIP))
-
-				log.DebugPrintf("Add IP range: %s ~ %s", startIPStr, endIPStr)
-
-				continue
-			}
-
-			// Domain
-			if strings.Contains(hostStr, "//") {
-				hostStr = strings.Split(hostStr, "//")[1]
-			}
-
-			hostStr := strings.Split(hostStr, "/")[0]
-			ip, err := netaddr.ParseIP(hostStr)
-			if err != nil {
-				if c.useDomainResource {
-					if hostStr == "" {
+					if ipMax == nil {
+						log.DebugPrintf("Invalid IP range: %s", host)
 						continue
 					}
 
-					c.domainResource[hostStr] = true
+					ipSetBuilder.AddRange(netaddr.IPRangeFrom(netaddr.MustParseIP(ipList[0]), netaddr.MustParseIP(ipList[1])))
+					log.DebugPrintf("Add IP range: %s ~ %s, Port range: %d ~ %d, [%s]", ipList[0], ipList[1], portMin, portMax, protocol)
+				} else {
+					if strings.Contains(host, "//") {
+						host = strings.Split(host, "//")[1]
+					}
+					host = strings.Split(host, "/")[0]
 
-					log.DebugPrintf("Add domain: %s", hostStr)
+					ipMin = net.ParseIP(host)
+					if ipMin == nil {
+						isDomain = true
+
+						if !c.useDomainResource {
+							continue
+						}
+
+						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", host, portMin, portMax, protocol)
+					} else {
+						ipMax = ipMin
+
+						ipSetBuilder.Add(netaddr.MustParseIP(host))
+						log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", host, portMin, portMax, protocol)
+					}
 				}
-			} else {
-				ipSetBuilder.Add(ip)
 
-				log.DebugPrintf("Add IP: %s", hostStr)
+				if isDomain {
+					c.domainResources[host] = DomainResource{
+						PortMin:  portMin,
+						PortMax:  portMax,
+						Protocol: protocol,
+					}
+				} else {
+					c.ipResources = append(c.ipResources, IPResource{
+						IPMin:    ipMin,
+						IPMax:    ipMax,
+						PortMin:  portMin,
+						PortMax:  portMax,
+						Protocol: protocol,
+					})
+				}
 			}
 		}
 	}
@@ -158,13 +214,11 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 			continue
 		}
 
-		ipSetBuilder.Add(ip)
-
 		c.dnsResource[dnsParts[1]] = ip.IPAddr().IP
 		log.DebugPrintf("Add DNS rule: %s -> %s", dnsParts[1], dnsParts[2])
 	}
 
-	c.ipResource, err = ipSetBuilder.IPSet()
+	c.ipSet, err = ipSetBuilder.IPSet()
 	if err != nil {
 		return err
 	}
