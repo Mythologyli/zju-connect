@@ -164,7 +164,7 @@ func main() {
 
 	var vpnStack stack.Stack
 	if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources, domainResources)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
 		if err != nil {
 			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}

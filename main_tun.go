@@ -160,7 +160,7 @@ func main() {
 		}
 	}
 
-	vpnStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources, domainResources)
+	vpnStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
 	if err != nil {
 		log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 	}

@@ -84,7 +84,7 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource, domainResources map[string]client.DomainResource) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
@@ -159,9 +159,13 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipRes
 		},
 	}
 	if dnsHijack {
-		for domain := range domainResources {
-			if err = s.AddDnsServer(s.endpoint.ip.String(), domain); err != nil {
-				log.Printf("AddDnsServer failed: %v", err)
+		dnsServers, err := hook_func.ListNetworkServices()
+		if err != nil {
+			return nil, err
+		}
+		for _, dnsServer := range dnsServers {
+			if hook_func.SetDNSServerWithHook(dnsServer, s.endpoint.ip.String()) != nil {
+				log.Println("Warning: failed to set DNS server", s.endpoint.ifceName)
 			}
 		}
 	}
