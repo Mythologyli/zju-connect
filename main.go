@@ -119,13 +119,13 @@ func main() {
 		}
 
 		if ipResources != nil {
-			ipResources = append(ipResources, client.IPResource{
+			ipResources = append([]client.IPResource{{
 				IPMin:    net.ParseIP("10.0.0.0"),
 				IPMax:    net.ParseIP("10.255.255.255"),
 				PortMin:  1,
 				PortMax:  65535,
 				Protocol: "all",
-			})
+			}}, ipResources...)
 		} else {
 			ipResources = []client.IPResource{{
 				IPMin:    net.ParseIP("10.0.0.0"),
