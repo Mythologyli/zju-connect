@@ -63,6 +63,13 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		return ctx, cachedIP, nil
 	}
 
+	if r.dnsResource != nil {
+		if ip, found := r.dnsResource[host]; found {
+			log.Printf("%s -> %s", host, ip.String())
+			return ctx, ip, nil
+		}
+	}
+
 	if r.useRemoteDNS {
 		r.tcpLock.RLock()
 		useTCP := r.useTCP
