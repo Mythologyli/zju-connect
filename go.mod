@@ -5,11 +5,10 @@ go 1.24.1
 require github.com/refraction-networking/utls v1.6.7
 
 require (
-	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+	github.com/BurntSushi/toml v1.5.0
 	github.com/beevik/etree v1.5.0
 	github.com/cloverstd/tcping v0.1.1
 	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
-	github.com/golang-infrastructure/go-domain-suffix-trie v0.0.2
 	github.com/miekg/dns v1.1.63
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pquerna/otp v1.4.0
@@ -21,7 +20,7 @@ require (
 	golang.org/x/sys v0.31.0
 	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173
 	golang.zx2c4.com/wireguard/windows v0.5.3
-	gvisor.dev/gvisor v0.0.0-20250314001526-eeca54973f8b
+	gvisor.dev/gvisor v0.0.0-20250317184159-a24f13b091dc
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 )
 

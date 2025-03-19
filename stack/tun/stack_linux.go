@@ -54,9 +54,10 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
+	s.ipResources = ipResources
 	s.endpoint = &Endpoint{
 		easyConnectClient: easyConnectClient,
 	}
@@ -65,7 +66,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 	if err != nil {
 		return nil, err
 	}
-	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
+	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/32")
 	tunName := "ZJU-Connect"
 	tunName = tun.CalculateInterfaceName(tunName)
 

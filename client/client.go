@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+type IPResource struct {
+	IPMin    net.IP
+	IPMax    net.IP
+	PortMin  int
+	PortMax  int
+	Protocol string
+}
+
+type DomainResource struct {
+	PortMin  int
+	PortMax  int
+	Protocol string
+}
+
 type EasyConnectClient struct {
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username          string
@@ -27,10 +41,11 @@ type EasyConnectClient struct {
 
 	lineList []string
 
-	ipResource     *netaddr.IPSet
-	domainResource map[string]bool
-	dnsResource    map[string]net.IP
-	dnsServer      string
+	ipResources     []IPResource
+	domainResources map[string]DomainResource
+	ipSet           *netaddr.IPSet
+	dnsResource     map[string]net.IP
+	dnsServer       string
 
 	ip        net.IP // Client IP
 	ipReverse []byte
@@ -62,20 +77,28 @@ func (c *EasyConnectClient) IP() (net.IP, error) {
 	return c.ip, nil
 }
 
-func (c *EasyConnectClient) IPResource() (*netaddr.IPSet, error) {
-	if c.ipResource == nil {
-		return nil, errors.New("IP resource not available")
+func (c *EasyConnectClient) IPSet() (*netaddr.IPSet, error) {
+	if c.ipSet == nil {
+		return nil, errors.New("IP set not available")
 	}
 
-	return c.ipResource, nil
+	return c.ipSet, nil
 }
 
-func (c *EasyConnectClient) DomainResource() (map[string]bool, error) {
-	if c.domainResource == nil {
-		return nil, errors.New("domain resource not available")
+func (c *EasyConnectClient) IPResources() ([]IPResource, error) {
+	if c.ipResources == nil {
+		return nil, errors.New("IP resources not available")
 	}
 
-	return c.domainResource, nil
+	return c.ipResources, nil
+}
+
+func (c *EasyConnectClient) DomainResources() (map[string]DomainResource, error) {
+	if c.domainResources == nil {
+		return nil, errors.New("domain resources not available")
+	}
+
+	return c.domainResources, nil
 }
 
 func (c *EasyConnectClient) DNSResource() (map[string]net.IP, error) {

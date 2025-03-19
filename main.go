@@ -81,52 +81,102 @@ func main() {
 
 	log.Printf("EasyConnect client started")
 
-	ipResource, err := vpnClient.IPResource()
-	if err != nil && !conf.DisableMultiLine {
-		log.Println("No IP resource")
+	ipResources, err := vpnClient.IPResources()
+	if err != nil && !conf.DisableServerConfig {
+		log.Println("No IP resources")
 	}
 
-	domainResource, err := vpnClient.DomainResource()
-	if err != nil && !conf.DisableMultiLine {
-		log.Println("No domain resource")
+	ipSet, err := vpnClient.IPSet()
+	if err != nil && !conf.DisableServerConfig {
+		log.Println("No IP set")
+	}
+
+	domainResources, err := vpnClient.DomainResources()
+	if err != nil && !conf.DisableServerConfig {
+		log.Println("No domain resources")
 	}
 
 	dnsResource, err := vpnClient.DNSResource()
-	if err != nil && !conf.DisableMultiLine {
+	if err != nil && !conf.DisableServerConfig {
 		log.Println("No DNS resource")
 	}
 
 	if !conf.DisableZJUConfig {
-		if domainResource != nil {
-			domainResource["zju.edu.cn"] = true
+		if domainResources != nil {
+			domainResources["zju.edu.cn"] = client.DomainResource{
+				PortMin:  1,
+				PortMax:  65535,
+				Protocol: "all",
+			}
 		} else {
-			domainResource = map[string]bool{"zju.edu.cn": true}
+			domainResources = map[string]client.DomainResource{
+				"zju.edu.cn": {
+					PortMin:  1,
+					PortMax:  65535,
+					Protocol: "all",
+				},
+			}
+		}
+
+		if ipResources != nil {
+			ipResources = append(ipResources, client.IPResource{
+				IPMin:    net.ParseIP("10.0.0.0"),
+				IPMax:    net.ParseIP("10.255.255.255"),
+				PortMin:  1,
+				PortMax:  65535,
+				Protocol: "all",
+			})
+		} else {
+			ipResources = []client.IPResource{{
+				IPMin:    net.ParseIP("10.0.0.0"),
+				IPMax:    net.ParseIP("10.255.255.255"),
+				PortMin:  1,
+				PortMax:  65535,
+				Protocol: "all",
+			}}
 		}
 
 		ipSetBuilder := netaddr.IPSetBuilder{}
-		if ipResource != nil {
-			ipSetBuilder.AddSet(ipResource)
+		if ipSet != nil {
+			ipSetBuilder.AddSet(ipSet)
 		}
 		ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix("10.0.0.0/8"))
-		ipResource, _ = ipSetBuilder.IPSet()
+		ipSet, _ = ipSetBuilder.IPSet()
 	}
 
 	for _, customProxyDomain := range conf.CustomProxyDomain {
-		domainResource[customProxyDomain] = true
+		if domainResources != nil {
+			domainResources[customProxyDomain] = client.DomainResource{
+				PortMin:  1,
+				PortMax:  65535,
+				Protocol: "all",
+			}
+		} else {
+			domainResources = map[string]client.DomainResource{
+				customProxyDomain: {
+					PortMin:  1,
+					PortMax:  65535,
+					Protocol: "all",
+				},
+			}
+		}
 	}
 
 	var vpnStack stack.Stack
 	if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
 		if err != nil {
 			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
 
-		if conf.AddRoute && ipResource != nil {
-			for _, prefix := range ipResource.Prefixes() {
+		if conf.AddRoute && ipSet != nil {
+			for _, prefix := range ipSet.Prefixes() {
 				log.Printf("Add route to %s", prefix.String())
 				_ = vpnTUNStack.AddRoute(prefix.String())
 			}
+		} else if !conf.AddRoute && !conf.DisableZJUConfig {
+			log.Println("Add route to 10.0.0.0/8")
+			_ = vpnTUNStack.AddRoute("10.0.0.0/8")
 		}
 
 		vpnStack = vpnTUNStack
@@ -155,7 +205,7 @@ func main() {
 		zjuDNSServer,
 		conf.SecondaryDNSServer,
 		conf.DNSTTL,
-		domainResource,
+		domainResources,
 		dnsResource,
 		useZJUDNS,
 	)
@@ -173,7 +223,7 @@ func main() {
 
 	go vpnStack.Run()
 
-	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResource, conf.ProxyAll, conf.DialDirectProxy)
+	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
 
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)

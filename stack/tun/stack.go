@@ -3,6 +3,7 @@
 package tun
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
@@ -19,9 +20,10 @@ import (
 const MTU uint32 = 1400
 
 type Stack struct {
-	endpoint *Endpoint
-	rvpnConn io.ReadWriteCloser
-	resolve  zcdns.LocalServer
+	endpoint    *Endpoint
+	rvpnConn    io.ReadWriteCloser
+	resolve     zcdns.LocalServer
+	ipResources []client.IPResource
 }
 
 func (s *Stack) SetupResolve(r zcdns.LocalServer) {
@@ -91,15 +93,53 @@ func (s *Stack) Run() {
 }
 
 func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
+	protocol := ""
+	port := -1
 	switch packet.Protocol() {
 	case zctcpip.TCP:
-		return s.processIPV4TCP(packet, packet.Payload())
+		protocol = "tcp"
+		port = int(zctcpip.TCPPacket(packet.Payload()).DestinationPort())
 	case zctcpip.UDP:
-		return s.processIPV4UDP(packet, packet.Payload())
+		udpPacket := zctcpip.UDPPacket(packet.Payload())
+		if s.shouldHijackUDPDns(packet, udpPacket) {
+			newPacket := make(zctcpip.IPv4Packet, len(packet))
+			copy(newPacket, packet)
+			newUdpPacket := zctcpip.UDPPacket(newPacket.Payload())
+			// need to be non-blocking
+			go s.doHijackUDPDns(newPacket, newUdpPacket)
+			return nil
+		}
+
+		protocol = "udp"
+		port = int(zctcpip.UDPPacket(packet.Payload()).DestinationPort())
 	case zctcpip.ICMP:
-		return s.processIPV4ICMP(packet, packet.Payload())
+		protocol = "icmp"
 	default:
-		return fmt.Errorf("unknown protocol %d", packet[9])
+		return fmt.Errorf("protocol %d not supported, skip", packet.Protocol())
+	}
+
+	for _, resource := range s.ipResources {
+		if bytes.Compare(packet.DestinationIP(), resource.IPMin) >= 0 && bytes.Compare(packet.DestinationIP(), resource.IPMax) <= 0 {
+			if resource.Protocol == protocol || resource.Protocol == "all" {
+				if protocol == "icmp" {
+					return s.processIPV4ICMP(packet, packet.Payload())
+				}
+
+				if resource.PortMin <= port && port <= resource.PortMax {
+					if protocol == "tcp" {
+						return s.processIPV4TCP(packet, packet.Payload())
+					} else {
+						return s.processIPV4UDP(packet, packet.Payload())
+					}
+				}
+			}
+		}
+	}
+
+	if port != -1 {
+		return fmt.Errorf("no VPN resources found for %s:%d, [%s], skip", packet.DestinationIP(), port, protocol)
+	} else {
+		return fmt.Errorf("no VPN resources found for %s, [%s], skip", packet.DestinationIP(), protocol)
 	}
 }
 
@@ -126,15 +166,6 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 		return s.endpoint.Write(packet)
 	}
 
-	if s.shouldHijackUDPDns(packet, udpPacket) {
-		newPacket := make(zctcpip.IPv4Packet, len(packet))
-		copy(newPacket, packet)
-		newUdpPacket := zctcpip.UDPPacket(newPacket.Payload())
-		// need to be non-blocking
-		go s.doHijackUDPDns(newPacket, newUdpPacket)
-		return nil
-	}
-
 	n, err := s.rvpnConn.Write(packet)
 	if err != nil {
 		panic(err)
@@ -147,18 +178,18 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 
 func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.ICMPPacket) error {
 	log.DebugPrintf("receive icmp %s -> %s", packet.SourceIP(), packet.DestinationIP())
-	if icmpHeader.Type() != zctcpip.ICMPTypePingRequest || icmpHeader.Code() != 0 {
+	if icmpHeader.Code() != 0 {
 		return nil
 	}
-	icmpHeader.SetType(zctcpip.ICMPTypePingResponse)
-	sourceIP := packet.SourceIP()
-	packet.SetSourceIP(packet.DestinationIP())
-	packet.SetDestinationIP(sourceIP)
 
-	icmpHeader.ResetChecksum()
-	packet.ResetChecksum()
+	n, err := s.rvpnConn.Write(packet)
+	if err != nil {
+		panic(err)
+	}
+	log.DebugPrintf("Send: wrote %d bytes", n)
+	log.DebugDumpHex(packet[:n])
 
-	return s.endpoint.Write(packet)
+	return err
 }
 
 // only can handle udp dns query!

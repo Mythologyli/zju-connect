@@ -8,6 +8,7 @@ import (
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/unix"
+	"inet.af/netaddr"
 	"net"
 	"net/netip"
 	"os"
@@ -25,6 +26,9 @@ type Endpoint struct {
 	readLock  sync.Mutex
 	writeLock sync.Mutex
 	ip        net.IP
+
+	ipSetBuilder netaddr.IPSetBuilder
+	ipSet        *netaddr.IPSet
 
 	tcpDialer *net.Dialer
 	udpDialer *net.Dialer
@@ -53,6 +57,9 @@ func (s *Stack) AddRoute(target string) error {
 		return err
 	}
 
+	s.endpoint.ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(target))
+	s.endpoint.ipSet, _ = s.endpoint.ipSetBuilder.IPSet()
+
 	return nil
 }
 
@@ -77,18 +84,20 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
+	s.ipResources = ipResources
 	s.endpoint = &Endpoint{
 		easyConnectClient: easyConnectClient,
 	}
+	s.endpoint.ipSetBuilder = netaddr.IPSetBuilder{}
 
 	s.endpoint.ip, err = easyConnectClient.IP()
 	if err != nil {
 		return nil, err
 	}
-	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
+	ipPrefix, _ := netip.ParsePrefix(s.endpoint.ip.String() + "/32")
 	tunName := "utun0"
 	tunName = tun.CalculateInterfaceName(tunName)
 	tunOptions := tun.Options{
@@ -97,11 +106,9 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},
-		Inet4RouteAddress: []netip.Prefix{
-			netip.MustParsePrefix("10.0.0.0/8"),
-		},
-		AutoRoute:  true,
-		TableIndex: 1897,
+		// Inet4Address and Inet4RouteAddress must be set concurrently if we want to enable AutoRoute
+		// otherwise the sing-tun will add weird router
+		AutoRoute: false,
 	}
 
 	ifce, err := tun.New(tunOptions)
@@ -152,11 +159,14 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 		},
 	}
 	if dnsHijack {
-		if err = s.AddDnsServer(s.endpoint.ip.String(), "zju.edu.cn"); err != nil {
-			log.Printf("AddDnsServer failed: %v", err)
+		dnsServers, err := hook_func.ListNetworkServices()
+		if err != nil {
+			return nil, err
 		}
-		if err = s.AddDnsServer(s.endpoint.ip.String(), "cc98.org"); err != nil {
-			log.Printf("AddDnsServer failed: %v", err)
+		for _, dnsServer := range dnsServers {
+			if hook_func.SetDNSServerWithHook(dnsServer, s.endpoint.ip.String()) != nil {
+				log.Println("Warning: failed to set DNS server", s.endpoint.ifceName)
+			}
 		}
 	}
 	return s, nil

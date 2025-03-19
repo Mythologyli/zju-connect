@@ -1,10 +1,11 @@
 package dial
 
 import (
+	"bytes"
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/stack"
-	"inet.af/netaddr"
 	"net"
 	"strconv"
 	"strings"
@@ -18,7 +19,7 @@ import (
 type Dialer struct {
 	stack                stack.Stack
 	resolver             *resolve.Resolver
-	ipResource           *netaddr.IPSet
+	ipResources          []client.IPResource
 	alwaysUseVPN         bool
 	dialDirectHTTPProxy  string // format: "ip:port"
 	dialDirectSocksProxy string // WORKING IN PROCESS
@@ -59,9 +60,9 @@ func (d *Dialer) dialDirectHost(ctx context.Context, network, hostAddr string) (
 
 func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Conn, error) {
 	hostAddr := ""
-	if _, hostAddrOK := ctx.Value("RESOLVE_HOST").(string); hostAddrOK {
+	if _, hostAddrOK := ctx.Value(resolve.ContextKeyResolveHost).(string); hostAddrOK {
 		// hostAddr doesn't have port field at now
-		hostAddr = ctx.Value("RESOLVE_HOST").(string)
+		hostAddr = ctx.Value(resolve.ContextKeyResolveHost).(string)
 	}
 	parts := strings.Split(ipAddr, ":")
 	if len(parts) >= 2 {
@@ -98,15 +99,26 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 		useVPN = true
 	}
 
-	if res := ctx.Value("USE_VPN"); res != nil && res.(bool) {
-		useVPN = true
+	if !useVPN {
+		if res := ctx.Value(resolve.ContextKeyDomainResource); res != nil {
+			resource := res.(client.DomainResource)
+			if resource.PortMin <= port && port <= resource.PortMax {
+				if resource.Protocol == network || resource.Protocol == "all" {
+					useVPN = true
+				}
+			}
+		}
 	}
 
-	if !useVPN && d.ipResource != nil {
-		ip, ok := netaddr.FromStdIP(target.IP)
-		if ok {
-			if d.ipResource.Contains(ip) {
-				useVPN = true
+	if !useVPN && d.ipResources != nil {
+		for _, resource := range d.ipResources {
+			if bytes.Compare(target.IP, resource.IPMin) >= 0 && bytes.Compare(target.IP, resource.IPMax) <= 0 {
+				if resource.PortMin <= port && port <= resource.PortMax {
+					if resource.Protocol == network || resource.Protocol == "all" {
+						useVPN = true
+						break
+					}
+				}
 			}
 		}
 	}
@@ -161,7 +173,7 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 	return d.DialIPPort(ctx, network, ip.String()+":"+port)
 }
 
-func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResource *netaddr.IPSet, alwaysUseVPN bool, dialDirectProxy string) *Dialer {
+func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []client.IPResource, alwaysUseVPN bool, dialDirectProxy string) *Dialer {
 	dialHttpProxy := ""
 	dialSocksProxy := ""
 	if strings.HasPrefix(dialDirectProxy, "http://") {
@@ -174,7 +186,7 @@ func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResource *netadd
 	return &Dialer{
 		stack:                stack,
 		resolver:             resolver,
-		ipResource:           ipResource,
+		ipResources:          ipResources,
 		alwaysUseVPN:         alwaysUseVPN,
 		dialDirectHTTPProxy:  dialHttpProxy,
 		dialDirectSocksProxy: dialSocksProxy,

@@ -3,11 +3,12 @@ package resolve
 import (
 	"context"
 	"errors"
-	domainsuffixtrie "github.com/golang-infrastructure/go-domain-suffix-trie"
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/patrickmn/go-cache"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,7 +18,7 @@ type Resolver struct {
 	remoteTCPResolver *net.Resolver
 	secondaryResolver *net.Resolver
 	ttl               uint64
-	domainResource    *domainsuffixtrie.DomainSuffixTrieNode[bool]
+	domainResources   map[string]client.DomainResource
 	dnsResource       map[string]net.IP
 	useRemoteDNS      bool
 
@@ -33,21 +34,29 @@ type Resolver struct {
 	concurResolveLock sync.Map
 }
 
-// Resolve ip address. If the host should be visited via VPN, this function set a USE_VPN value in context. If resolve success, this function set a RESOLVE_HOST value in context.
+type contextKey string
+
+var (
+	ContextKeyResolveHost    = contextKey("RESOLVE_HOST")
+	ContextKeyDomainResource = contextKey("DOMAIN_RESOURCE")
+)
+
+// Resolve ip address. If the host could be visited via VPN, this function set a DOMAIN_RESOURCE value in context. If resolve success, this function set a RESOLVE_HOST value in context.
 func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Context, resIP net.IP, resErr error) {
 	defer func() {
 		if resErr == nil {
-			resCtx = context.WithValue(resCtx, "RESOLVE_HOST", host)
+			resCtx = context.WithValue(resCtx, ContextKeyResolveHost, host)
 		}
 	}()
-	var useVPN = false
-	if r.domainResource != nil {
-		if r.domainResource.FindMatchDomainSuffixPayload(host) {
-			useVPN = true
+	if r.domainResources != nil {
+		for domain, resource := range r.domainResources {
+			if strings.HasSuffix(host, domain) {
+				ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
+				log.DebugPrintf("Domain resource found: %s", domain)
+				break
+			}
 		}
 	}
-
-	ctx = context.WithValue(ctx, "USE_VPN", useVPN)
 
 	if cachedIP, found := r.getDNSCache(host); found {
 		log.Printf("%s -> %s", host, cachedIP.String())
@@ -56,7 +65,6 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 
 	if r.dnsResource != nil {
 		if ip, found := r.dnsResource[host]; found {
-			ctx = context.WithValue(ctx, "USE_VPN", true)
 			log.Printf("%s -> %s", host, ip.String())
 			return ctx, ip, nil
 		}
@@ -162,11 +170,11 @@ func (r *Resolver) CleanCache(duration time.Duration) {
 	}
 }
 
-func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResource map[string]bool, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
-	domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
-	for domain := range domainResource {
-		_ = domainSuffixTree.AddDomainSuffix(domain, true)
-	}
+func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
+	//domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
+	//for domain := range domainResource {
+	//	_ = domainSuffixTree.AddDomainSuffix(domain, true)
+	//}
 
 	resolver := &Resolver{
 		remoteUDPResolver: &net.Resolver{
@@ -187,11 +195,11 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 				})
 			},
 		},
-		ttl:            ttl,
-		domainResource: domainSuffixTree,
-		dnsResource:    dnsResource,
-		dnsCache:       cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
-		useRemoteDNS:   useRemoteDNS,
+		ttl:             ttl,
+		domainResources: domainResources,
+		dnsResource:     dnsResource,
+		dnsCache:        cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
+		useRemoteDNS:    useRemoteDNS,
 	}
 
 	if secondaryDNSServer != "" {

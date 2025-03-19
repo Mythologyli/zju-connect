@@ -77,8 +77,9 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Stack, error) {
+func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	s := &Stack{}
+	s.ipResources = ipResources
 
 	guid, err := windows.GUIDFromString(guid)
 	if err != nil {
@@ -105,7 +106,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool) (*Sta
 		return nil, err
 	}
 
-	prefix, err := netip.ParsePrefix(s.endpoint.ip.String() + "/8")
+	prefix, err := netip.ParsePrefix(s.endpoint.ip.String() + "/32")
 	if err != nil {
 		log.Printf("Parse prefix failed: %v", err) // Fail to set TUN IP is not a fatal problem, so we don't return an error
 	}
