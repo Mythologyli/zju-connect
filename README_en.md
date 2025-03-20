@@ -41,7 +41,7 @@
 
   Other steps are the same as above, try setting the running parameters to:
 
-  `./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
+  `./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
   For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)
 
