@@ -10,236 +10,61 @@
 
 **本程序基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)（现已停止维护）完成，感谢原作者 [lyc8503](https://github.com/lyc8503)。**
 
-**QQ 交流群：946190505**，欢迎来自 ZJU 的使用者加入交流。
+**QQ 交流群：1037726410**，欢迎使用者加入交流。
 
 ### 使用方法
 
+#### 使用 GUI 版客户端
+
++ 如果你是来自 ZJU 的用户：
+  + Windows 用户推荐使用 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。
+  + Linux/macOS 用户可以尝试使用 [PageChen04](https://github.com/PageChen04) 开发的客户端 [EZ4Connect](https://github.com/PageChen04/EZ4Connect) 或 [kowyo](https://github.com/kowyo) 开发的客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。
+    注意请设置服务器地址为 `rvpn.zju.edu.cn:443`。
++ 如果你是非 ZJU 的用户：
+
+  可以尝试使用 [PageChen04](https://github.com/PageChen04) 开发的客户端 [EZ4Connect](https://github.com/PageChen04/EZ4Connect) 或 [kowyo](https://github.com/kowyo) 开发的客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。
+
 #### 直接运行
 
-*Windows 用户推荐使用 GUI 版 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。*
++ 如果你是来自 ZJU 的用户：
 
-*macOS 用户可以尝试使用 [kowyo](https://github.com/kowyo) 开发的 GUI 客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。*
+  1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
 
-*以下为命令行版本的运行方法：*
+  2. 以 macOS 为例，解压出可执行文件 `zju-connect`。
 
-1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
+  3. macOS 需要先解除安全限制。命令行运行：`sudo xattr -rd com.apple.quarantine zju-connect`。
 
-2. 以 macOS 为例，解压出可执行文件 `zju-connect`。
+  4. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
 
-3. macOS 需要先解除安全限制。命令行运行：`sudo xattr -rd com.apple.quarantine zju-connect`。
+  5. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。如需更改默认端口，请参考参数说明。
 
-4. 命令行运行：`./zju-connect -username <上网账户> -password <密码>`。
++ 如果你是非 ZJU 的用户：
 
-5. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。如需更改默认端口，请参考参数说明。
+  其他步骤与上述相同，运行参数请尝试设置为：
 
-*注意！如果你要连接非 ZJU 的 EasyConnect 服务器，你可能需要使用以下命令运行：*
+  `./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
-`./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
-
-*详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
+  *详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
 #### 作为服务运行
 
-**请先直接运行，确保无误后再创建服务，避免反复登录失败导致 IP 被临时封禁！**
-
-对于 Ubuntu/Debian、RHEL 系、Arch 等基于 Systemd 的 Linux 发行版，除按照上述方法运行外，亦可通过以下步骤将 ZJU Connect 安装为系统服务，实现自动重连功能：
-
-1. 在 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新版本，将可执行文件放置于 `/opt` 目录并赋予可执行权限。
-
-2. 在 `/etc` 下创建 `zju-connect` 目录，并在目录中创建配置文件`config.toml`，内容参照仓库中的 `config.toml.example`。
-
-3. 在 `/lib/systemd/system` 下创建 `zju-connect.service` 文件，内容如下：
-
-   ```
-   [Unit]
-   Description=ZJU Connect
-   After=network-online.target
-   Wants=network-online.target
-   
-   [Service]
-   Restart=on-failure
-   RestartSec=5s
-   ExecStart=/opt/zju-connect -config /etc/zju-connect/config.toml
-   
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-4. 执行以下命令启用服务并设置自启：
-   ```
-   $ sudo systemctl start zju-connect
-   $ sudo systemctl enable zju-connect
-   ```
-
-对于 macOS 平台，系统服务的安装与运行基于 `launchctl`，使用上与 `systemctl` 有一定差异，可通过下述方案实现后台自动重连、开机自启动等功能：
-
-1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应 darwin 平台的最新版本。
-
-2. 将可执行文件放置于 `/usr/local/bin/` 目录并赋予可执行权限。
-
-3. 解除安全限制：`sudo xattr -rd com.apple.quarantine zju-connect`。
-
-4. 参考 [com.zju.connect.plist](com.zju.connect.plist) 建立 macOS 系统服务配置文件，plist 文件为二进制文件，建议使用 PlistEdict Pro 编辑，其中关键配置参数如下：
-
-   + `UserName`: 后台运行 zju-connect 的的用户默认为 `root`，建议修改为你自己的用户名
-   + `ProgramArguments`: zju-connect 运行参数
-   + `StandardErrorPath`: 输出 zju-connect 运行日志的目录（用于调试，可不指定）
-   + `StandardOutPath`: 输出 zju-connect 运行日志的目录（用于调试，可不指定）
-   + `RunAtLoad`: 是否开机自启动
-   + `KeepAlive`: 是否后台断开重连
-
-   详细参数配置可参考以下文档：
-
-   + [plist 配置参数文档](https://keith.github.io/xcode-man-pages/launchd.plist.5.html#OnDemand)
-   + [Apple开发者文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/Introduction.html#//apple_ref/doc/uid/10000172i-SW1-SW1)
-
-5. 移动配置文件至 `/Library/LaunchDaemons/` 目录，同时执行以下命令:
-   ```zsh
-   $ cd /Library/LaunchDaemons
-   $ sudo chown root:wheel com.zju.connect.plist
-   ```
-
-6. 执行以下命令启用服务并设置自启：
-   ```zsh
-   $ sudo launchctl load com.zju.connect.plist
-   ```
-
-7. 执行以下命令关闭自启动服务：
-   ```zsh
-   $ sudo launchctl unload com.zju.connect.plist
-   ```
-
-如需开关服务，可直接在 macOS 系统设置中的后台程序开关 zju-connect。
-
-对于 OpenWrt 系统，可通过 procd init 脚本让 zju-connect 开机自启、后台运行，在代理插件中添加对应本机节点和分流规则即可正常使用。
-
-1. 从 [Release](https://github.com/Mythologyli/ZJU-Connect/releases) 页面下载对应平台的最新 linux 版本，将可执行文件保存为 `/usr/bin/zju-connect` 并赋予可执行权限。
-
-2. 参照仓库中的 `config.toml.example`，创建配置文件 `/etc/back2zju.toml`，配置好 socks/http 代理端口，因通过代理插件实现分流，建议将 zju-connect 的配置项 `proxy_all` 设置为 `true`。
-
-3. 将以下内容保存为 `/etc/init.d/back2zju` 并赋予可执行权限：
-
-   ```shell
-   #!/bin/sh /etc/rc.common
-   
-   USE_PROCD=1
-   START=60
-   STOP=03
-   
-   PROGRAM="/usr/bin/zju-connect"
-   NET_CHECKER="rvpn.zju.edu.cn"
-   CONFIG_FILE="/etc/back2zju.toml"
-   LOG_FILE="/var/log/back2zju.log"
-   
-   boot() {
-   	ubus -t 10 wait_for network.interface.wan 2>/dev/null
-   	sleep 10
-   	rc_procd start_service
-   }
-   
-   start_service() {
-       ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
-       procd_open_instance
-       procd_set_param command /bin/sh -c "${PROGRAM} -config ${CONFIG_FILE} >>${LOG_FILE} 2>&1"
-       procd_set_param respawn 3600 5 3
-       procd_set_param limits core="unlimited"
-       procd_set_param limits nofile="200000 200000"
-       procd_set_param file ${CONFIG_FILE}
-       procd_close_instance
-       logger -p daemon.warn -t back2zju 'Service has been started.'
-   }
-   
-   reload_service() {
-       stop
-       start
-       logger -p daemon.warn -t back2zju 'Service has been restarted.'
-   }
-   ```
-
-4. 执行以下命令：
-
-   ```shell
-   /etc/init.d/back2zju enable
-   /etc/init.d/back2zju start
-   ```
-
-   或通过 OpenWrt LuCi 网页的 `系统-启动项` 启用并启动 `back2zju`（也可在此处停用服务）。
-
-   随后 zju-connect 将开始运行，支持开机自启动，其运行日志保存在 `/var/log/back2zju.log`
-
-5. 在代理插件中添加对应本机节点和分流规则
-
-   根据在 `/etc/back2zju.toml` 中的配置，在代理插件中添加本机节点。ip 填写 `127.0.0.1`，端口号/协议与 `/etc/back2zju.toml` 保持一致，若设置了 socks 用户名和密码也需要填写。
-
-   然后在对应代理插件中添加分流规则，具体操作略。
-
-   注意事项：
-
-   1. ZJU 校园网使用的内网 IP 段是 `10.0.0.0/8`，可能需要将此 IP 段从代理插件的直连列表/局域网列表中移除并添加至代理列表。
-
-   2. 请确保使用的 RVPN 服务器与 OpenWrt 直连。若未将 `rvpn.zju.edu.cn` 配置为直连，此域名可能匹配分流规则与其他 `zju.edu.cn` 流量一样被发往 zju-connect 代理，这会造成网络异常。
+[链接](docs/service.md)
 
 #### Docker 运行
 
-```zsh
-$ docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped mythologyli/zju-connect
-```
+[链接](docs/docker.md)
 
-也可以使用 Docker Compose。创建 `docker-compose.yml` 文件，内容如下：
+### ⚠️ 警告
 
-```yaml
-version: '3'
+1. 当使用其他开启了 TUN 模式的代理工具，同时配合 zju-connect 作为下游代理时，请注意务必提供正确的分流规则，参考[此 issue](https://github.com/Mythologyli/zju-connect/issues/57)
 
-services:
-   zju-connect:
-      image: mythologyli/zju-connect
-      container_name: zju-connect
-      restart: unless-stopped
-      ports:
-         - 1080:1080
-         - 1081:1081
-      volumes:
-         - ./config.toml:/home/nonroot/config.toml
-```
-
-另外，你还可以使用 [configs top-level elements](https://docs.docker.com/compose/compose-file/08-configs/) 将 zju-connect 的配置文件直接写入 docker-compose.yml，如下：
-
-```yaml
-services:
-   zju-connect:
-      container_name: zju-connect
-      image: mythologyli/zju-connect
-      restart: unless-stopped
-      ports: [1080:1080, 1081:1081]
-      configs: [{ source: zju-connect-config, target: /home/nonroot/config.toml }]
-
-configs:
-   zju-connect-config:
-      content: |
-         username = ""
-         password = ""
-         # other configs ...
-```
-
-并在同目录下运行
-
-```zsh
-$ docker compose up -d
-```
-
-### ⚠️Warning
-
-1. 当使用其他开启了Tun模式的代理工具，同时配合zju-connect作为下游代理时，请注意务必提供正确的校网分流规则，参考[此issue](https://github.com/Mythologyli/zju-connect/issues/57)
-
-### ⚠️TUN 模式注意事项
+### ⚠️ TUN 模式注意事项
 
 1. 需要管理员权限运行
 
 2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
 
-3. 为保证 `*.zju.edu.cn` 解析正确，建议配置 `dns-hijack` 劫持系统 DNS
-
-4. macOS 暂不支持通过 TUN 接口访问 `10.0.0.0/8` 外的地址
+3. 为保证域名解析正确，建议配置 `dns-hijack` 劫持系统 DNS
 
 ### 参数说明
 
@@ -331,10 +156,13 @@ $ docker compose up -d
 - [x] 定时保活
 - [x] TUN 模式
 - [x] 自动劫持 DNS
+- [x] 短信验证
+- [x] TOTP 验证
+- [x] 证书验证
 
 #### To Do
 
-- [ ] Fake IP 模式
+- [ ] TUN 模式下 `proxy-all` 的正确实现 (#64)
 
 ### 贡献者
 

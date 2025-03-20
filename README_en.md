@@ -10,236 +10,60 @@
 
 **This program is based on [EasierConnect](https://github.com/lyc8503/EasierConnect) (now Archived), thanks to the original author [lyc8503](https://github.com/lyc8503).**
 
-**QQ group: 946190505**, welcome to join the discussion.
+**QQ group: 1037726410**, welcome to join the discussion.
 
 ### Usage
 
+#### Use a GUI client
+
++ If you are from ZJU:
+  + Windows users are recommended to use [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)
+  + Linux/macOS users can try the [EZ4Connect](https://github.com/PageChen04/EZ4Connect) developed by [PageChen04](https://github.com/PageChen04) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
+    Please set the server address to `rvpn.zju.edu.cn:443`
++ If you are not from ZJU:
+  
+  You can try the [EZ4Connect](https://github.com/PageChen04/EZ4Connect) developed by [PageChen04](https://github.com/PageChen04) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
+
 #### Run directly
 
-*Windows users can use the GUI version [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows) (There's only Chinese GUI).*
++ If you are from ZJU:
+  1. Download the latest version of the corresponding platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page.
 
-*macOS users can try the GUI client [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo).*
+  2. Take macOS as an example, unzip the executable file `zju-connect`.
 
-*How to run the terminal version:*
+  3. macOS needs to remove security restrictions first. Run: `sudo xattr -rd com.apple.quarantine zju-connect`.
 
-1. Download the latest version of the corresponding platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page.
+  4. Run: `./zju-connect -username <username> -password <password>`.
 
-2. Take macOS as an example, unzip the executable file `zju-connect`.
+  5. At this time, port `1080` is the Socks5 proxy, and port `1081` is the HTTP proxy. If you need to change the default port, please refer to [Arguments](#Arguments).
 
-3. macOS needs to remove security restrictions first. Run: `sudo xattr -rd com.apple.quarantine zju-connect`.
++ If you are not from ZJU:
 
-4. Run: `./zju-connect -username <username> -password <password>`.
+  Other steps are the same as above, try setting the running parameters to:
 
-5. At this time, port `1080` is the Socks5 proxy, and port `1081` is the HTTP proxy. If you need to change the default port, please refer to [Arguments](#Arguments).
+  `./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
-*If you want to connect to a non-ZJU EasyConnect server, you may need to use the following command:*
-
-`./zju-connect -server <server address> -port <server port> -username xxx -password xxx -disable-keep-alive -disable-zju-config -skip-domain-resource -zju-dns-server auto`
-
-*For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
+  For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)
 
 #### Run as a service
 
-**Please first run directly to ensure that there is no error before creating a service, so as to avoid repeated login failures resulting in temporary IP ban!**
-
-For Linux distributions based on Systemd such as Ubuntu/Debian, RHEL, Arch, etc., in addition to running as described above, ZJU Connect can also be installed as a system service through the following steps to achieve automatic reconnection function:
-
-1. Download the latest version of the corresponding platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page, place the executable file in the `/opt` directory and grant executable permissions.
-
-2. Create the `zju-connect` directory under `/etc`, and create the configuration file `config.toml` in the directory. The content refers to `config.toml.example` in the repository.
-
-3. Create the `zju-connect.service` file under `/lib/systemd/system`, and the content is as follows:
-
-   ```
-   [Unit]
-   Description=ZJU Connect
-   After=network-online.target
-   Wants=network-online.target
-   
-   [Service]
-   Restart=on-failure
-   RestartSec=5s
-   ExecStart=/opt/zju-connect -config /etc/zju-connect/config.toml
-   
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-4. Execute the following command to enable the service and set it to start automatically:
-   ```shell
-   sudo systemctl start zju-connect
-   sudo systemctl enable zju-connect
-   ```
-
-For MacOS, system services are based on `launchd`, which is different from `systemd`. You can apply the following steps to achieve the same effect:
-
-1. Download the latest version pf darwin platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page.
-
-2. Place the executable file in the `/usr/local/bin/` directory and grant executable permissions.
-
-3. Remove security restrictions: `sudo xattr -rd com.apple.quarantine zju-connect`.
-
-4. Create `plist` file referring to [com.zju.connect.plist](com.zju.connect.plist). Since `plist` is a binary file, it's recommended to edit using PlistEdict Pro. Here are some key configurations:
-
-    + `UserName`: The default user for running zju-connect in the background is `root`, it's recommended to change to your own username.
-    + `ProgramArguments`: zju-connect running parameters.
-    + `StandardErrorPath`: The directory for outputting zju-connect running logs (for debugging, can be omitted).
-    + `StandardOutPath`: The directory for outputting zju-connect running logs (for debugging, can be omitted).
-    + `RunAtLoad`: Whether to start automatically at boot.
-    + `KeepAlive`: Whether to reconnect in the background.
-
-    For more details, please refer to the following documents:
-
-   + [plist argument docs](https://keith.github.io/xcode-man-pages/launchd.plist.5.html#OnDemand)
-   + [Apple Developer docs](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/Introduction.html#//apple_ref/doc/uid/10000172i-SW1-SW1)
-
-5. Move the `plist` file to `~/Library/LaunchDaemons/` directory, and execute the following command:
-   ```zsh
-   cd /Library/LaunchDaemons
-   sudo chown root:wheel com.zju.connect.plist
-   ```
-
-6. Execute the following command to enable the service and set it to start automatically:
-   ```zsh
-   sudo launchctl load com.zju.connect.plist
-   ```
-
-7. Execute the following command to disable the service:
-   ```zsh
-   sudo launchctl unload com.zju.connect.plist
-   ```
-
-If you need to turn on/off the service, you can directly turn on/off zju-connect in the background program switch in macOS system settings.
-
-For OpenWrt system, you can use procd init script to make zju-connect start automatically and run in the background. Add corresponding node and routing rules in the proxy plugin to use.
-
-1. Download the latest version of the corresponding platform on the [Release](https://github.com/mythologyli/zju-connect/releases) page, place the executable file in the `/usr/bin` directory and grant executable permissions.
-
-2. Refer to `config.toml.example` in the repository, create the configuration file `/etc/back2zju.toml`, configure the socks/http proxy port, and because routing is implemented through the proxy plugin, it's recommended to set the zju-connect configuration item `proxy_all` to `true`.
-
-3. Save the following content as `/etc/init.d/back2zju` and grant executable permissions:
-
-   ```shell
-   #!/bin/sh /etc/rc.common
-   
-   USE_PROCD=1
-   START=60
-   STOP=03
-   
-   PROGRAM="/usr/bin/zju-connect"
-   NET_CHECKER="rvpn.zju.edu.cn"
-   CONFIG_FILE="/etc/back2zju.toml"
-   LOG_FILE="/var/log/back2zju.log"
-   
-   boot() {
-   	ubus -t 10 wait_for network.interface.wan 2>/dev/null
-   	sleep 10
-   	rc_procd start_service
-   }
-   
-   start_service() {
-       ping -c1 ${NET_CHECKER} >/dev/null || ping -c1 ${NET_CHECKER} >/dev/null || return 1
-       procd_open_instance
-       procd_set_param command /bin/sh -c "${PROGRAM} -config ${CONFIG_FILE} >>${LOG_FILE} 2>&1"
-       procd_set_param respawn 3600 5 3
-       procd_set_param limits core="unlimited"
-       procd_set_param limits nofile="200000 200000"
-       procd_set_param file ${CONFIG_FILE}
-       procd_close_instance
-       logger -p daemon.warn -t back2zju 'Service has been started.'
-   }
-   
-   reload_service() {
-       stop
-       start
-       logger -p daemon.warn -t back2zju 'Service has been restarted.'
-   }
-   ```
-
-4. Execute the following command:
-
-   ```shell
-   /etc/init.d/back2zju enable
-   /etc/init.d/back2zju start
-   ```
-
-   Or enable and start `back2zju` in `System-Startup` page of OpenWrt LuCi web page (you can also disable the service here).
-
-   Then zju-connect will start running, support boot self-starting, and its running log is saved in `/var/log/back2zju.log`.
-
-5. Add corresponding node and routing rules in the proxy plugin to use.
-
-   According to the configuration in `/etc/back2zju.toml`, add node in the proxy plugin. Fill in `127.0.0.1` for IP, and keep the port/protocol consistent with `/etc/back2zju.toml`. If you set the socks username and password, you also need to fill it in.
-
-   Then add routing rules in the corresponding proxy plugin, the specific operation is omitted.
-
-   Note:
-
-    1. The internal IP range used by ZJU campus network is `10.0.0.0/8`, you may need to remove this IP range from the direct connection list/LAN list of the proxy plugin and add it to the proxy list.
-
-    2. Please make sure that the RVPN server used is directly connected to OpenWrt. If `rvpn.zju.edu.cn` is not configured as a direct connection, this domain name may match the routing rules and other `zju.edu.cn` traffic will be sent to the zju-connect proxy, which will cause network anomalies.
+[Link](docs/service_en.md)
 
 #### Run in Docker
 
-```shell
-docker run -d --name zju-connect -v $PWD/config.toml:/home/nonroot/config.toml -p 1080:1080 -p 1081:1081 --restart unless-stopped mythologyli/zju-connect
-```
+[Link](docs/docker_en.md)
 
-You can also use Docker Compose. Create `docker-compose.yml` file with the following content:
+### ⚠️ Warning
 
-```yaml
-version: '3'
+1. When using other proxy tools with TUN mode enabled and zju-connect as a downstream proxy, please be sure to provide the correct network diversion rules, refer to [this issue](https://github.com/Mythologyli/zju-connect/issues/57)
 
-services:
-   zju-connect:
-      image: mythologyli/zju-connect
-      container_name: zju-connect
-      restart: unless-stopped
-      ports:
-         - 1080:1080
-         - 1081:1081
-      volumes:
-         - ./config.toml:/home/nonroot/config.toml
-```
-
-Additionally, you can also use [configs top-level elements](https://docs.docker.com/compose/compose-file/08-configs/) to directly write the configuration files of zju-connect into docker-compose.yml, as shown below:
-
-```yaml
-services:
-   zju-connect:
-      container_name: zju-connect
-      image: mythologyli/zju-connect
-      restart: unless-stopped
-      ports: [1080:1080, 1081:1081]
-      configs: [{ source: zju-connect-config, target: /home/nonroot/config.toml }]
-
-configs:
-   zju-connect-config:
-      content: |
-         username = ""
-         password = ""
-         # other configs ...
-```
-
-And run the following command in the same directory:
-
-```shell
-docker compose up -d
-```
-
-### ⚠️Warning
-
-1. When using other proxy tools with Tun mode enabled and zju-connect as a downstream proxy, please be sure to provide the correct ZJU network diversion rules, refer to [this issue](https://github.com/Mythologyli/zju-connect/issues/57)
-
-### ⚠️TUN mode precautions
+### ⚠️ TUN mode precautions
 
 1. Need to run with administrator privileges
 
 2. Windows system needs to go to [Wintun official website](https://www.wintun.net) to download `wintun.dll` and place it in the same directory as the executable file
 
-3. To ensure that `*.zju.edu.cn` is resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
-
-4. macOS does not currently support accessing addresses outside of `10.0.0.0/8` through the TUN interface
+3. To ensure that domains are resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
 
 ### Arguments
 
@@ -331,10 +155,13 @@ docker compose up -d
 - [x] Periodic keep-alive
 - [x] TUN mode
 - [x] Automatical DNS hijack
+- [x] SMS verification
+- [x] TOTP verification
+- [x] Certificate verification
 
 #### To Do
 
-- [ ] Fake IP mode
+- [ ] Correct implementation of `proxy-all` under TUN mode (#64)
 
 ### Contributors
 
