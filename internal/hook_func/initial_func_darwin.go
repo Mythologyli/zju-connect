@@ -31,7 +31,7 @@ func ListNetworkServices() ([]string, error) {
 }
 
 func SetDNSServer(service, dns string) error {
-	cmd := exec.Command("sudo", "networksetup", "-setdnsservers", service, dns)
+	cmd := exec.Command("networksetup", "-setdnsservers", service, dns)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -41,7 +41,7 @@ func SetDNSServer(service, dns string) error {
 
 func SetDNSServerWithHook(service, dns string) error {
 	// networksetup -setdnsservers "service name" DNS_IP
-	cmd := exec.Command("sudo", "networksetup", "-setdnsservers", service, dns)
+	cmd := exec.Command("networksetup", "-setdnsservers", service, dns)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -51,7 +51,7 @@ func SetDNSServerWithHook(service, dns string) error {
 	}
 
 	RegisterTerminalFunc("CleanDnsServer_"+service, func(ctx context.Context) error {
-		delCommand := exec.Command("sudo", "networksetup", "-setdnsservers", service, "Empty")
+		delCommand := exec.Command("networksetup", "-setdnsservers", service, "Empty")
 		delErr := delCommand.Run()
 		if delErr != nil {
 			return delErr
