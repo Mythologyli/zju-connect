@@ -25,7 +25,7 @@ import (
 
 var conf configs.Config
 
-const zjuConnectVersion = "0.8.0-tun-only"
+const zjuConnectVersion = "0.9.0-tun-only"
 
 func main() {
 	log.Init()
