@@ -157,6 +157,7 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 						host = strings.Split(host, "//")[1]
 					}
 					host = strings.Split(host, "/")[0]
+					host = strings.ReplaceAll(host, "*", "")
 					if strings.Contains(host, ":") {
 						host, hostPort, err = net.SplitHostPort(host)
 					}
