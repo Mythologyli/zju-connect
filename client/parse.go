@@ -11,7 +11,9 @@ import (
 )
 
 func (c *EasyConnectClient) parseLineListFromConfig(config string) error {
-	log.Println("Parsing line list from config")
+	log.DebugPrintf("Config: %s", config)
+
+	log.Println("Parsing line list from config...")
 
 	doc := etree.NewDocument()
 
@@ -54,6 +56,8 @@ func (c *EasyConnectClient) parseLineListFromConfig(config string) error {
 }
 
 func (c *EasyConnectClient) parseResources(resources string) error {
+	log.DebugPrintf("Resources: %s", resources)
+
 	log.Println("Parsing resources...")
 
 	doc := etree.NewDocument()
