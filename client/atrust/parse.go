@@ -164,9 +164,7 @@ func (c *Client) parseResource(resource []byte) error {
 					}
 
 					if isDomain {
-						hostStr = strings.ReplaceAll(hostStr, "*", "")
-
-						c.domainResources[hostStr] = client.DomainResource{
+						c.domainResources[strings.ReplaceAll(hostStr, "*", "")] = client.DomainResource{
 							PortMin:     portMin,
 							PortMax:     portMax,
 							Protocol:    address.Protocol,
@@ -177,24 +175,22 @@ func (c *Client) parseResource(resource []byte) error {
 						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", hostStr, portMin, portMax, address.Protocol)
 					}
 
-					// Handle IP addresses
+					// Handle DNS rules
 					if address.IP != nil {
+						if !isDomain {
+							log.DebugPrintln("IP address found, but no domain name, skipping")
+							continue
+						}
+
 						for _, ipStr := range address.IP {
 							ip := net.ParseIP(ipStr)
 							if ip != nil {
 								if ip.To4() != nil {
-									c.ipResources = append(c.ipResources, client.IPResource{
-										IPMin:       ip,
-										IPMax:       ip,
-										PortMin:     portMin,
-										PortMax:     portMax,
-										Protocol:    address.Protocol,
-										AppID:       appItem.ID,
-										NodeGroupID: appItem.NodeGroupID,
-									})
-
 									ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
-									log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", ip, portMin, portMax, address.Protocol)
+									c.dnsResource[hostStr] = ip
+									log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
+
+									break // TODO: handle multiple IPs for the same domain
 								} else {
 									log.DebugPrintf("IPv6 address found: %s, skipping", ip)
 								}
