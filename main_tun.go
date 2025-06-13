@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
@@ -61,7 +62,7 @@ func main() {
 		}
 	}
 
-	vpnClient := client.NewEasyConnectClient(
+	vpnClient := easyconnect.NewClient(
 		conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
 		conf.Username,
 		conf.Password,

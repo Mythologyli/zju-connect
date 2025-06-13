@@ -1,8 +1,9 @@
-package client
+package easyconnect
 
 import (
 	"errors"
 	"github.com/beevik/etree"
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 	"net"
@@ -10,7 +11,7 @@ import (
 	"strings"
 )
 
-func (c *EasyConnectClient) parseLineListFromConfig(config string) error {
+func (c *Client) parseLineListFromConfig(config string) error {
 	log.DebugPrintf("Config: %s", config)
 
 	log.Println("Parsing line list from config...")
@@ -55,7 +56,7 @@ func (c *EasyConnectClient) parseLineListFromConfig(config string) error {
 	return nil
 }
 
-func (c *EasyConnectClient) parseResources(resources string) error {
+func (c *Client) parseResources(resources string) error {
 	log.DebugPrintf("Resources: %s", resources)
 
 	log.Println("Parsing resources...")
@@ -68,8 +69,8 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 	}
 
 	ipSetBuilder := netaddr.IPSetBuilder{}
-	c.ipResources = make([]IPResource, 0)
-	c.domainResources = make(map[string]DomainResource)
+	c.ipResources = make([]client.IPResource, 0)
+	c.domainResources = make(map[string]client.DomainResource)
 	c.dnsResource = make(map[string]net.IP)
 
 	element := doc.SelectElement("Resource").SelectElement("Rcs")
@@ -183,13 +184,13 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 				}
 
 				if isDomain {
-					c.domainResources[host] = DomainResource{
+					c.domainResources[host] = client.DomainResource{
 						PortMin:  portMin,
 						PortMax:  portMax,
 						Protocol: protocol,
 					}
 				} else {
-					c.ipResources = append(c.ipResources, IPResource{
+					c.ipResources = append(c.ipResources, client.IPResource{
 						IPMin:    ipMin,
 						IPMax:    ipMax,
 						PortMin:  portMin,

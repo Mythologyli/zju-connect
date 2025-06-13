@@ -2,17 +2,17 @@ package mobile
 
 import (
 	"crypto/tls"
-	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack/tun"
 )
 
-var vpnClient *client.EasyConnectClient
+var vpnClient *easyconnect.Client
 
 func Login(server string, username string, password string) string {
 	log.Init()
 
-	vpnClient = client.NewEasyConnectClient(
+	vpnClient = easyconnect.NewClient(
 		server,
 		username,
 		password,
@@ -42,7 +42,7 @@ func DebugLogin(server string, username string, password string) string {
 	log.Init()
 	log.EnableDebug()
 
-	vpnClient = client.NewEasyConnectClient(
+	vpnClient = easyconnect.NewClient(
 		server,
 		username,
 		password,

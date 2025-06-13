@@ -2,7 +2,7 @@ package gvisor
 
 import (
 	"errors"
-	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
@@ -27,7 +27,7 @@ const NICID tcpip.NICID = 1
 const MTU uint32 = 1400
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	easyConnectClient *easyconnect.Client
 
 	rvpnConn io.ReadWriteCloser
 
@@ -105,7 +105,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 	return list.Len(), nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
+func NewStack(easyConnectClient *easyconnect.Client) (*Stack, error) {
 	s := &Stack{}
 
 	s.gvisorStack = stack.New(stack.Options{
@@ -157,7 +157,7 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 
 func (s *Stack) Run() {
 	var connErr error
-	s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.endpoint.rvpnConn, connErr = easyconnect.NewRvpnConn(s.endpoint.easyConnectClient)
 	if connErr != nil {
 		panic(connErr)
 	}

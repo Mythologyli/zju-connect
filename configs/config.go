@@ -2,38 +2,48 @@ package configs
 
 type (
 	Config struct {
-		ServerAddress       string
-		ServerPort          int
-		Username            string
-		Password            string
+		// Common fields
+		Protocol           string // "easyconnect" or "atrust"
+		ServerAddress      string
+		ServerPort         int
+		Username           string
+		Password           string
+		SocksBind          string
+		SocksUser          string
+		SocksPasswd        string
+		HTTPBind           string
+		PortForwardingList []SinglePortForwarding
+		ShadowsocksURL     string
+		DialDirectProxy    string
+		DisableZJUConfig   bool
+		DisableZJUDNS      bool
+		DNSTTL             uint64
+		ZJUDNSServer       string
+		SecondaryDNSServer string
+		DNSServerBind      string
+		CustomDNSList      []SingleCustomDNS
+		DisableKeepAlive   bool
+		DebugDump          bool
+
+		// EasyConnect fields
 		TOTPSecret          string
 		CertFile            string
 		CertPassword        string
 		DisableServerConfig bool
 		SkipDomainResource  bool
-		DisableZJUConfig    bool
-		DisableZJUDNS       bool
 		DisableMultiLine    bool
 		ProxyAll            bool
-		SocksBind           string
-		SocksUser           string
-		SocksPasswd         string
-		HTTPBind            string
-		ShadowsocksURL      string
-		DialDirectProxy     string
+		CustomProxyDomain   []string
 		TUNMode             bool
 		AddRoute            bool
-		DNSTTL              uint64
-		DisableKeepAlive    bool
-		ZJUDNSServer        string
-		SecondaryDNSServer  string
-		DNSServerBind       string
 		DNSHijack           bool
-		DebugDump           bool
-		PortForwardingList  []SinglePortForwarding
-		CustomDNSList       []SingleCustomDNS
-		CustomProxyDomain   []string
 		TwfID               string
+
+		// aTrust fields
+		SID          string
+		DeviceID     string
+		SignKey      string
+		ResourceFile string
 	}
 
 	SinglePortForwarding struct {
@@ -50,6 +60,7 @@ type (
 
 type (
 	ConfigTOML struct {
+		Protocol            *string                    `toml:"protocol"`
 		ServerAddress       *string                    `toml:"server_address"`
 		ServerPort          *int                       `toml:"server_port"`
 		Username            *string                    `toml:"username"`
@@ -81,6 +92,10 @@ type (
 		PortForwarding      []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
+		SID                 *string                    `toml:"sid"`
+		DeviceID            *string                    `toml:"device_id"`
+		SignKey             *string                    `toml:"sign_key"`
+		ResourceFile        *string                    `toml:"resource_file"`
 	}
 
 	SinglePortForwardingTOML struct {

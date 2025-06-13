@@ -1,7 +1,7 @@
 package tun
 
 import (
-	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/ipv4"
 	"io"
@@ -19,7 +19,7 @@ type Stack struct {
 
 func (s *Stack) Run() {
 	var connErr error
-	s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.rvpnConn, connErr = easyconnect.NewRvpnConn(s.endpoint.easyConnectClient)
 	if connErr != nil {
 		return
 	}
@@ -73,7 +73,7 @@ func (s *Stack) Run() {
 }
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	easyConnectClient *easyconnect.Client
 
 	readWriteCloser io.ReadWriteCloser
 	ip              net.IP
@@ -98,7 +98,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
+func NewStack(easyConnectClient *easyconnect.Client) (*Stack, error) {
 	s := &Stack{}
 
 	s.endpoint = &Endpoint{

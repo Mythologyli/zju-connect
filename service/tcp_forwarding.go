@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 	"io"
@@ -19,7 +20,7 @@ func handleRequest(stack stack.Stack, conn net.Conn, remoteAddress string) {
 		panic(err)
 	}
 
-	proxy, err := stack.DialTCP(&net.TCPAddr{
+	proxy, err := stack.DialTCP(context.Background(), &net.TCPAddr{
 		IP:   net.ParseIP(host),
 		Port: port,
 	})

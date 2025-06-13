@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
@@ -137,7 +138,7 @@ func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 		var udpConn net.Conn
 		var err error
 
-		udpConn, err = u.stack.DialUDP(&net.UDPAddr{
+		udpConn, err = u.stack.DialUDP(context.Background(), &net.UDPAddr{
 			IP:   u.dest.IP,
 			Port: u.dest.Port,
 		})

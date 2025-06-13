@@ -1,4 +1,4 @@
-package client
+package easyconnect
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ var errSMSRequired = errors.New("SMS code required")
 var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
 
-func (c *EasyConnectClient) requestTwfID() error {
+func (c *Client) requestTwfID() error {
 	err := c.loginAuthAndPsw()
 	if err != nil {
 		if errors.Is(err, errSMSRequired) {
@@ -55,7 +55,7 @@ func (c *EasyConnectClient) requestTwfID() error {
 	return nil
 }
 
-func (c *EasyConnectClient) loginAuthAndPsw() error {
+func (c *Client) loginAuthAndPsw() error {
 	// First we request the TwfID from server
 	addr := "https://" + c.server + "/por/login_auth.csp?apiversion=1"
 	log.Printf("Request: %s", addr)
@@ -188,7 +188,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 	return nil
 }
 
-func (c *EasyConnectClient) loginSMS() error {
+func (c *Client) loginSMS() error {
 	addr := "https://" + c.server + "/por/login_sms.csp?apiversion=1"
 	log.Printf("SMS request: " + addr)
 	req, err := http.NewRequest("POST", addr, nil)
@@ -257,7 +257,7 @@ func (c *EasyConnectClient) loginSMS() error {
 	return nil
 }
 
-func (c *EasyConnectClient) loginTOTP() error {
+func (c *Client) loginTOTP() error {
 	var totpCode string
 	var err error
 	if c.totpSecret == "" {
@@ -309,7 +309,7 @@ func (c *EasyConnectClient) loginTOTP() error {
 	return nil
 }
 
-func (c *EasyConnectClient) loginCert() error {
+func (c *Client) loginCert() error {
 	addr := "https://" + c.server + "/com/server.crt"
 	log.Printf("Get server cert: %s", addr)
 	req, err := http.NewRequest("POST", addr, nil)
@@ -382,7 +382,7 @@ func (c *EasyConnectClient) loginCert() error {
 	return nil
 }
 
-func (c *EasyConnectClient) requestConfig() (string, error) {
+func (c *Client) requestConfig() (string, error) {
 	addr := "https://" + c.server + "/por/conf.csp"
 	log.Printf("Request: %s", addr)
 
@@ -406,7 +406,7 @@ func (c *EasyConnectClient) requestConfig() (string, error) {
 	return buf.String(), nil
 }
 
-func (c *EasyConnectClient) requestResources() (string, error) {
+func (c *Client) requestResources() (string, error) {
 	addr := "https://" + c.server + "/por/rclist.csp"
 	log.Printf("Request: %s", addr)
 
@@ -430,7 +430,7 @@ func (c *EasyConnectClient) requestResources() (string, error) {
 	return buf.String(), nil
 }
 
-func (c *EasyConnectClient) requestToken() error {
+func (c *Client) requestToken() error {
 	dialConn, err := net.Dial("tcp", c.server)
 	defer func(dialConn net.Conn) {
 		_ = dialConn.Close()
@@ -470,7 +470,7 @@ func (c *EasyConnectClient) requestToken() error {
 	return nil
 }
 
-func (c *EasyConnectClient) requestIP() error {
+func (c *Client) requestIP() error {
 	conn, err := c.tlsConn()
 	if err != nil {
 		return err

@@ -127,14 +127,14 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 		if network == "tcp" {
 			log.Printf("%s -> VPN", ipAddr)
 
-			return d.stack.DialTCP(&net.TCPAddr{
+			return d.stack.DialTCP(ctx, &net.TCPAddr{
 				IP:   target.IP,
 				Port: port,
 			})
 		} else if network == "udp" {
 			log.Printf("%s -> VPN", ipAddr)
 
-			return d.stack.DialUDP(&net.UDPAddr{
+			return d.stack.DialUDP(ctx, &net.UDPAddr{
 				IP:   target.IP,
 				Port: port,
 			})

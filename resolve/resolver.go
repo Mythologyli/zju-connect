@@ -39,6 +39,7 @@ type contextKey string
 var (
 	ContextKeyResolveHost    = contextKey("RESOLVE_HOST")
 	ContextKeyDomainResource = contextKey("DOMAIN_RESOURCE")
+	ContextKeyDomain         = contextKey("DOMAIN")
 )
 
 // Resolve ip address. If the host could be visited via VPN, this function set a DOMAIN_RESOURCE value in context. If resolve success, this function set a RESOLVE_HOST value in context.
@@ -52,6 +53,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		for domain, resource := range r.domainResources {
 			if strings.HasSuffix(host, domain) {
 				ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
+				ctx = context.WithValue(ctx, ContextKeyDomain, host)
 				log.DebugPrintf("Domain resource found: %s", domain)
 				break
 			}
@@ -140,6 +142,14 @@ func (r *Resolver) RemoteUDPResolver() (*net.Resolver, error) {
 	}
 }
 
+func (r *Resolver) RemoteTCPResolver() (*net.Resolver, error) {
+	if r.remoteTCPResolver != nil {
+		return r.remoteTCPResolver, nil
+	} else {
+		return nil, errors.New("remote TCP resolver is nil")
+	}
+}
+
 func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (context.Context, net.IP, error) {
 	if targets, err := r.secondaryResolver.LookupIP(ctx, "ip4", host); err != nil {
 		log.Printf("Resolve IPv4 addr failed using secondary DNS: " + host + ". Try IPv6 addr")
@@ -180,7 +190,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 		remoteUDPResolver: &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return stack.DialUDP(&net.UDPAddr{
+				return stack.DialUDP(context.Background(), &net.UDPAddr{
 					IP:   net.ParseIP(remoteDNSServer),
 					Port: 53,
 				})
@@ -189,7 +199,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 		remoteTCPResolver: &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return stack.DialTCP(&net.TCPAddr{
+				return stack.DialTCP(context.Background(), &net.TCPAddr{
 					IP:   net.ParseIP(remoteDNSServer),
 					Port: 53,
 				})

@@ -1,4 +1,4 @@
-package client
+package easyconnect
 
 import (
 	"crypto/rand"
@@ -29,7 +29,7 @@ func (e *fakeHeartBeatExtension) Read(b []byte) (n int, err error) {
 }
 
 // Create a special TLS connection to the VPN server
-func (c *EasyConnectClient) tlsConn() (*tls.UConn, error) {
+func (c *Client) tlsConn() (*tls.UConn, error) {
 	// Dial the VPN server
 	dialConn, err := net.Dial("tcp", c.server)
 	if err != nil {
@@ -57,7 +57,7 @@ func (c *EasyConnectClient) tlsConn() (*tls.UConn, error) {
 }
 
 // RecvConn create a special TLS connection to receive data from the VPN server
-func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
+func (c *Client) RecvConn() (*tls.UConn, error) {
 	if c.token == nil {
 		return nil, errors.New("token is nil")
 	}
@@ -96,7 +96,7 @@ func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
 }
 
 // SendConn create a special TLS connection to send data to the VPN server
-func (c *EasyConnectClient) SendConn() (*tls.UConn, error) {
+func (c *Client) SendConn() (*tls.UConn, error) {
 	if c.token == nil {
 		return nil, errors.New("token is nil")
 	}

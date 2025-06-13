@@ -1,13 +1,14 @@
 package gvisor
 
 import (
+	"context"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"net"
 )
 
-func (s *Stack) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
+func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
 	return gonet.DialTCP(s.gvisorStack, tcpip.FullAddress{
 		NIC:  NICID,
 		Port: uint16(addr.Port),
@@ -15,7 +16,7 @@ func (s *Stack) DialTCP(addr *net.TCPAddr) (net.Conn, error) {
 	}, header.IPv4ProtocolNumber)
 }
 
-func (s *Stack) DialUDP(addr *net.UDPAddr) (net.Conn, error) {
+func (s *Stack) DialUDP(ctx context.Context, addr *net.UDPAddr) (net.Conn, error) {
 	return gonet.DialUDP(s.gvisorStack, nil, &tcpip.FullAddress{
 		NIC:  NICID,
 		Port: uint16(addr.Port),

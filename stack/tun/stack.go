@@ -6,12 +6,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"io"
 
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
@@ -32,7 +33,7 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 
 func (s *Stack) Run() {
 	var connErr error
-	s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.rvpnConn, connErr = easyconnect.NewRvpnConn(s.endpoint.easyConnectClient)
 	if connErr != nil {
 		panic(connErr)
 	}

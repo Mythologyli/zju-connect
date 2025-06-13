@@ -27,6 +27,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 		return errors.New("ZJU Connect: error parsing the config file")
 	}
 
+	conf.Protocol = getTOMLVal(confTOML.Protocol, "easyconnect")
 	conf.ServerAddress = getTOMLVal(confTOML.ServerAddress, "rvpn.zju.edu.cn")
 	conf.ServerPort = getTOMLVal(confTOML.ServerPort, 443)
 	conf.Username = getTOMLVal(confTOML.Username, "")
@@ -55,6 +56,10 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
+	conf.SID = getTOMLVal(confTOML.SID, "")
+	conf.DeviceID = getTOMLVal(confTOML.DeviceID, "")
+	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
+	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -108,6 +113,7 @@ func init() {
 	configFile, tcpPortForwarding, udpPortForwarding, customDns, customProxyDomain := "", "", "", "", ""
 	showVersion := false
 
+	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
 	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
 	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect port address")
 	flag.StringVar(&conf.Username, "username", "", "Your username")
@@ -137,6 +143,10 @@ func init() {
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
+	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")
+	flag.StringVar(&conf.DeviceID, "device-id", "", "aTrust Device ID (mostly for debug usage)")
+	flag.StringVar(&conf.SignKey, "sign-key", "", "aTrust Sign Key (mostly for debug usage)")
+	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")

@@ -6,6 +6,7 @@ import (
 	"context"
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"net"
@@ -16,7 +17,7 @@ import (
 )
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	easyConnectClient *easyconnect.Client
 
 	ifce      tun.Tun
 	ifceName  string
@@ -54,7 +55,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(easyConnectClient *easyconnect.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources

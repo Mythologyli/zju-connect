@@ -1,4 +1,4 @@
-package client
+package easyconnect
 
 import (
 	"github.com/mythologyli/zju-connect/log"
@@ -7,7 +7,7 @@ import (
 )
 
 type RvpnConn struct {
-	easyConnectClient *EasyConnectClient
+	easyConnectClient *Client
 
 	sendConn     io.WriteCloser
 	sendLock     sync.Mutex
@@ -71,7 +71,7 @@ func (r *RvpnConn) Close() error {
 	return nil
 }
 
-func NewRvpnConn(ec *EasyConnectClient) (*RvpnConn, error) {
+func NewRvpnConn(ec *Client) (*RvpnConn, error) {
 	c := &RvpnConn{
 		easyConnectClient: ec,
 		sendErrCount:      0,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/windows"
@@ -19,7 +20,7 @@ const guid = "{4F5CDE94-D2A3-4AA5-A4A3-0FE6CB909E83}"
 const interfaceName = "ZJU Connect"
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	easyConnectClient *easyconnect.Client
 
 	dev       tun.Device
 	readLock  sync.Mutex
@@ -77,7 +78,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(easyConnectClient *easyconnect.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	s := &Stack{}
 	s.ipResources = ipResources
 
