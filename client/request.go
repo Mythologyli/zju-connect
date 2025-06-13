@@ -155,7 +155,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 		return errSMSRequired
 	}
 
-	if strings.Contains(buf.String(), "<NextService>auth/token</NextService>") || strings.Contains(buf.String(), "<NextAuth>7</NextAuth>") {
+	if strings.Contains(buf.String(), "<NextService>auth/token</NextService>") || strings.Contains(buf.String(), "<NextAuth>7</NextAuth>") || strings.Contains(buf.String(), "<NextAuth>4</NextAuth>") {
 		log.Print("TOTP required")
 
 		return errTOTPRequired
