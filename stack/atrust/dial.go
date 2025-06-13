@@ -177,7 +177,7 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 		resource := res.(client.DomainResource)
 		appID = resource.AppID
 		nodeGroupID = resource.NodeGroupID
-		if res = ctx.Value(resolve.ContextKeyDomain); res != nil {
+		if res = ctx.Value(resolve.ContextKeyResolveHost); res != nil {
 			domain = res.(string)
 		}
 	} else {
