@@ -28,7 +28,8 @@ type Client struct {
 	dnsResource     map[string]net.IP
 	dnsServer       string
 
-	NodeGroups map[string][]string
+	MajorNodeGroup string
+	NodeGroups     map[string][]string
 }
 
 func NewClient(username, password, sid, deviceID, connectionID, signKey string) *Client {

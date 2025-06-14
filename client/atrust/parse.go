@@ -29,6 +29,9 @@ type ClientResource struct {
 
 				Config struct {
 					NodeGroupConf struct {
+						MajorNodeGroup struct {
+							ID string
+						}
 						NodeGroupList []struct {
 							AddressInfo []struct {
 								Address string
@@ -215,6 +218,7 @@ func (c *Client) parseResource(resource []byte) error {
 		log.DebugPrintf("No DNS server found")
 	}
 
+	c.MajorNodeGroup = clientResource.Data.AppList.Data.Config.NodeGroupConf.MajorNodeGroup.ID
 	c.NodeGroups = make(map[string][]string)
 	for _, nodeGroup := range clientResource.Data.AppList.Data.Config.NodeGroupConf.NodeGroupList {
 		addressList := make([]string, 0)
