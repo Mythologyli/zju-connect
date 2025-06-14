@@ -194,8 +194,13 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 	}
 
 	connectionId := s.connectID + "-" + randUint64()
-	procName := "curl"
-	procPath := "/usr/bin/curl"
+
+	procName := "google-chrome-stable"
+	procPath := "/usr/bin/google-chrome-stable"
+	if addr.Port == 22 {
+		procName = "ssh"
+		procPath = "/usr/bin/ssh"
+	}
 	procHash := fmt.Sprintf("%X", sha256.Sum256([]byte(procPath)))
 
 	destAddr := addr.String()
