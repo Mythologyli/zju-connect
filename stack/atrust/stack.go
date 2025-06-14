@@ -24,8 +24,8 @@ type Stack struct {
 
 	nodeGroups map[string][]string
 
-	bestNodes      map[string]string
-	bestNodesMutex sync.Mutex
+	bestNodes        map[string]string
+	bestNodesRWMutex sync.RWMutex
 
 	resolve zcdns.LocalServer
 }
@@ -134,8 +134,8 @@ func (s *Stack) Run() {
 		time.Sleep(time.Second * 60)
 
 		bestNodes := getBestNodes(s.nodeGroups)
-		s.bestNodesMutex.Lock()
+		s.bestNodesRWMutex.Lock()
 		s.bestNodes = bestNodes
-		s.bestNodesMutex.Unlock()
+		s.bestNodesRWMutex.Unlock()
 	}
 }

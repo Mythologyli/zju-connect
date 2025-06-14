@@ -145,15 +145,6 @@ func (c *atrustConn) SetWriteDeadline(t time.Time) error {
 	return c.tlsConn.SetWriteDeadline(t)
 }
 
-func randHex(n int) string {
-	numBytes := (n + 1) / 2
-	b := make([]byte, numBytes)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return strings.ToUpper(hex.EncodeToString(b)[:n])
-}
-
 func randUint64() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -193,12 +184,11 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 		}
 	}
 
-	s.bestNodesMutex.Lock()
-	bestNode := s.bestNodes[nodeGroupID]
-	s.bestNodesMutex.Unlock()
-	conn, err := tls.Dial("tcp", bestNode, &tls.Config{
+	s.bestNodesRWMutex.RLock()
+	conn, err := tls.Dial("tcp", s.bestNodes[nodeGroupID], &tls.Config{
 		InsecureSkipVerify: true,
 	})
+	s.bestNodesRWMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
