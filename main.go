@@ -7,6 +7,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
 	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
 	easyconnectclient "github.com/mythologyli/zju-connect/client/easyconnect"
@@ -25,6 +26,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 )
 
@@ -305,9 +307,16 @@ func main() {
 		}
 	}
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	<-quit
+	if runtime.GOOS == "windows" {
+		done := make(chan os.Signal, 1)
+		signal.Notify(done, syscall.SIGINT)
+		winquit.SimulateSigTermOnQuit(done)
+		<-done
+	} else {
+		quit := make(chan os.Signal)
+		signal.Notify(quit, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		<-quit
+	}
 	log.Println("Shutdown ZJU-Connect ......")
 	if errs := hook_func.ExecTerminalFunc(context.Background()); errs != nil {
 		for _, err := range errs {

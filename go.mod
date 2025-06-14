@@ -8,6 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/beevik/etree v1.5.0
 	github.com/cloverstd/tcping v0.1.1
+	github.com/containers/winquit v1.1.0
 	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
 	github.com/miekg/dns v1.1.63
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -40,6 +41,7 @@ require (
 	github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b // indirect
 	github.com/sagernet/sing v0.4.3 // indirect
 	github.com/scjalliance/comshim v0.0.0-20240712181150-e070933cb68e // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
