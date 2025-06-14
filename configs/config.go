@@ -40,10 +40,14 @@ type (
 		TwfID               string
 
 		// aTrust fields
-		SID          string
-		DeviceID     string
-		SignKey      string
-		ResourceFile string
+		AuthType       string // currently only "zju" is supported
+		ClientDataFile string
+		GraphCodeFile  string
+		SID            string
+		DeviceID       string
+		ConnectionID   string
+		SignKey        string
+		ResourceFile   string
 	}
 
 	SinglePortForwarding struct {
@@ -92,8 +96,12 @@ type (
 		PortForwarding      []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
+		AuthType            *string                    `toml:"auth_type"`
+		ClientDataFile      *string                    `toml:"client_data_file"`
+		GraphCodeFile       *string                    `toml:"graph_code_file"`
 		SID                 *string                    `toml:"sid"`
 		DeviceID            *string                    `toml:"device_id"`
+		ConnectionID        *string                    `toml:"connection_id"`
 		SignKey             *string                    `toml:"sign_key"`
 		ResourceFile        *string                    `toml:"resource_file"`
 	}

@@ -193,14 +193,17 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 		}
 	}
 
-	conn, err := tls.Dial("tcp", s.nodeGroups[nodeGroupID][0], &tls.Config{
+	s.bestNodesMutex.Lock()
+	bestNode := s.bestNodes[nodeGroupID]
+	s.bestNodesMutex.Unlock()
+	conn, err := tls.Dial("tcp", bestNode, &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
 
-	connectionId := randHex(32) + "-" + randUint64()
+	connectionId := s.connectID + "-" + randUint64()
 	procName := "curl"
 	procPath := "/usr/bin/curl"
 	procHash := fmt.Sprintf("%X", sha256.Sum256([]byte(procPath)))

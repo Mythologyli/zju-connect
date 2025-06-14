@@ -1,18 +1,26 @@
 package atrust
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/client/atrust/auth/zju"
+	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 	"net"
+	"strings"
 )
 
 type Client struct {
-	Username string
-	SID      string
-	DeviceID string
-	SignKey  string
-
-	resources []byte
+	Username     string
+	Password     string
+	SID          string
+	DeviceID     string
+	ConnectionID string
+	SignKey      string
 
 	ipResources     []client.IPResource
 	domainResources map[string]client.DomainResource
@@ -23,13 +31,14 @@ type Client struct {
 	NodeGroups map[string][]string
 }
 
-func NewClient(username, sid, deviceID, signKey string, resources []byte) *Client {
+func NewClient(username, password, sid, deviceID, connectionID, signKey string) *Client {
 	return &Client{
-		Username:  username,
-		SID:       sid,
-		DeviceID:  deviceID,
-		SignKey:   signKey,
-		resources: resources,
+		Username:     username,
+		Password:     password,
+		SID:          sid,
+		DeviceID:     deviceID,
+		ConnectionID: connectionID,
+		SignKey:      signKey,
 	}
 }
 
@@ -68,13 +77,79 @@ func (c *Client) DNSServer() (string, error) {
 	return c.dnsServer, nil
 }
 
-func (c *Client) Setup() error {
-	if c.resources != nil {
-		err := c.parseResource(c.resources)
+func randHex(n int) string {
+	numBytes := (n + 1) / 2
+	b := make([]byte, numBytes)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return strings.ToUpper(hex.EncodeToString(b)[:n])
+}
+
+func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []byte) ([]byte, error) {
+	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
+		log.Println("Skipping login")
+
+		if c.ConnectionID == "" {
+			c.ConnectionID = randHex(32)
+		}
+		if c.SignKey == "" {
+			c.SignKey = randHex(64)
+		}
+	} else {
+		var clientAuthData auth.ClientAuthData
+		if authData != nil {
+			err := json.Unmarshal(authData, &clientAuthData)
+			if err != nil {
+				log.Println("Error parsing client data:", err)
+				return nil, err
+			}
+		}
+
+		if clientAuthData.DeviceID == "" {
+			clientAuthData.DeviceID = randHex(32)
+		}
+		c.DeviceID = clientAuthData.DeviceID
+		if clientAuthData.ConnectionID == "" {
+			clientAuthData.ConnectionID = randHex(32)
+		}
+		c.ConnectionID = clientAuthData.ConnectionID
+		c.SignKey = randHex(64)
+
+		log.Printf("Starting login with auth type: %s", authType)
+		if authType == "zju" {
+			sess := zju.NewSession()
+
+			var err error
+			c.SID, clientAuthData.Cookies, err = sess.Login(c.Username, c.Password, c.DeviceID, graphCodeFile, clientAuthData.Cookies)
+			if err != nil {
+				log.Println("Login error:", err)
+				return nil, err
+			}
+
+			resourceData, err = sess.ClientResource()
+			if err != nil {
+				log.Println("Error fetching client resource:", err)
+				return nil, err
+			}
+		} else {
+			log.Println("Unsupported auth type:", authType)
+			return nil, fmt.Errorf("unsupported auth type: %s", authType)
+		}
+
+		var err error
+		authData, err = json.Marshal(clientAuthData)
 		if err != nil {
-			return err
+			log.Println("Error marshaling auth data:", err)
 		}
 	}
 
-	return nil
+	err := c.parseResource(resourceData)
+	if err != nil {
+		return nil, err
+	}
+
+	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
+
+	return authData, nil
 }

@@ -24,7 +24,6 @@ type DomainResource struct {
 }
 
 type Client interface {
-	Setup() error
 	IPSet() (*netaddr.IPSet, error)
 	IPResources() ([]IPResource, error)
 	DomainResources() (map[string]DomainResource, error)
