@@ -65,12 +65,12 @@ func NewStack(aTrustClient *atrustclient.Client) *Stack {
 		log.Fatalf("No node group list found")
 	}
 
+	stack.bestNodes = getBestNodes(stack.nodeGroups)
+
 	err = stack.getIP()
 	if err != nil {
 		log.Fatalf("Failed to get IP: %v", err)
 	}
-
-	stack.bestNodes = getBestNodes(stack.nodeGroups)
 
 	return &stack
 }
@@ -80,7 +80,7 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) getIP() error {
-	conn, err := tls.Dial("tcp", s.nodeGroups[s.majorNodeGroup][0], &tls.Config{
+	conn, err := tls.Dial("tcp", s.bestNodes[s.majorNodeGroup], &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
