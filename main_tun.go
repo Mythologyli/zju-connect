@@ -242,10 +242,10 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if !useZJUDNS {
-			log.Println("Keep alive is disabled because ZJU DNS is disabled")
+		if conf.KeepAliveURL == "" && !useZJUDNS {
+			log.Println("Keep alive is disabled because ZJU DNS is disabled, and no KeepAliveURL is provided")
 		} else {
-			go service.KeepAlive(vpnResolver)
+			go service.KeepAlive(vpnResolver, vpnDialer, conf.KeepAliveURL)
 		}
 	}
 

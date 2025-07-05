@@ -25,6 +25,7 @@ type (
 		AddRoute            bool
 		DNSTTL              uint64
 		DisableKeepAlive    bool
+		KeepAliveURL        string
 		ZJUDNSServer        string
 		SecondaryDNSServer  string
 		DNSServerBind       string
@@ -73,6 +74,7 @@ type (
 		AddRoute            *bool                      `toml:"add_route"`
 		DNSTTL              *uint64                    `toml:"dns_ttl"`
 		DisableKeepAlive    *bool                      `toml:"disable_keep_alive"`
+		KeepAliveURL        *string                    `toml:"keep_alive_url"`
 		ZJUDNSServer        *string                    `toml:"zju_dns_server"`
 		SecondaryDNSServer  *string                    `toml:"secondary_dns_server"`
 		DNSServerBind       *string                    `toml:"dns_server_bind"`

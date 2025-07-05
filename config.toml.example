@@ -23,6 +23,7 @@ tun_mode = false
 add_route = false
 dns_ttl = 3600
 disable_keep_alive = false
+keep_alive_url = "" # "https://www.cnki.net/favicon.ico"
 zju_dns_server = "10.10.0.21"
 secondary_dns_server = "114.114.114.114"
 dns_server_bind = ""
