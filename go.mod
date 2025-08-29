@@ -2,6 +2,8 @@ module github.com/mythologyli/zju-connect
 
 go 1.24.1
 
+replace inet.af/netaddr => github.com/inetaf/netaddr v0.0.0-20230525184311-b8eac61e914a
+
 require github.com/refraction-networking/utls v1.6.7
 
 require (
