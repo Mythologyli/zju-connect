@@ -85,6 +85,17 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
+func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, error) {
+	var serverHost string
+	if serverPort == 443 {
+		serverHost = serverAddress
+	} else {
+		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+	}
+	sess := auth.NewSession(serverHost)
+	return sess.GetAuthInfoList()
+}
+
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")

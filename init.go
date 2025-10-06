@@ -1,14 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/mythologyli/zju-connect/client/atrust"
 	"github.com/mythologyli/zju-connect/configs"
 )
 
@@ -58,6 +62,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
+	conf.AuthInfo = getTOMLVal(confTOML.AuthInfo, false)
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
@@ -151,6 +156,7 @@ func init() {
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas)")
+	flag.BoolVar(&conf.AuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
@@ -174,6 +180,26 @@ func init() {
 		os.Exit(0)
 	}
 
+	if conf.AuthInfo {
+		if conf.Protocol != "atrust" {
+			fmt.Fprintln(os.Stderr, "Auth info only support atrust protocol")
+			os.Exit(1)
+		}
+		log.SetOutput(io.Discard) // suppress log
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
+			os.Exit(1)
+		}
+		jsonInfo, err := json.Marshal(info)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error marshaling auth info:", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(jsonInfo))
+		os.Exit(1)
+	}
+
 	if configFile != "" {
 		err := parseTOMLConfig(configFile, &conf)
 		if err != nil {
@@ -186,7 +212,7 @@ func init() {
 			for _, forwardingString := range forwardingStringList {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
-					fmt.Println("ZJU Connect: wrong tcp port forwarding format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong tcp port forwarding format")
 					os.Exit(1)
 				}
 
@@ -203,7 +229,7 @@ func init() {
 			for _, forwardingString := range forwardingStringList {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
-					fmt.Println("ZJU Connect: wrong udp port forwarding format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong udp port forwarding format")
 					os.Exit(1)
 				}
 
@@ -220,7 +246,7 @@ func init() {
 			for _, dnsString := range dnsList {
 				dnsStringSplit := strings.Split(dnsString, ":")
 				if len(dnsStringSplit) != 2 {
-					fmt.Println("ZJU Connect: wrong custom dns format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong custom dns format")
 					os.Exit(1)
 				}
 
@@ -236,7 +262,7 @@ func init() {
 			for _, domain := range domainList {
 				var domainRegex = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
 				if !domainRegex.MatchString(domain) {
-					fmt.Printf("ZJU Connect: %s is not a valid domain\n", domain)
+					fmt.Fprintf(os.Stderr, "ZJU Connect: %s is not a valid domain\n", domain)
 					os.Exit(1)
 				}
 				conf.CustomProxyDomain = append(conf.CustomProxyDomain, domain)

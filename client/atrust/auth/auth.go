@@ -86,6 +86,11 @@ func (s *Session) randSdpId(n ...int) string {
 	return string(hexes)
 }
 
+func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
+	_, list, err := s.authConfigInit()
+	return list, err
+}
+
 func (s *Session) Login(username, password, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
 	sid := ""
 	if len(cookies) > 0 {

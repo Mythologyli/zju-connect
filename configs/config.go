@@ -41,6 +41,7 @@ type (
 
 		// aTrust fields
 		AuthType       string
+		AuthInfo       bool
 		LoginDomain    string
 		ClientDataFile string
 		GraphCodeFile  string
@@ -99,6 +100,7 @@ type (
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 		AuthType            *string                    `toml:"auth_type"`
+		AuthInfo            *bool                      `toml:"auth_info"`
 		LoginDomain         *string                    `toml:"login_domain"`
 		ClientDataFile      *string                    `toml:"client_data_file"`
 		GraphCodeFile       *string                    `toml:"graph_code_file"`
