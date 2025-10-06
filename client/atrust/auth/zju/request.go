@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
-	"github.com/mythologyli/zju-connect/log"
 	"io"
 	"math/big"
 	mathrand "math/rand"
@@ -20,11 +18,12 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 const (
-	BaseHost  = "vpn.zju.edu.cn"
-	BaseURL   = "https://" + BaseHost
 	UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
 )
 
@@ -33,6 +32,9 @@ type Session struct {
 	username string
 	password string
 	deviceID string
+
+	baseHost string
+	baseURL  string
 
 	rid            string
 	env            string
@@ -45,17 +47,19 @@ type Session struct {
 	response map[string]json.RawMessage
 }
 
-func NewSession() *Session {
+func NewSession(server string) *Session {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
 
-	rid := base64.StdEncoding.EncodeToString([]byte(BaseHost))
+	rid := base64.StdEncoding.EncodeToString([]byte(server))
 
 	return &Session{
 		client:   client,
+		baseHost: server,
+		baseURL:  "https://" + server,
 		rid:      rid,
 		response: make(map[string]json.RawMessage),
 	}
@@ -77,7 +81,7 @@ func (s *Session) Login(username, password, deviceId, graphCodeFile string, cook
 	sid := ""
 	if cookies != nil {
 		for _, cookie := range cookies {
-			if cookie.Host == BaseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
+			if cookie.Host == s.baseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
 				sid = cookie.Value
 			}
 
@@ -175,13 +179,13 @@ func (s *Session) Login(username, password, deviceId, graphCodeFile string, cook
 	}
 
 	cookies = make([]auth.Cookie, 0)
-	for _, cookie := range s.client.Jar.Cookies(&url.URL{Host: BaseHost, Scheme: "https"}) {
+	for _, cookie := range s.client.Jar.Cookies(&url.URL{Host: s.baseHost, Scheme: "https"}) {
 		if cookie.Name == "sid" {
 			sid = cookie.Value
 		}
 
 		cookies = append(cookies, auth.Cookie{
-			Host:   BaseHost,
+			Host:   s.baseHost,
 			Scheme: "https",
 			Name:   cookie.Name,
 			Value:  cookie.Value,
@@ -194,7 +198,7 @@ func (s *Session) Login(username, password, deviceId, graphCodeFile string, cook
 func (s *Session) authConfig() (int, error) {
 	log.Println("Perform GET /passport/v1/public/authConfig")
 
-	u := BaseURL + "/passport/v1/public/authConfig"
+	u := s.baseURL + "/passport/v1/public/authConfig"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -216,6 +220,7 @@ func (s *Session) authConfig() (int, error) {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received auth config: %s", string(body))
 
 	var re struct {
 		Data struct {
@@ -230,6 +235,7 @@ func (s *Session) authConfig() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	log.DebugPrintf("Parsed auth config: %+v", re)
 
 	s.csrfToken = re.Data.CSRF
 	s.pubKey = re.Data.PubKey
@@ -265,7 +271,7 @@ func (s *Session) psw(graphCheckCode string) (int, error) {
 	}
 	postBody, _ := json.Marshal(data)
 
-	u := BaseURL + "/passport/v1/auth/psw"
+	u := s.baseURL + "/passport/v1/auth/psw"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -286,6 +292,7 @@ func (s *Session) psw(graphCheckCode string) (int, error) {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received psw: %s", string(body))
 
 	var re struct {
 		Data struct {
@@ -297,6 +304,7 @@ func (s *Session) psw(graphCheckCode string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	log.DebugPrintf("Parsed psw: %+v", re)
 
 	s.ticket = re.Data.Ticket
 
@@ -306,7 +314,7 @@ func (s *Session) psw(graphCheckCode string) (int, error) {
 func (s *Session) checkCode() ([]byte, error) {
 	log.Println("Perform GET /passport/v1/public/checkCode")
 
-	u := BaseURL + "/passport/v1/public/checkCode"
+	u := s.baseURL + "/passport/v1/public/checkCode"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -332,7 +340,7 @@ func (s *Session) checkCode() ([]byte, error) {
 func (s *Session) reportEnv() error {
 	log.Println("Perform POST /controller/v1/public/reportEnv")
 
-	u := BaseURL + "/controller/v1/public/reportEnv"
+	u := s.baseURL + "/controller/v1/public/reportEnv"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -391,7 +399,7 @@ func (s *Session) reportEnv() error {
 func (s *Session) authCheck() (string, error) {
 	log.Println("Perform GET /passport/v1/auth/authCheck")
 
-	u := BaseURL + "/passport/v1/auth/authCheck"
+	u := s.baseURL + "/passport/v1/auth/authCheck"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -432,7 +440,7 @@ func (s *Session) authCheck() (string, error) {
 
 func (s *Session) sendSms(authId string) error {
 	log.Println("Perform GET /passport/v1/auth/sms")
-	u := BaseURL + "/passport/v1/auth/sms"
+	u := s.baseURL + "/passport/v1/auth/sms"
 	params := url.Values{
 		"action":       {"sendsms"},
 		"clientType":   {"SDPClient"},
@@ -488,7 +496,7 @@ func (s *Session) smsCheckCode(authId string) error {
 		return err
 	}
 
-	u := BaseURL + "/passport/v1/auth/sms"
+	u := s.baseURL + "/passport/v1/auth/sms"
 	params := url.Values{
 		"action":     {"checkcode"},
 		"clientType": {"SDPClient"},
@@ -537,7 +545,7 @@ func (s *Session) smsCheckCode(authId string) error {
 func (s *Session) onlineInfo() error {
 	log.Println("Perform GET /passport/v1/user/onlineInfo")
 
-	u := BaseURL + "/passport/v1/user/onlineInfo"
+	u := s.baseURL + "/passport/v1/user/onlineInfo"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
@@ -577,7 +585,7 @@ func (s *Session) onlineInfo() error {
 func (s *Session) ClientResource() ([]byte, error) {
 	log.Println("Perform POST /controller/v1/user/clientResource")
 
-	u := BaseURL + "/controller/v1/user/clientResource"
+	u := s.baseURL + "/controller/v1/user/clientResource"
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},

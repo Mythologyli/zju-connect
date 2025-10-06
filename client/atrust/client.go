@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strings"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	"github.com/mythologyli/zju-connect/client/atrust/auth/zju"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
-	"net"
-	"strings"
 )
 
 type Client struct {
@@ -87,7 +88,7 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []byte) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, authType, graphCodeFile string, authData, resourceData []byte) ([]byte, error) {
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
@@ -106,6 +107,7 @@ func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []
 				return nil, err
 			}
 		}
+		log.DebugPrintf("Given auth data: %+v", authData)
 
 		if clientAuthData.DeviceID == "" {
 			clientAuthData.DeviceID = randHex(32)
@@ -119,7 +121,13 @@ func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []
 
 		log.Printf("Starting login with auth type: %s", authType)
 		if authType == "zju" {
-			sess := zju.NewSession()
+			var serverHost string
+			if serverPort == 443 {
+				serverHost = serverAddress
+			} else {
+				serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+			}
+			sess := zju.NewSession(serverHost)
 
 			var err error
 			c.SID, clientAuthData.Cookies, err = sess.Login(c.Username, c.Password, c.DeviceID, graphCodeFile, clientAuthData.Cookies)

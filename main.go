@@ -7,6 +7,12 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
 	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
@@ -23,11 +29,6 @@ import (
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
-	"net"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
 )
 
 var conf configs.Config
@@ -110,7 +111,7 @@ func main() {
 		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.AuthType, conf.GraphCodeFile, clientData, resourceData)
+		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.ServerAddress, conf.ServerPort, conf.AuthType, conf.GraphCodeFile, clientData, resourceData)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
 		}
