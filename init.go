@@ -57,7 +57,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
-	conf.AuthType = getTOMLVal(confTOML.AuthType, "zju")
+	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
@@ -149,7 +149,7 @@ func init() {
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
-	flag.StringVar(&conf.AuthType, "auth-type", "zju", "aTrust authentication type (currently only 'zju' is supported)")
+	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas)")
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
@@ -242,7 +242,7 @@ func init() {
 		}
 	}
 
-	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") && conf.TwfID == "") {
+	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") && conf.TwfID == "" && conf.AuthType != "auth/cas") {
 		fmt.Println("ZJU Connect")
 		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
 		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])

@@ -40,7 +40,7 @@ type (
 		TwfID               string
 
 		// aTrust fields
-		AuthType       string // currently only "zju" is supported
+		AuthType       string
 		LoginDomain    string
 		ClientDataFile string
 		GraphCodeFile  string

@@ -1,210 +1,20 @@
-package zju
+package auth
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
-	mathrand "math/rand"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
-	"os"
-	"strconv"
-	"time"
 
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	"github.com/mythologyli/zju-connect/log"
 )
 
-const (
-	UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
-)
-
-type Session struct {
-	client   *http.Client
-	username string
-	password string
-	deviceID string
-
-	baseHost string
-	baseURL  string
-
-	rid            string
-	env            string
-	csrfToken      string
-	pubKey         string
-	pubKeyExp      string
-	antiReplayRand string
-	ticket         string
-
-	response map[string]json.RawMessage
-}
-
-func NewSession(server string) *Session {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
-
-	rid := base64.StdEncoding.EncodeToString([]byte(server))
-
-	return &Session{
-		client:   client,
-		baseHost: server,
-		baseURL:  "https://" + server,
-		rid:      rid,
-		response: make(map[string]json.RawMessage),
-	}
-}
-
-func (s *Session) randSdpId(n ...int) string {
-	length := 8
-	if len(n) > 0 {
-		length = n[0]
-	}
-	hexes := make([]byte, length)
-	for i := 0; i < length; i++ {
-		hexes[i] = "0123456789abcdef"[mathrand.Intn(16)]
-	}
-	return string(hexes)
-}
-
-func (s *Session) Login(username, password, loginDomain, deviceId, graphCodeFile string, cookies []auth.Cookie) (string, []auth.Cookie, error) {
-	sid := ""
-	if len(cookies) > 0 {
-		for _, cookie := range cookies {
-			if cookie.Host == s.baseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
-				sid = cookie.Value
-			}
-
-			c := &http.Cookie{
-				Name:  cookie.Name,
-				Value: cookie.Value,
-			}
-			s.client.Jar.SetCookies(&url.URL{Host: cookie.Host, Scheme: cookie.Scheme}, []*http.Cookie{c})
-		}
-	}
-
-	s.username = username
-	s.password = password
-	s.deviceID = deviceId
-	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + deviceId + `"}`))
-
-	isLogin, err := s.authConfig()
-	if err != nil {
-		return "", nil, err
-	}
-	if isLogin == 1 {
-		log.Println("Already logged in")
-		return sid, cookies, nil
-	}
-
-	graphCheckCodeEnable, err := s.psw(loginDomain, "")
-	if err != nil {
-		return "", nil, err
-	}
-
-	if graphCheckCodeEnable == 1 {
-		imgData, err := s.checkCode()
-		if err != nil {
-			return "", nil, err
-		}
-
-		if graphCodeFile != "" {
-			err = os.WriteFile(graphCodeFile, imgData, 0644)
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to write graph code image: %w", err)
-			}
-			log.Printf("Graph check code saved to %s", graphCodeFile)
-		} else {
-			log.Println("Graph check code required, but no file specified to save the image")
-			return "", nil, fmt.Errorf("graph check code required, but no file specified to save the image")
-		}
-
-		isLogin, err = s.authConfig()
-		if err != nil {
-			return "", nil, err
-		}
-
-		graphCheckCode := ""
-		log.Print("Please enter the graph check code JSON: ")
-		_, err = fmt.Scanln(&graphCheckCode)
-		if err != nil {
-			return "", nil, err
-		}
-
-		graphCheckCodeEnable, err = s.psw(loginDomain, graphCheckCode)
-		if err != nil {
-			return "", nil, err
-		}
-
-		if graphCheckCodeEnable != 0 {
-			log.Println("Graph check code still required after second login attempt")
-			return "", nil, fmt.Errorf("graph check code still required after second login attempt")
-		}
-	}
-
-	err = s.reportEnv()
-	if err != nil {
-		return "", nil, err
-	}
-
-	authID, err := s.authCheck()
-	if err != nil {
-		return "", nil, err
-	}
-
-	if authID != "" {
-		err = s.sendSms(authID)
-		if err != nil {
-			return "", nil, err
-		}
-		err = s.smsCheckCode(authID)
-		if err != nil {
-			return "", nil, err
-		}
-	}
-
-	err = s.onlineInfo()
-	if err != nil {
-		return "", nil, err
-	}
-
-	cookies = make([]auth.Cookie, 0)
-	for _, cookie := range s.client.Jar.Cookies(&url.URL{Host: s.baseHost, Scheme: "https"}) {
-		if cookie.Name == "sid" {
-			sid = cookie.Value
-		}
-
-		cookies = append(cookies, auth.Cookie{
-			Host:   s.baseHost,
-			Scheme: "https",
-			Name:   cookie.Name,
-			Value:  cookie.Value,
-		})
-	}
-
-	return sid, cookies, nil
-}
-
-func (s *Session) authConfig() (int, error) {
+func (s *Session) authConfigImpl(params url.Values) (int, []AuthInfo, error) {
 	log.Println("Perform GET /passport/v1/public/authConfig")
 
 	u := s.baseURL + "/passport/v1/public/authConfig"
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-		"needTicket": {"1"},
-	}
 	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("x-csrf-token", s.csrfToken)
@@ -213,7 +23,7 @@ func (s *Session) authConfig() (int, error) {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -224,22 +34,17 @@ func (s *Session) authConfig() (int, error) {
 
 	var re struct {
 		Data struct {
-			AuthServerInfoList []struct {
-				LoginDomain string `json:"loginDomain"`
-				AuthType    string `json:"authType"`
-				AuthName    string `json:"authName"`
-				LoginURL    string `json:"loginUrl"`
-			} `json:"authServerInfoList"`
-			IsLogin        int    `json:"isLogin"`
-			CSRF           string `json:"csrfToken"`
-			PubKey         string `json:"pubKey"`
-			PubKeyExp      string `json:"pubKeyExp"`
-			AntiReplayRand string `json:"antiReplayRand"`
+			AuthServerInfoList []AuthInfo `json:"authServerInfoList"`
+			IsLogin            int        `json:"isLogin"`
+			CSRF               string     `json:"csrfToken"`
+			PubKey             string     `json:"pubKey"`
+			PubKeyExp          string     `json:"pubKeyExp"`
+			AntiReplayRand     string     `json:"antiReplayRand"`
 		} `json:"data"`
 	}
 	err = json.Unmarshal(body, &re)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	log.DebugPrintf("Parsed auth config: %+v", re)
 
@@ -248,99 +53,29 @@ func (s *Session) authConfig() (int, error) {
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
 
-	return re.Data.IsLogin, nil
+	return re.Data.IsLogin, re.Data.AuthServerInfoList, nil
 }
 
-func (s *Session) psw(loginDomain, graphCheckCode string) (int, error) {
-	log.Println("Perform POST /passport/v1/auth/psw")
-
-	N := new(big.Int)
-	N.SetString(s.pubKey, 16)
-	E, _ := strconv.Atoi(s.pubKeyExp)
-	pub := &rsa.PublicKey{N: N, E: E}
-
-	msg := []byte(s.password + "_" + s.antiReplayRand)
-	cipherBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pub, msg)
-	if err != nil {
-		return 0, err
-	}
-	encryptedPwd := hex.EncodeToString(cipherBytes)
-
-	data := map[string]interface{}{
-		"username":    s.username + "@" + loginDomain,
-		"password":    encryptedPwd,
-		"rememberPwd": "0",
-	}
-
-	if graphCheckCode != "" {
-		data["graphCheckCode"] = graphCheckCode
-	}
-	postBody, _ := json.Marshal(data)
-
-	u := s.baseURL + "/passport/v1/auth/psw"
+func (s *Session) authConfigInit() (int, []AuthInfo, error) {
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
 		"lang":       {"en-US"},
+		"needTicket": {"1"},
 	}
-	req, _ := http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(postBody))
-	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("Content-Type", "application/json;charset=utf-8")
-	req.Header.Set("x-csrf-token", s.csrfToken)
-	req.Header.Set("x-sdp-env", s.env)
-	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-	body, _ := io.ReadAll(resp.Body)
-	log.DebugPrintf("Received psw: %s", string(body))
-
-	var re struct {
-		Data struct {
-			Ticket               string `json:"ticket"`
-			GraphCheckCodeEnable int    `json:"graphCheckCodeEnable"`
-		} `json:"data"`
-	}
-	err = json.Unmarshal(body, &re)
-	if err != nil {
-		return 0, err
-	}
-	log.DebugPrintf("Parsed psw: %+v", re)
-
-	s.ticket = re.Data.Ticket
-
-	return re.Data.GraphCheckCodeEnable, nil
+	return s.authConfigImpl(params)
 }
 
-func (s *Session) checkCode() ([]byte, error) {
-	log.Println("Perform GET /passport/v1/public/checkCode")
-
-	u := s.baseURL + "/passport/v1/public/checkCode"
+func (s *Session) authConfigMod() (int, []AuthInfo, error) {
 	params := url.Values{
 		"clientType": {"SDPClient"},
 		"platform":   {"Linux"},
 		"lang":       {"en-US"},
-		"rnd":        {strconv.FormatInt(time.Now().UnixMilli(), 10)},
+		"mod":        {"1"},
 	}
-	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
-	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-	body, _ := io.ReadAll(resp.Body)
-
-	return body, nil
+	return s.authConfigImpl(params)
 }
 
 func (s *Session) reportEnv() error {
@@ -370,6 +105,7 @@ func (s *Session) reportEnv() error {
 		},
 	}
 	body, _ := json.Marshal(payload)
+	log.DebugPrintf("Sending report env: %s", string(body))
 	req, _ := http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(body))
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Content-Type", "application/json;charset=utf-8")
@@ -384,6 +120,7 @@ func (s *Session) reportEnv() error {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ = io.ReadAll(resp.Body)
+	log.DebugPrintf("Received report env: %s", string(body))
 
 	var re struct {
 		Code int `json:"code"`
@@ -393,6 +130,7 @@ func (s *Session) reportEnv() error {
 	if err != nil {
 		return err
 	}
+	log.DebugPrintf("Parsed report env: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("reportEnv failed with code %d: %s", re.Code, string(body))
@@ -424,6 +162,7 @@ func (s *Session) authCheck() (string, error) {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received auth check: %s", string(body))
 
 	var ac struct {
 		Data struct {
@@ -436,6 +175,7 @@ func (s *Session) authCheck() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	log.DebugPrintf("Parsed auth check: %+v", ac)
 
 	if len(ac.Data.NextServiceList) > 0 {
 		return ac.Data.NextServiceList[0].AuthId, nil
@@ -469,6 +209,7 @@ func (s *Session) sendSms(authId string) error {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received send sms: %s", string(body))
 
 	var re struct {
 		Code    int    `json:"code"`
@@ -481,6 +222,7 @@ func (s *Session) sendSms(authId string) error {
 	if err != nil {
 		return err
 	}
+	log.DebugPrintf("Parsed send sms: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("sendSms failed with code %d: %s", re.Code, re.Message)
@@ -531,6 +273,7 @@ func (s *Session) smsCheckCode(authId string) error {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received sms check: %s", string(body))
 
 	var re struct {
 		Code int `json:"code"`
@@ -539,6 +282,7 @@ func (s *Session) smsCheckCode(authId string) error {
 	if err != nil {
 		return err
 	}
+	log.DebugPrintf("Parsed sms check: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("smsCheckCode failed with code %d: %s", re.Code, string(body))
@@ -570,6 +314,7 @@ func (s *Session) onlineInfo() error {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received online info: %s", string(body))
 
 	var re struct {
 		Code int `json:"code"`
@@ -579,6 +324,7 @@ func (s *Session) onlineInfo() error {
 	if err != nil {
 		return err
 	}
+	log.DebugPrintf("Parsed online info: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("onlineInfo failed with code %d: %s", re.Code, string(body))
@@ -623,6 +369,7 @@ func (s *Session) ClientResource() ([]byte, error) {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received client resource: %s", string(body))
 
 	return body, nil
 }

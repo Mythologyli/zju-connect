@@ -108,10 +108,10 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.LoginDomain, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
+		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.LoginDomain, conf.AuthType, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.ServerAddress, conf.ServerPort, conf.AuthType, conf.GraphCodeFile, clientData, resourceData)
+		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.ServerAddress, conf.ServerPort, conf.GraphCodeFile, clientData, resourceData)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
 		}
