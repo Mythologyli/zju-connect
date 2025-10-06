@@ -77,9 +77,9 @@ func (s *Session) randSdpId(n ...int) string {
 	return string(hexes)
 }
 
-func (s *Session) Login(username, password, deviceId, graphCodeFile string, cookies []auth.Cookie) (string, []auth.Cookie, error) {
+func (s *Session) Login(username, password, loginDomain, deviceId, graphCodeFile string, cookies []auth.Cookie) (string, []auth.Cookie, error) {
 	sid := ""
-	if cookies != nil {
+	if len(cookies) > 0 {
 		for _, cookie := range cookies {
 			if cookie.Host == s.baseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
 				sid = cookie.Value
@@ -107,7 +107,7 @@ func (s *Session) Login(username, password, deviceId, graphCodeFile string, cook
 		return sid, cookies, nil
 	}
 
-	graphCheckCodeEnable, err := s.psw("")
+	graphCheckCodeEnable, err := s.psw(loginDomain, "")
 	if err != nil {
 		return "", nil, err
 	}
@@ -141,7 +141,7 @@ func (s *Session) Login(username, password, deviceId, graphCodeFile string, cook
 			return "", nil, err
 		}
 
-		graphCheckCodeEnable, err = s.psw(graphCheckCode)
+		graphCheckCodeEnable, err = s.psw(loginDomain, graphCheckCode)
 		if err != nil {
 			return "", nil, err
 		}
@@ -224,6 +224,12 @@ func (s *Session) authConfig() (int, error) {
 
 	var re struct {
 		Data struct {
+			AuthServerInfoList []struct {
+				LoginDomain string `json:"loginDomain"`
+				AuthType    string `json:"authType"`
+				AuthName    string `json:"authName"`
+				LoginURL    string `json:"loginUrl"`
+			} `json:"authServerInfoList"`
 			IsLogin        int    `json:"isLogin"`
 			CSRF           string `json:"csrfToken"`
 			PubKey         string `json:"pubKey"`
@@ -245,7 +251,7 @@ func (s *Session) authConfig() (int, error) {
 	return re.Data.IsLogin, nil
 }
 
-func (s *Session) psw(graphCheckCode string) (int, error) {
+func (s *Session) psw(loginDomain, graphCheckCode string) (int, error) {
 	log.Println("Perform POST /passport/v1/auth/psw")
 
 	N := new(big.Int)
@@ -261,7 +267,7 @@ func (s *Session) psw(graphCheckCode string) (int, error) {
 	encryptedPwd := hex.EncodeToString(cipherBytes)
 
 	data := map[string]interface{}{
-		"username":    s.username + "@Radius",
+		"username":    s.username + "@" + loginDomain,
 		"password":    encryptedPwd,
 		"rememberPwd": "0",
 	}

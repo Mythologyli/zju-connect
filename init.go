@@ -4,11 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	"github.com/mythologyli/zju-connect/configs"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+	"github.com/mythologyli/zju-connect/configs"
 )
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
@@ -57,6 +58,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "zju")
+	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
 	conf.SID = getTOMLVal(confTOML.SID, "")
@@ -148,6 +150,7 @@ func init() {
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "zju", "aTrust authentication type (currently only 'zju' is supported)")
+	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
 	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")

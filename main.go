@@ -108,7 +108,7 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
+		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.LoginDomain, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.ServerAddress, conf.ServerPort, conf.AuthType, conf.GraphCodeFile, clientData, resourceData)

@@ -18,6 +18,7 @@ import (
 type Client struct {
 	Username     string
 	Password     string
+	LoginDomain  string
 	SID          string
 	DeviceID     string
 	ConnectionID string
@@ -33,10 +34,11 @@ type Client struct {
 	NodeGroups     map[string][]string
 }
 
-func NewClient(username, password, sid, deviceID, connectionID, signKey string) *Client {
+func NewClient(username, password, loginDomain, sid, deviceID, connectionID, signKey string) *Client {
 	return &Client{
 		Username:     username,
 		Password:     password,
+		LoginDomain:  loginDomain,
 		SID:          sid,
 		DeviceID:     deviceID,
 		ConnectionID: connectionID,
@@ -130,7 +132,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, authType, graphCode
 			sess := zju.NewSession(serverHost)
 
 			var err error
-			c.SID, clientAuthData.Cookies, err = sess.Login(c.Username, c.Password, c.DeviceID, graphCodeFile, clientAuthData.Cookies)
+			c.SID, clientAuthData.Cookies, err = sess.Login(c.Username, c.Password, c.LoginDomain, c.DeviceID, graphCodeFile, clientAuthData.Cookies)
 			if err != nil {
 				log.Println("Login error:", err)
 				return nil, err
