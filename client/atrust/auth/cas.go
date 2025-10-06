@@ -10,43 +10,56 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
-func (s *Session) loginAuthCas(loginUrl string) error {
-	log.Printf("Visit %s to login, and catch the callback url", s.baseURL+loginUrl)
-	log.Println("Please enter the callback url:")
+func (s *Session) loginAuthCas(loginUrl, loginDomain, ticket string) error {
 	var callback string
-	_, err := fmt.Scanln(&callback)
+	var err error
+	if ticket == "" {
+		callback, err = s.interactiveCas(loginUrl, loginDomain)
+	} else {
+		callback = s.baseURL + "/passport/v1/auth/cas?sfDomain=" + loginDomain + "&ticket=" + ticket
+	}
 	if err != nil {
 		return err
-	}
-
-	callbackURL, err := url.Parse(callback)
-	if err != nil {
-		return err
-	}
-	if callbackURL.Scheme != "https" {
-		return fmt.Errorf("invalid callback url: scheme not https")
-	}
-	if callbackURL.Host != s.baseHost {
-		return fmt.Errorf("invalid callback url: host not match")
-	}
-	if callbackURL.Path != "/passport/v1/auth/cas" {
-		return fmt.Errorf("invalid callback url: path not match")
-	}
-	queries := callbackURL.Query()
-	if queries.Get("sfDomain") != s.loginDomain {
-		return fmt.Errorf("invalid callback url: login domain not match")
-	}
-	if queries.Get("ticket") == "" {
-		return fmt.Errorf("invalid callback url: ticket not found")
 	}
 
 	err = s.cas(callback)
 	if err != nil {
 		return err
 	}
-
 	_, _, err = s.authConfigMod()
 	return err
+}
+
+func (s *Session) interactiveCas(loginUrl, loginDomain string) (string, error) {
+	log.Printf("Visit %s to login, and catch the callback url", s.baseURL+loginUrl)
+	log.Println("Please enter the callback url:")
+	var callback string
+	_, err := fmt.Scanln(&callback)
+	if err != nil {
+		return "", err
+	}
+
+	callbackURL, err := url.Parse(callback)
+	if err != nil {
+		return "", err
+	}
+	if callbackURL.Scheme != "https" {
+		return "", fmt.Errorf("invalid callback url: scheme not https")
+	}
+	if callbackURL.Host != s.baseHost {
+		return "", fmt.Errorf("invalid callback url: host not match")
+	}
+	if callbackURL.Path != "/passport/v1/auth/cas" {
+		return "", fmt.Errorf("invalid callback url: path not match")
+	}
+	queries := callbackURL.Query()
+	if queries.Get("sfDomain") != loginDomain {
+		return "", fmt.Errorf("invalid callback url: login domain not match")
+	}
+	if queries.Get("ticket") == "" {
+		return "", fmt.Errorf("invalid callback url: ticket not found")
+	}
+	return callback, nil
 }
 
 func (s *Session) cas(callback string) error {

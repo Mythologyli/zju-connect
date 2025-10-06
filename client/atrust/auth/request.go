@@ -292,7 +292,7 @@ func (s *Session) smsCheckCode(authId string) error {
 	return nil
 }
 
-func (s *Session) onlineInfo() error {
+func (s *Session) onlineInfo() (string, error) {
 	log.Println("Perform GET /passport/v1/user/onlineInfo")
 
 	u := s.baseURL + "/passport/v1/user/onlineInfo"
@@ -308,7 +308,7 @@ func (s *Session) onlineInfo() error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -318,20 +318,23 @@ func (s *Session) onlineInfo() error {
 
 	var re struct {
 		Code int `json:"code"`
+		Data struct {
+			Username string `json:"username"`
+		}
 	}
 
 	err = json.Unmarshal(body, &re)
 	if err != nil {
-		return err
+		return "", err
 	}
 	log.DebugPrintf("Parsed online info: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("onlineInfo failed with code %d: %s", re.Code, string(body))
-		return fmt.Errorf("onlineInfo failed with code %d", re.Code)
+		return "", fmt.Errorf("onlineInfo failed with code %d", re.Code)
 	}
 
-	return nil
+	return re.Data.Username, nil
 }
 
 func (s *Session) ClientResource() ([]byte, error) {

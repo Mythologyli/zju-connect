@@ -18,8 +18,8 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
-func (s *Session) loginAuthPsw(graphCodeFile string) error {
-	graphCheckCodeEnable, err := s.pswImpl(s.loginDomain, "")
+func (s *Session) loginAuthPsw(username, password, loginDomain, graphCodeFile string) error {
+	graphCheckCodeEnable, err := s.pswImpl(username, password, loginDomain, "")
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (s *Session) loginAuthPsw(graphCodeFile string) error {
 			return err
 		}
 
-		graphCheckCodeEnable, err = s.pswImpl(s.loginDomain, graphCheckCode)
+		graphCheckCodeEnable, err = s.pswImpl(username, password, loginDomain, graphCheckCode)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (s *Session) loginAuthPsw(graphCodeFile string) error {
 	return nil
 }
 
-func (s *Session) pswImpl(loginDomain, graphCheckCode string) (int, error) {
+func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string) (int, error) {
 	log.Println("Perform POST /passport/v1/auth/psw")
 
 	N := new(big.Int)
@@ -74,7 +74,7 @@ func (s *Session) pswImpl(loginDomain, graphCheckCode string) (int, error) {
 	E, _ := strconv.Atoi(s.pubKeyExp)
 	pub := &rsa.PublicKey{N: N, E: E}
 
-	msg := []byte(s.password + "_" + s.antiReplayRand)
+	msg := []byte(password + "_" + s.antiReplayRand)
 	cipherBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pub, msg)
 	if err != nil {
 		return 0, err
@@ -82,7 +82,7 @@ func (s *Session) pswImpl(loginDomain, graphCheckCode string) (int, error) {
 	encryptedPwd := hex.EncodeToString(cipherBytes)
 
 	data := map[string]interface{}{
-		"username":    s.username + "@" + loginDomain,
+		"username":    username + "@" + loginDomain,
 		"password":    encryptedPwd,
 		"rememberPwd": "0",
 	}

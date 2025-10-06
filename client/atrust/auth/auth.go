@@ -32,11 +32,8 @@ type ClientAuthData struct {
 }
 
 type Session struct {
-	client      *http.Client
-	username    string
-	password    string
-	deviceID    string
-	loginDomain string
+	client   *http.Client
+	deviceID string
 
 	baseHost string
 	baseURL  string
@@ -89,7 +86,7 @@ func (s *Session) randSdpId(n ...int) string {
 	return string(hexes)
 }
 
-func (s *Session) Login(username, password, loginDomain, authType, deviceId, graphCodeFile string, cookies []Cookie) (string, []Cookie, error) {
+func (s *Session) Login(username, password, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
 	sid := ""
 	if len(cookies) > 0 {
 		for _, cookie := range cookies {
@@ -105,19 +102,17 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 		}
 	}
 
-	s.username = username
-	s.password = password
 	s.deviceID = deviceId
-	s.loginDomain = loginDomain
 	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + deviceId + `"}`))
 
 	isLogin, authInfoList, err := s.authConfigInit()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	if isLogin == 1 {
 		log.Println("Already logged in")
-		return sid, cookies, nil
+		username, err := s.onlineInfo()
+		return username, sid, cookies, err
 	}
 
 	var foundAuthInfo *AuthInfo
@@ -129,46 +124,46 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 	}
 	if foundAuthInfo == nil {
 		log.Printf("Available authentication methods: %+v", authInfoList)
-		return "", nil, fmt.Errorf("not provided auth type: %s, login domain: %s", authType, loginDomain)
+		return "", "", nil, fmt.Errorf("not provided auth type: %s, login domain: %s", authType, loginDomain)
 	}
 
 	log.Printf("Starting login with auth type: %s, login domain: %s", authType, loginDomain)
 	switch authType {
 	case "auth/psw":
-		err = s.loginAuthPsw(graphCodeFile)
+		err = s.loginAuthPsw(username, password, loginDomain, graphCodeFile)
 	case "auth/cas":
-		err = s.loginAuthCas(foundAuthInfo.LoginURL)
+		err = s.loginAuthCas(foundAuthInfo.LoginURL, loginDomain, casTicket)
 	default:
 		err = fmt.Errorf("unsupported auth type: %s", authType)
 	}
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	err = s.reportEnv()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	authID, err := s.authCheck()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	if authID != "" {
 		err = s.sendSms(authID)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 		err = s.smsCheckCode(authID)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 	}
 
-	err = s.onlineInfo()
+	username, err = s.onlineInfo()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	cookies = make([]Cookie, 0)
@@ -185,5 +180,5 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 		})
 	}
 
-	return sid, cookies, nil
+	return username, sid, cookies, nil
 }
