@@ -7,6 +7,12 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
 	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
@@ -19,15 +25,11 @@ import (
 	"github.com/mythologyli/zju-connect/service"
 	"github.com/mythologyli/zju-connect/stack"
 	atruststack "github.com/mythologyli/zju-connect/stack/atrust"
+	atrustl3 "github.com/mythologyli/zju-connect/stack/atrust-l3"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
-	"net"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
 )
 
 var conf configs.Config
@@ -225,7 +227,27 @@ func main() {
 			}
 		}
 	} else {
-		vpnStack = atruststack.NewStack(vpnClient.(*atrustclient.Client))
+		if conf.TUNMode {
+			vpnTUNStack, err := atrustl3.NewStack(
+				vpnClient.(*atrustclient.Client),
+				conf.DNSHijack,
+				ipResources,
+			)
+			if err != nil {
+				log.Fatalf("aTrust L3 stack setup error, make sure you are root user : %s", err)
+			}
+
+			if conf.AddRoute && ipSet != nil {
+				for _, prefix := range ipSet.Prefixes() {
+					log.Printf("Add route to %s", prefix.String())
+					_ = vpnTUNStack.AddRoute(prefix.String())
+				}
+			}
+
+			vpnStack = vpnTUNStack
+		} else {
+			vpnStack = atruststack.NewStack(vpnClient.(*atrustclient.Client))
+		}
 	}
 
 	useZJUDNS := !conf.DisableZJUDNS
@@ -272,9 +294,11 @@ func main() {
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
-	if conf.Protocol == "easyconnect" && conf.TUNMode {
-		clientIP, _ := vpnClient.(*easyconnectclient.Client).IP()
-		go service.ServeDNS(clientIP.String()+":53", localResolver)
+	if conf.TUNMode {
+		if conf.Protocol == "easyconnect" {
+			clientIP, _ := vpnClient.(*easyconnectclient.Client).IP()
+			go service.ServeDNS(clientIP.String()+":53", localResolver)
+		}
 	}
 
 	if conf.SocksBind != "" {
