@@ -182,7 +182,7 @@ func init() {
 
 	if conf.AuthInfo {
 		if conf.Protocol != "atrust" {
-			fmt.Fprintln(os.Stderr, "Auth info only support atrust protocol")
+			fmt.Fprintln(os.Stderr, "Auth info is only supported by the atrust protocol")
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
