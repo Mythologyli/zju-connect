@@ -197,7 +197,7 @@ func init() {
 			os.Exit(1)
 		}
 		fmt.Println(string(jsonInfo))
-		os.Exit(1)
+		os.Exit(0)
 	}
 
 	if configFile != "" {
