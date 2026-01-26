@@ -87,6 +87,9 @@ func (s *Stack) getIP() error {
 			address = addr
 			break
 		}
+		if address == "" {
+			return fmt.Errorf("failed to get IP")
+		}
 		log.Printf("Major node group %s not found, using %s instead", s.majorNodeGroup, address)
 	}
 	conn, err := tls.Dial("tcp", address, &tls.Config{
