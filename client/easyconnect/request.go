@@ -9,9 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/pquerna/otp/totp"
-	utls "github.com/refraction-networking/utls"
 	"io"
 	"math/big"
 	"net"
@@ -23,6 +20,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/pquerna/otp/totp"
+	utls "github.com/refraction-networking/utls"
 )
 
 var errSMSRequired = errors.New("SMS code required")
@@ -78,8 +79,10 @@ func (c *Client) loginAuthAndPsw() error {
 
 	log.DebugPrintln("Response:", buf.String())
 
-	vpnVersion := string(regexp.MustCompile(`<VPNVERSION>(.*)</VPNVERSION>`).FindSubmatch(buf.Bytes())[1])
-	log.Printf("VPN server version: %s", vpnVersion)
+	vpnMatch := regexp.MustCompile(`<VPNVERSION>(.*)</VPNVERSION>`).FindSubmatch(buf.Bytes())
+	if vpnMatch != nil {
+		log.Printf("VPN server version: %s", string(vpnMatch[1]))
+	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("TWFID: %s", c.twfID)
