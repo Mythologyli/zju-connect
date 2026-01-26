@@ -115,7 +115,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 				return nil, err
 			}
 		}
-		log.DebugPrintf("Given auth data: %+v", authData)
+		log.DebugPrintf("Given auth data: %+v", clientAuthData)
 
 		if clientAuthData.DeviceID == "" {
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
