@@ -77,6 +77,9 @@ func (s *Session) cas(callback string) error {
 	defer func() { s.client.CheckRedirect = prevCheckRedirect }()
 
 	resp, err := s.client.Do(req)
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -102,9 +105,6 @@ func (s *Session) cas(callback string) error {
 		return fmt.Errorf("invalid redirect url: data not found")
 	}
 
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
 	log.DebugPrintf("Received cas data: %s", string(body))
 
