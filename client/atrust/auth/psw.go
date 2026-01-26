@@ -154,7 +154,7 @@ func (s *Session) checkCode() ([]byte, error) {
 		_ = Body.Close()
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
-	log.DebugPrintf("Received check code: %s", string(body))
+	log.DebugPrintf("Received check code image: %d bytes", len(body))
 
 	return body, nil
 }
