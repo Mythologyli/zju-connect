@@ -5,18 +5,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
-	"github.com/mythologyli/zju-connect/client/atrust/auth/zju"
-	"github.com/mythologyli/zju-connect/log"
-	"inet.af/netaddr"
 	"net"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
 )
 
 type Client struct {
 	Username     string
-	Password     string
 	SID          string
 	DeviceID     string
 	ConnectionID string
@@ -32,10 +31,9 @@ type Client struct {
 	NodeGroups     map[string][]string
 }
 
-func NewClient(username, password, sid, deviceID, connectionID, signKey string) *Client {
+func NewClient(username, sid, deviceID, connectionID, signKey string) *Client {
 	return &Client{
 		Username:     username,
-		Password:     password,
 		SID:          sid,
 		DeviceID:     deviceID,
 		ConnectionID: connectionID,
@@ -87,7 +85,18 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []byte) ([]byte, error) {
+func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, error) {
+	var serverHost string
+	if serverPort == 443 {
+		serverHost = serverAddress
+	} else {
+		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+	}
+	sess := auth.NewSession(serverHost)
+	return sess.GetAuthInfoList()
+}
+
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
@@ -106,9 +115,10 @@ func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []
 				return nil, err
 			}
 		}
+		log.DebugPrintf("Given auth data: %+v", clientAuthData)
 
 		if clientAuthData.DeviceID == "" {
-			clientAuthData.DeviceID = randHex(32)
+			clientAuthData.DeviceID = strings.ToLower(randHex(32))
 		}
 		c.DeviceID = clientAuthData.DeviceID
 		if clientAuthData.ConnectionID == "" {
@@ -117,28 +127,27 @@ func (c *Client) Setup(authType, graphCodeFile string, authData, resourceData []
 		c.ConnectionID = clientAuthData.ConnectionID
 		c.SignKey = randHex(64)
 
-		log.Printf("Starting login with auth type: %s", authType)
-		if authType == "zju" {
-			sess := zju.NewSession()
-
-			var err error
-			c.SID, clientAuthData.Cookies, err = sess.Login(c.Username, c.Password, c.DeviceID, graphCodeFile, clientAuthData.Cookies)
-			if err != nil {
-				log.Println("Login error:", err)
-				return nil, err
-			}
-
-			resourceData, err = sess.ClientResource()
-			if err != nil {
-				log.Println("Error fetching client resource:", err)
-				return nil, err
-			}
+		var serverHost string
+		if serverPort == 443 {
+			serverHost = serverAddress
 		} else {
-			log.Println("Unsupported auth type:", authType)
-			return nil, fmt.Errorf("unsupported auth type: %s", authType)
+			serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 		}
+		sess := auth.NewSession(serverHost)
 
 		var err error
+		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
+		if err != nil {
+			log.Println("Login error:", err)
+			return nil, err
+		}
+
+		resourceData, err = sess.ClientResource()
+		if err != nil {
+			log.Println("Error fetching client resource:", err)
+			return nil, err
+		}
+
 		authData, err = json.Marshal(clientAuthData)
 		if err != nil {
 			log.Println("Error marshaling auth data:", err)

@@ -7,6 +7,12 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/easyconnect"
@@ -19,16 +25,11 @@ import (
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
-	"net"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
 )
 
 var conf configs.Config
 
-const zjuConnectVersion = "0.9.0-tun-only"
+const zjuConnectVersion = "0.9.1-tun-only"
 
 func main() {
 	log.Init()

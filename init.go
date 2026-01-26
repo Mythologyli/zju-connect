@@ -1,14 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	"github.com/mythologyli/zju-connect/configs"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+	"github.com/mythologyli/zju-connect/client/atrust"
+	"github.com/mythologyli/zju-connect/configs"
 )
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
@@ -56,9 +61,12 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
-	conf.AuthType = getTOMLVal(confTOML.AuthType, "zju")
+	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
+	conf.AuthInfo = false
+	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
+	conf.CasTicket = getTOMLVal(confTOML.CasTicket, "")
 	conf.SID = getTOMLVal(confTOML.SID, "")
 	conf.DeviceID = getTOMLVal(confTOML.DeviceID, "")
 	conf.ConnectionID = getTOMLVal(confTOML.ConnectionID, "")
@@ -118,8 +126,8 @@ func init() {
 	showVersion := false
 
 	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
-	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
-	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect port address")
+	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
+	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect/aTrust port address")
 	flag.StringVar(&conf.Username, "username", "", "Your username")
 	flag.StringVar(&conf.Password, "password", "", "Your password")
 	flag.StringVar(&conf.TOTPSecret, "totp-secret", "", "TOTP secret")
@@ -147,9 +155,12 @@ func init() {
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
-	flag.StringVar(&conf.AuthType, "auth-type", "zju", "aTrust authentication type (currently only 'zju' is supported)")
+	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas)")
+	flag.BoolVar(&conf.AuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
+	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
+	flag.StringVar(&conf.CasTicket, "cas-ticket", "", "aTrust CAS Ticket")
 	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")
 	flag.StringVar(&conf.DeviceID, "device-id", "", "aTrust Device ID (mostly for debug usage)")
 	flag.StringVar(&conf.ConnectionID, "connection-id", "", "aTrust Connection ID (mostly for debug usage)")
@@ -169,6 +180,26 @@ func init() {
 		os.Exit(0)
 	}
 
+	if conf.AuthInfo {
+		if conf.Protocol != "atrust" {
+			fmt.Fprintln(os.Stderr, "Auth info is only supported by the atrust protocol")
+			os.Exit(1)
+		}
+		log.SetOutput(io.Discard) // suppress log
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
+			os.Exit(1)
+		}
+		jsonInfo, err := json.Marshal(info)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error marshaling auth info:", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(jsonInfo))
+		os.Exit(0)
+	}
+
 	if configFile != "" {
 		err := parseTOMLConfig(configFile, &conf)
 		if err != nil {
@@ -181,7 +212,7 @@ func init() {
 			for _, forwardingString := range forwardingStringList {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
-					fmt.Println("ZJU Connect: wrong tcp port forwarding format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong tcp port forwarding format")
 					os.Exit(1)
 				}
 
@@ -198,7 +229,7 @@ func init() {
 			for _, forwardingString := range forwardingStringList {
 				addressStringList := strings.Split(forwardingString, "-")
 				if len(addressStringList) != 2 {
-					fmt.Println("ZJU Connect: wrong udp port forwarding format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong udp port forwarding format")
 					os.Exit(1)
 				}
 
@@ -215,7 +246,7 @@ func init() {
 			for _, dnsString := range dnsList {
 				dnsStringSplit := strings.Split(dnsString, ":")
 				if len(dnsStringSplit) != 2 {
-					fmt.Println("ZJU Connect: wrong custom dns format")
+					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong custom dns format")
 					os.Exit(1)
 				}
 
@@ -231,7 +262,7 @@ func init() {
 			for _, domain := range domainList {
 				var domainRegex = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
 				if !domainRegex.MatchString(domain) {
-					fmt.Printf("ZJU Connect: %s is not a valid domain\n", domain)
+					fmt.Fprintf(os.Stderr, "ZJU Connect: %s is not a valid domain\n", domain)
 					os.Exit(1)
 				}
 				conf.CustomProxyDomain = append(conf.CustomProxyDomain, domain)
@@ -239,7 +270,7 @@ func init() {
 		}
 	}
 
-	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") && conf.TwfID == "") {
+	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") && conf.TwfID == "" && conf.AuthType != "auth/cas") {
 		fmt.Println("ZJU Connect")
 		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
 		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
@@ -247,5 +278,10 @@ func init() {
 		flag.PrintDefaults()
 
 		os.Exit(1)
+	}
+
+	if conf.Protocol == "atrust" && conf.ServerAddress == "rvpn.zju.edu.cn" {
+		fmt.Println("ZJU Connect: set default aTrust server address to vpn.zju.edu.cn")
+		conf.ServerAddress = "vpn.zju.edu.cn"
 	}
 }
