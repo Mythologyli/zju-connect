@@ -129,7 +129,7 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 	}
 	if foundAuthInfo == nil {
 		log.Printf("Available authentication methods: %+v", authInfoList)
-		return "", "", nil, fmt.Errorf("not provided auth type: %s, login domain: %s", authType, loginDomain)
+		return "", "", nil, fmt.Errorf("auth type/login domain combination not found: auth type: %s, login domain: %s", authType, loginDomain)
 	}
 
 	log.Printf("Starting login with auth type: %s, login domain: %s", authType, loginDomain)
