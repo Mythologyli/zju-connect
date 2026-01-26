@@ -126,8 +126,8 @@ func init() {
 	showVersion := false
 
 	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
-	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect server address")
-	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect port address")
+	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
+	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect/aTrust port address")
 	flag.StringVar(&conf.Username, "username", "", "Your username")
 	flag.StringVar(&conf.Password, "password", "", "Your password")
 	flag.StringVar(&conf.TOTPSecret, "totp-secret", "", "TOTP secret")
@@ -278,5 +278,10 @@ func init() {
 		flag.PrintDefaults()
 
 		os.Exit(1)
+	}
+
+	if conf.Protocol == "atrust" && conf.ServerAddress == "rvpn.zju.edu.cn" {
+		fmt.Println("ZJU Connect: set default aTrust server address to vpn.zju.edu.cn")
+		conf.ServerAddress = "vpn.zju.edu.cn"
 	}
 }
