@@ -62,7 +62,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
-	conf.AuthInfo = getTOMLVal(confTOML.AuthInfo, false)
+	conf.AuthInfo = false
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
