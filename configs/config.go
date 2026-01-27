@@ -42,6 +42,7 @@ type (
 		// aTrust fields
 		AuthType       string
 		AuthInfo       bool
+		Phone          string
 		LoginDomain    string
 		ClientDataFile string
 		GraphCodeFile  string
@@ -101,6 +102,7 @@ type (
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 		AuthType            *string                    `toml:"auth_type"`
 		AuthInfo            *bool                      `toml:"auth_info"`
+		Phone               *string                    `toml:"phone"`
 		LoginDomain         *string                    `toml:"login_domain"`
 		ClientDataFile      *string                    `toml:"client_data_file"`
 		GraphCodeFile       *string                    `toml:"graph_code_file"`

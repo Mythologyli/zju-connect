@@ -96,7 +96,7 @@ func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, err
 	return sess.GetAuthInfoList()
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
@@ -136,7 +136,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		sess := auth.NewSession(serverHost)
 
 		var err error
-		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
+		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, phone, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
 		if err != nil {
 			log.Println("Login error:", err)
 			return nil, err

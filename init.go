@@ -63,6 +63,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
 	conf.AuthInfo = getTOMLVal(confTOML.AuthInfo, false)
+	conf.Phone = getTOMLVal(confTOML.Phone, "")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
@@ -157,6 +158,7 @@ func init() {
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas)")
 	flag.BoolVar(&conf.AuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
+	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
@@ -270,7 +272,8 @@ func init() {
 		}
 	}
 
-	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") && conf.TwfID == "" && conf.AuthType != "auth/cas") {
+	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") &&
+		(conf.Protocol == "easyconnect" && conf.TwfID == "" || conf.Protocol == "atrust" && conf.AuthType == "auth/psw")) {
 		fmt.Println("ZJU Connect")
 		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
 		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])

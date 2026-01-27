@@ -162,7 +162,7 @@ func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
 	return list, err
 }
 
-func (s *Session) Login(username, password, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
+func (s *Session) Login(username, password, phone, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
 	sid := ""
 	if len(cookies) > 0 {
 		for _, cookie := range cookies {
@@ -209,6 +209,8 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 		err = s.loginAuthPsw(username, password, loginDomain, graphCodeFile)
 	case "auth/cas":
 		err = s.loginAuthCas(foundAuthInfo.LoginURL, loginDomain, casTicket)
+	case "auth/smsCheckCode":
+		err = s.loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile)
 	default:
 		err = fmt.Errorf("unsupported auth type: %s", authType)
 	}
