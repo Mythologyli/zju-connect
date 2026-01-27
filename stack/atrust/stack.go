@@ -4,17 +4,18 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
-	"github.com/cloverstd/tcping/ping"
-	"github.com/mythologyli/zju-connect/client"
-	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
-	"github.com/mythologyli/zju-connect/log"
 	"io"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloverstd/tcping/ping"
+	"github.com/mythologyli/zju-connect/client"
+	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
+	"github.com/mythologyli/zju-connect/internal/zcdns"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 type Stack struct {
@@ -80,7 +81,18 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) getIP() error {
-	conn, err := tls.Dial("tcp", s.bestNodes[s.majorNodeGroup], &tls.Config{
+	address, ok := s.bestNodes[s.majorNodeGroup]
+	if !ok {
+		for _, addr := range s.bestNodes {
+			address = addr
+			break
+		}
+		if address == "" {
+			return fmt.Errorf("failed to get IP")
+		}
+		log.Printf("Major node group %s not found, using %s instead", s.majorNodeGroup, address)
+	}
+	conn, err := tls.Dial("tcp", address, &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {

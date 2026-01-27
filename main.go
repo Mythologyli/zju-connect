@@ -34,7 +34,7 @@ import (
 
 var conf configs.Config
 
-const zjuConnectVersion = "0.9.0"
+const zjuConnectVersion = "0.9.1"
 
 func main() {
 	log.Init()
@@ -52,7 +52,8 @@ func main() {
 	}
 
 	var vpnClient client.Client
-	if conf.Protocol == "easyconnect" {
+	switch conf.Protocol {
+	case "easyconnect":
 		tlsCert := tls.Certificate{}
 		if conf.CertFile != "" {
 			p12Data, err := os.ReadFile(conf.CertFile)
@@ -89,7 +90,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
 		}
-	} else if conf.Protocol == "atrust" {
+	case "atrust":
 		var err error
 		var resourceData []byte
 
@@ -109,10 +110,10 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.Password, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
+		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.AuthType, conf.GraphCodeFile, clientData, resourceData)
+		clientData, err = vpnClient.(*atrustclient.Client).Setup(conf.ServerAddress, conf.ServerPort, conf.Username, conf.Password, conf.LoginDomain, conf.AuthType, conf.GraphCodeFile, conf.CasTicket, clientData, resourceData)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
 		}
@@ -124,7 +125,7 @@ func main() {
 			}
 			log.Printf("Client data saved to %s", conf.ClientDataFile)
 		}
-	} else {
+	default:
 		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
 	}
 

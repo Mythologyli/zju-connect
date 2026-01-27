@@ -40,9 +40,12 @@ type (
 		TwfID               string
 
 		// aTrust fields
-		AuthType       string // currently only "zju" is supported
+		AuthType       string
+		AuthInfo       bool
+		LoginDomain    string
 		ClientDataFile string
 		GraphCodeFile  string
+		CasTicket      string
 		SID            string
 		DeviceID       string
 		ConnectionID   string
@@ -97,8 +100,10 @@ type (
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 		AuthType            *string                    `toml:"auth_type"`
+		LoginDomain         *string                    `toml:"login_domain"`
 		ClientDataFile      *string                    `toml:"client_data_file"`
 		GraphCodeFile       *string                    `toml:"graph_code_file"`
+		CasTicket           *string                    `toml:"cas_ticket"`
 		SID                 *string                    `toml:"sid"`
 		DeviceID            *string                    `toml:"device_id"`
 		ConnectionID        *string                    `toml:"connection_id"`
