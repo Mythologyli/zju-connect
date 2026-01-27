@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -57,36 +59,21 @@ func (s *Session) authConfigImpl(params url.Values) (int, []AuthInfo, error) {
 }
 
 func (s *Session) authConfigInit() (int, []AuthInfo, error) {
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
+	return s.authConfigImpl(WithSharedParams(url.Values{
 		"needTicket": {"1"},
-	}
-
-	return s.authConfigImpl(params)
+	}))
 }
 
 func (s *Session) authConfigMod() (int, []AuthInfo, error) {
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-		"mod":        {"1"},
-	}
-
-	return s.authConfigImpl(params)
+	return s.authConfigImpl(WithSharedParams(url.Values{
+		"mod": {"1"},
+	}))
 }
 
 func (s *Session) reportEnv() error {
 	log.Println("Perform POST /controller/v1/public/reportEnv")
 
 	u := s.baseURL + "/controller/v1/public/reportEnv"
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-	}
 
 	if s.ticket == "" {
 		return fmt.Errorf("ticket is empty")
@@ -106,7 +93,7 @@ func (s *Session) reportEnv() error {
 	}
 	body, _ := json.Marshal(payload)
 	log.DebugPrintf("Sending report env: %s", string(body))
-	req, _ := http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(body))
+	req, _ := http.NewRequest("POST", u+"?"+WithSharedParams(nil).Encode(), bytes.NewReader(body))
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	req.Header.Set("x-csrf-token", s.csrfToken)
@@ -144,12 +131,7 @@ func (s *Session) authCheck() (string, error) {
 	log.Println("Perform GET /passport/v1/auth/authCheck")
 
 	u := s.baseURL + "/passport/v1/auth/authCheck"
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-	}
-	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
+	req, _ := http.NewRequest("GET", u+"?"+WithSharedParams(nil).Encode(), nil)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
@@ -184,18 +166,15 @@ func (s *Session) authCheck() (string, error) {
 	}
 }
 
-func (s *Session) sendSms(authId string) error {
+func (s *Session) authSms(authId string) error {
 	log.Println("Perform GET /passport/v1/auth/sms")
 	u := s.baseURL + "/passport/v1/auth/sms"
-	params := url.Values{
+	params := WithSharedParams(url.Values{
 		"action":       {"sendsms"},
-		"clientType":   {"SDPClient"},
-		"platform":     {"Linux"},
-		"lang":         {"en-US"},
 		"isPrevEffect": {"0"},
 		"taskId":       {""},
 		"authId":       {authId},
-	}
+	})
 	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("x-csrf-token", s.csrfToken)
@@ -225,8 +204,8 @@ func (s *Session) sendSms(authId string) error {
 	log.DebugPrintf("Parsed send sms: %+v", re)
 
 	if re.Code != 0 {
-		log.Printf("sendSms failed with code %d: %s", re.Code, re.Message)
-		return fmt.Errorf("sendSms failed with code %d: %s", re.Code, re.Message)
+		log.Printf("authSms failed with code %d: %s", re.Code, re.Message)
+		return fmt.Errorf("authSms failed with code %d: %s", re.Code, re.Message)
 	}
 
 	log.Printf("%s: %s", re.Message, re.Data.Tips)
@@ -245,12 +224,9 @@ func (s *Session) smsCheckCode(authId string) error {
 	}
 
 	u := s.baseURL + "/passport/v1/auth/sms"
-	params := url.Values{
-		"action":     {"checkcode"},
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-	}
+	params := WithSharedParams(url.Values{
+		"action": {"checkcode"},
+	})
 	payload := map[string]interface{}{
 		"isPrevEffect":      false,
 		"code":              code,
@@ -296,12 +272,7 @@ func (s *Session) onlineInfo() (string, error) {
 	log.Println("Perform GET /passport/v1/user/onlineInfo")
 
 	u := s.baseURL + "/passport/v1/user/onlineInfo"
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-	}
-	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
+	req, _ := http.NewRequest("GET", u+"?"+WithSharedParams(nil).Encode(), nil)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
@@ -341,11 +312,6 @@ func (s *Session) ClientResource() ([]byte, error) {
 	log.Println("Perform POST /controller/v1/user/clientResource")
 
 	u := s.baseURL + "/controller/v1/user/clientResource"
-	params := url.Values{
-		"clientType": {"SDPClient"},
-		"platform":   {"Linux"},
-		"lang":       {"en-US"},
-	}
 	payload := map[string]interface{}{
 		"resourceType": map[string]interface{}{
 			"sdpPolicy":       struct{}{},
@@ -358,7 +324,7 @@ func (s *Session) ClientResource() ([]byte, error) {
 		},
 	}
 	bdy, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(bdy))
+	req, _ := http.NewRequest("POST", u+"?"+WithSharedParams(nil).Encode(), bytes.NewReader(bdy))
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	req.Header.Set("x-csrf-token", s.csrfToken)
@@ -373,6 +339,30 @@ func (s *Session) ClientResource() ([]byte, error) {
 	}(resp.Body)
 	body, _ := io.ReadAll(resp.Body)
 	log.DebugPrintf("Received client resource: %s", string(body))
+
+	return body, nil
+}
+
+func (s *Session) checkCode() ([]byte, error) {
+	log.Println("Perform GET /passport/v1/public/checkCode")
+
+	u := s.baseURL + "/passport/v1/public/checkCode"
+	params := WithSharedParams(url.Values{
+		"rnd": {strconv.FormatInt(time.Now().UnixMilli(), 10)},
+	})
+	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
+	log.DebugPrintf("Received check code image: %d bytes", len(body))
 
 	return body, nil
 }
