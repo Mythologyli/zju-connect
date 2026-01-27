@@ -156,7 +156,7 @@ func init() {
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
-	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas)")
+	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas, auth/smsCheckCode)")
 	flag.BoolVar(&conf.AuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
 	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")

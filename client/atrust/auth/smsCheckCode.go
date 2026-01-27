@@ -77,7 +77,7 @@ func (s *Session) sendSms(phone, loginDomain, graphCheckCode string) (int, error
 	if re.Code != 0 {
 		log.Printf("sendSms failed with code %d: %s", re.Code, re.Message)
 	} else {
-		log.Printf("sendSms success: %s, interval:: %s", re.Data.Tips, re.Data.Interval)
+		log.Printf("sendSms success: %s, interval: %s", re.Data.Tips, re.Data.Interval)
 	}
 
 	return re.Data.GraphCheckCodeEnable, nil
