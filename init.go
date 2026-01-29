@@ -62,7 +62,6 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
-	conf.AuthInfo = getTOMLVal(confTOML.AuthInfo, false)
 	conf.Phone = getTOMLVal(confTOML.Phone, "")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
 	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
@@ -125,6 +124,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 func init() {
 	configFile, tcpPortForwarding, udpPortForwarding, customDns, customProxyDomain := "", "", "", "", ""
 	showVersion := false
+	atrustAuthInfo := false
 
 	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
 	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
@@ -157,7 +157,6 @@ func init() {
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas, auth/smsCheckCode)")
-	flag.BoolVar(&conf.AuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
 	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
@@ -174,6 +173,7 @@ func init() {
 	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
+	flag.BoolVar(&atrustAuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
 
 	flag.Parse()
 
@@ -182,7 +182,7 @@ func init() {
 		os.Exit(0)
 	}
 
-	if conf.AuthInfo {
+	if atrustAuthInfo {
 		if conf.Protocol != "atrust" {
 			fmt.Fprintln(os.Stderr, "Auth info is only supported by the atrust protocol")
 			os.Exit(1)
