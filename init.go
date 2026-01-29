@@ -272,12 +272,27 @@ func init() {
 		}
 	}
 
-	if conf.ServerAddress == "" || ((conf.Username == "" || conf.Password == "") &&
-		(conf.Protocol == "easyconnect" && conf.TwfID == "" || conf.Protocol == "atrust" && conf.AuthType == "auth/psw")) {
-		fmt.Println("ZJU Connect")
+	missing := conf.ServerAddress == ""
+	if !missing && conf.Protocol == "easyconnect" {
+		missing = (conf.Username == "" || conf.Password == "") && conf.TwfID == ""
+	}
+	if !missing && conf.Protocol == "atrust" {
+		missing = conf.SID == "" || conf.DeviceID == "" || conf.ResourceFile == ""
+		if !missing {
+			switch conf.AuthType {
+			case "auth/psw":
+				missing = conf.Username == "" || conf.Password == ""
+			case "auth/cas":
+				missing = conf.CasTicket == ""
+			case "auth/smsCheckCode":
+				missing = conf.Phone == ""
+			}
+		}
+	}
+	if missing {
+		fmt.Println("ZJU Connect: missing required arguments")
 		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
-		fmt.Printf("\nUsage: %s -username <username> -password <password>\n", os.Args[0])
-		fmt.Println("\nFull usage:")
+		fmt.Println("\nUsage:")
 		flag.PrintDefaults()
 
 		os.Exit(1)
