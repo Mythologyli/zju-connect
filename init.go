@@ -277,16 +277,16 @@ func init() {
 		missing = (conf.Username == "" || conf.Password == "") && conf.TwfID == ""
 	}
 	if !missing && conf.Protocol == "atrust" {
-		missing = conf.SID == "" || conf.DeviceID == "" || conf.ResourceFile == ""
-		if !missing {
-			switch conf.AuthType {
-			case "auth/psw":
-				missing = conf.Username == "" || conf.Password == ""
-			case "auth/cas":
-				missing = conf.CasTicket == ""
-			case "auth/smsCheckCode":
-				missing = conf.Phone == ""
-			}
+		switch conf.AuthType {
+		case "auth/psw":
+			missing = conf.Username == "" || conf.Password == ""
+		case "auth/cas":
+			missing = conf.CasTicket == ""
+		case "auth/smsCheckCode":
+			missing = conf.Phone == ""
+		}
+		if missing {
+			missing = conf.SID == "" || conf.DeviceID == "" || conf.ResourceFile == ""
 		}
 	}
 	if missing {
