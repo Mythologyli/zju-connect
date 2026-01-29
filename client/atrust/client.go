@@ -21,6 +21,7 @@ type Client struct {
 	ConnectionID string
 	SignKey      string
 
+	serverAddress   string
 	ipResources     []client.IPResource
 	domainResources map[string]client.DomainResource
 	ipSet           *netaddr.IPSet
@@ -97,6 +98,8 @@ func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, err
 }
 
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
+	c.serverAddress = serverAddress
+
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
