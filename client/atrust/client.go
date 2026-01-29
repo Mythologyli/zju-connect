@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -21,6 +22,7 @@ type Client struct {
 	ConnectionID string
 	SignKey      string
 
+	serverAddress   string
 	ipResources     []client.IPResource
 	domainResources map[string]client.DomainResource
 	ipSet           *netaddr.IPSet
@@ -43,36 +45,41 @@ func NewClient(username, sid, deviceID, connectionID, signKey string) *Client {
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {
 	if c.ipSet == nil {
-		return nil, nil
+		return nil, errors.New("IP set not available")
 	}
+
 	return c.ipSet, nil
 }
 
 func (c *Client) IPResources() ([]client.IPResource, error) {
 	if c.ipResources == nil {
-		return nil, nil
+		return nil, errors.New("IP resources not available")
 	}
+
 	return c.ipResources, nil
 }
 
 func (c *Client) DomainResources() (map[string]client.DomainResource, error) {
 	if c.domainResources == nil {
-		return nil, nil
+		return nil, errors.New("domain resources not available")
 	}
+
 	return c.domainResources, nil
 }
 
 func (c *Client) DNSResource() (map[string]net.IP, error) {
 	if c.dnsResource == nil {
-		return nil, nil
+		return nil, errors.New("DNS resource not available")
 	}
+
 	return c.dnsResource, nil
 }
 
 func (c *Client) DNSServer() (string, error) {
 	if c.dnsServer == "" {
-		return "", nil
+		return "", errors.New("DNS server not available")
 	}
+
 	return c.dnsServer, nil
 }
 
@@ -96,7 +103,9 @@ func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, err
 	return sess.GetAuthInfoList()
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
+	c.serverAddress = serverAddress
+
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
@@ -136,7 +145,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		sess := auth.NewSession(serverHost)
 
 		var err error
-		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
+		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, phone, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
 		if err != nil {
 			log.Println("Login error:", err)
 			return nil, err

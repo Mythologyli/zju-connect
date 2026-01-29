@@ -2,12 +2,13 @@ package atrust
 
 import (
 	"encoding/json"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
-	"inet.af/netaddr"
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
 )
 
 type ClientResource struct {
@@ -224,7 +225,14 @@ func (c *Client) parseResource(resource []byte) error {
 		addressList := make([]string, 0)
 		for _, addressInfo := range nodeGroup.AddressInfo {
 			if addressInfo.Type == "wan" {
-				addressList = append(addressList, addressInfo.Address)
+				address := addressInfo.Address
+				if address == "{{sdpcHost}}" {
+					address = c.serverAddress
+				}
+				if !strings.Contains(address, ":") {
+					address += ":441"
+				}
+				addressList = append(addressList, address)
 			}
 		}
 		c.NodeGroups[nodeGroup.ID] = addressList
