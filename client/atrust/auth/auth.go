@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
@@ -17,6 +18,28 @@ import (
 const (
 	UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
 )
+
+var sharedParams = url.Values{
+	"clientType": {"SDPClient"},
+	"platform":   {"Linux"},
+	"lang":       {"en-US"},
+}
+
+func WithSharedParams(extra url.Values) url.Values {
+	combined := make(url.Values, len(sharedParams)+len(extra))
+	for k, v := range sharedParams {
+		combined[k] = append([]string(nil), v...)
+	}
+
+	for k, v := range extra {
+		for _, val := range v {
+			// notice: not Add()
+			combined.Set(k, val)
+		}
+	}
+
+	return combined
+}
 
 type Cookie struct {
 	Host   string `json:"host"`
@@ -86,12 +109,60 @@ func (s *Session) randSdpId(n ...int) string {
 	return string(hexes)
 }
 
+func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCodeFile string) error {
+	graphCheckCodeEnable, err := process("")
+	if err != nil {
+		return err
+	}
+
+	if graphCheckCodeEnable == 1 {
+		imgData, err := s.checkCode()
+		if err != nil {
+			return err
+		}
+
+		if graphCodeFile != "" {
+			err = os.WriteFile(graphCodeFile, imgData, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to write graph code image: %w", err)
+			}
+			log.Printf("Graph check code saved to %s", graphCodeFile)
+		} else {
+			log.Println("Graph check code required, but no file specified to save the image")
+			return fmt.Errorf("graph check code required, but no file specified to save the image")
+		}
+
+		_, _, err = s.authConfigInit()
+		if err != nil {
+			return err
+		}
+
+		graphCheckCode := ""
+		log.Print("Please enter the graph check code JSON: ")
+		_, err = fmt.Scanln(&graphCheckCode)
+		if err != nil {
+			return err
+		}
+
+		graphCheckCodeEnable, err = process(graphCheckCode)
+		if err != nil {
+			return err
+		}
+
+		if graphCheckCodeEnable != 0 {
+			log.Println("Graph check code still required after second login attempt")
+			return fmt.Errorf("graph check code still required after second login attempt")
+		}
+	}
+	return nil
+}
+
 func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
 	_, list, err := s.authConfigInit()
 	return list, err
 }
 
-func (s *Session) Login(username, password, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
+func (s *Session) Login(username, password, phone, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
 	sid := ""
 	if len(cookies) > 0 {
 		for _, cookie := range cookies {
@@ -138,6 +209,8 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 		err = s.loginAuthPsw(username, password, loginDomain, graphCodeFile)
 	case "auth/cas":
 		err = s.loginAuthCas(foundAuthInfo.LoginURL, loginDomain, casTicket)
+	case "auth/smsCheckCode":
+		err = s.loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile)
 	default:
 		err = fmt.Errorf("unsupported auth type: %s", authType)
 	}
@@ -156,7 +229,7 @@ func (s *Session) Login(username, password, loginDomain, authType, deviceId, gra
 	}
 
 	if authID != "" {
-		err = s.sendSms(authID)
+		err = s.authSms(authID)
 		if err != nil {
 			return "", "", nil, err
 		}
