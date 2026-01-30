@@ -3,11 +3,12 @@ package dial
 import (
 	"context"
 	"errors"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/things-go/go-socks5/statute"
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/things-go/go-socks5/statute"
 )
 
 func (d *Dialer) dialDirectWithoutProxy(ctx context.Context, network, addr string) (net.Conn, error) {

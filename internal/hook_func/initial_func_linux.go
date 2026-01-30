@@ -2,9 +2,10 @@ package hook_func
 
 import (
 	"context"
+	"os/user"
+
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
-	"os/user"
 )
 
 func init() {

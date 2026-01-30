@@ -3,8 +3,9 @@ package zcdns
 import (
 	"context"
 
-	"github.com/miekg/dns"
 	"net"
+
+	"github.com/miekg/dns"
 )
 
 type LocalServer interface {

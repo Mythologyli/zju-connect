@@ -2,13 +2,14 @@ package dial
 
 import (
 	"bytes"
+	"net"
+	"strconv"
+	"strings"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/stack"
-	"net"
-	"strconv"
-	"strings"
 )
 
 import (

@@ -3,10 +3,11 @@ package easyconnect
 import (
 	"crypto/rand"
 	"errors"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/refraction-networking/utls"
 	"io"
 	"net"
+
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/refraction-networking/utls"
 )
 
 type fakeHeartBeatExtension struct {

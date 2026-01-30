@@ -7,16 +7,17 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/shadowsocks/go-shadowsocks2/core"
-	"github.com/shadowsocks/go-shadowsocks2/socks"
 	"io"
 	"net"
 	"net/url"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/shadowsocks/go-shadowsocks2/core"
+	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
 const udpBufSize = 64 * 1024

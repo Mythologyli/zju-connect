@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
 	netstat "github.com/shirou/gopsutil/v4/net"
-	"net"
 )
 
 type InitialFunc func(ctx context.Context, config configs.Config) error

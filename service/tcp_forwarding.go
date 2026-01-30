@@ -2,12 +2,13 @@ package service
 
 import (
 	"context"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
 	"io"
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/stack"
 )
 
 func handleRequest(stack stack.Stack, conn net.Conn, remoteAddress string) {

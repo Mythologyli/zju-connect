@@ -1,8 +1,9 @@
 package resolve
 
 import (
-	"github.com/patrickmn/go-cache"
 	"net"
+
+	"github.com/patrickmn/go-cache"
 )
 
 func (r *Resolver) getDNSCache(host string) (net.IP, bool) {

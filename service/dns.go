@@ -3,10 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
+
 	"github.com/miekg/dns"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
-	"net"
 )
 
 type DNSServer struct {

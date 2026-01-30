@@ -2,13 +2,14 @@ package easyconnect
 
 import (
 	"errors"
+	"net"
+	"strconv"
+	"strings"
+
 	"github.com/beevik/etree"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
-	"net"
-	"strconv"
-	"strings"
 )
 
 func (c *Client) parseLineListFromConfig(config string) error {

@@ -2,8 +2,9 @@ package stack
 
 import (
 	"context"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"net"
+
+	"github.com/mythologyli/zju-connect/internal/zcdns"
 )
 
 type Stack interface {
