@@ -1,13 +1,17 @@
 package atrust
 
 import (
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
@@ -29,8 +33,14 @@ type Client struct {
 	dnsResource     map[string]net.IP
 	dnsServer       string
 
-	MajorNodeGroup string
-	NodeGroups     map[string][]string
+	MajorNodeGroup   string
+	NodeGroups       map[string][]string
+	BestNodes        map[string]string
+	BestNodesRWMutex sync.RWMutex
+
+	ip net.IP // Client IP
+
+	l3Tunnel *L3Tunnel
 }
 
 func NewClient(username, sid, deviceID, connectionID, signKey string) *Client {
@@ -41,6 +51,14 @@ func NewClient(username, sid, deviceID, connectionID, signKey string) *Client {
 		ConnectionID: connectionID,
 		SignKey:      signKey,
 	}
+}
+
+func (c *Client) IP() (net.IP, error) {
+	if c.ip == nil {
+		return nil, errors.New("IP not available")
+	}
+
+	return c.ip.To4(), nil
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {
@@ -103,6 +121,14 @@ func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, err
 	return sess.GetAuthInfoList()
 }
 
+func (c *Client) CanUseTCPTunnel() bool {
+	return true
+}
+
+func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
+	return c.l3Tunnel.NewL3Conn()
+}
+
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
 	c.serverAddress = serverAddress
 
@@ -130,10 +156,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
 		}
 		c.DeviceID = clientAuthData.DeviceID
-		if clientAuthData.ConnectionID == "" {
-			clientAuthData.ConnectionID = randHex(32)
-		}
-		c.ConnectionID = clientAuthData.ConnectionID
+		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
 
 		var serverHost string
@@ -170,5 +193,22 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
+	c.BestNodes = getBestNodes(c.NodeGroups)
+
+	err = c.getIP()
+	if err != nil {
+		return nil, err
+	}
+
+	c.l3Tunnel, err = NewL3Tunnel(c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create L3 tunnel: %v", err)
+	}
+
 	return authData, nil
+}
+
+func buildConnectionID(deviceID string) string {
+	sum := md5.Sum([]byte(deviceID))
+	return fmt.Sprintf("%X-%d", sum, time.Now().UnixMicro())
 }

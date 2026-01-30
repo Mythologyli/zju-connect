@@ -1,12 +1,13 @@
 package easyconnect
 
 import (
-	"github.com/mythologyli/zju-connect/log"
 	"io"
 	"sync"
+
+	"github.com/mythologyli/zju-connect/log"
 )
 
-type RvpnConn struct {
+type L3Conn struct {
 	easyConnectClient *Client
 
 	sendConn     io.WriteCloser
@@ -19,21 +20,21 @@ type RvpnConn struct {
 }
 
 // try best to read, if return err!=nil, please panic
-func (r *RvpnConn) Read(p []byte) (n int, err error) {
-	r.recvLock.Lock()
-	defer r.recvLock.Unlock()
-	for n, err = r.recvConn.Read(p); err != nil && r.recvErrCount < 5; {
+func (c *L3Conn) Read(p []byte) (n int, err error) {
+	c.recvLock.Lock()
+	defer c.recvLock.Unlock()
+	for n, err = c.recvConn.Read(p); err != nil && c.recvErrCount < 5; {
 
 		log.Printf("Error occurred while receiving, retrying: %v", err)
 
 		// Do handshake again and create a new recvConn
-		_ = r.recvConn.Close()
-		r.recvConn, err = r.easyConnectClient.RecvConn()
+		_ = c.recvConn.Close()
+		c.recvConn, err = c.easyConnectClient.RecvConn()
 		if err != nil {
 			return 0, err
 		}
-		r.recvErrCount++
-		if r.recvErrCount >= 5 {
+		c.recvErrCount++
+		if c.recvErrCount >= 5 {
 			return 0, err
 		}
 	}
@@ -41,54 +42,54 @@ func (r *RvpnConn) Read(p []byte) (n int, err error) {
 }
 
 // try best to write, if return err!=nil, please panic
-func (r *RvpnConn) Write(p []byte) (n int, err error) {
-	r.sendLock.Lock()
-	defer r.sendLock.Unlock()
-	for n, err = r.sendConn.Write(p); err != nil && r.sendErrCount < 5; {
+func (c *L3Conn) Write(p []byte) (n int, err error) {
+	c.sendLock.Lock()
+	defer c.sendLock.Unlock()
+	for n, err = c.sendConn.Write(p); err != nil && c.sendErrCount < 5; {
 		log.Printf("Error occurred while sending, retrying: %v", err)
 
 		// Do handshake again and create a new sendConn
-		_ = r.sendConn.Close()
-		r.sendConn, err = r.easyConnectClient.SendConn()
+		_ = c.sendConn.Close()
+		c.sendConn, err = c.easyConnectClient.SendConn()
 		if err != nil {
 			return 0, err
 		}
-		r.sendErrCount++
-		if r.sendErrCount >= 5 {
+		c.sendErrCount++
+		if c.sendErrCount >= 5 {
 			return 0, err
 		}
 	}
 	return
 }
 
-func (r *RvpnConn) Close() error {
-	if r.sendConn != nil {
-		_ = r.sendConn.Close()
+func (c *L3Conn) Close() error {
+	if c.sendConn != nil {
+		_ = c.sendConn.Close()
 	}
-	if r.recvConn != nil {
-		_ = r.recvConn.Close()
+	if c.recvConn != nil {
+		_ = c.recvConn.Close()
 	}
 	return nil
 }
 
-func NewRvpnConn(ec *Client) (*RvpnConn, error) {
-	c := &RvpnConn{
-		easyConnectClient: ec,
+func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
+	conn := &L3Conn{
+		easyConnectClient: c,
 		sendErrCount:      0,
 		recvErrCount:      0,
 	}
 
 	var err error
-	c.sendConn, err = ec.SendConn()
+	conn.sendConn, err = c.SendConn()
 	if err != nil {
 		log.Printf("Error occurred while creating sendConn: %v", err)
 		return nil, err
 	}
 
-	c.recvConn, err = ec.RecvConn()
+	conn.recvConn, err = c.RecvConn()
 	if err != nil {
 		log.Printf("Error occurred while creating recvConn: %v", err)
 		return nil, err
 	}
-	return c, nil
+	return conn, nil
 }

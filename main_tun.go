@@ -15,7 +15,8 @@ import (
 
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
+	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
+	easyconnectclient "github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
@@ -46,42 +47,97 @@ func main() {
 		os.Exit(1)
 	}
 
-	tlsCert := tls.Certificate{}
-	if conf.CertFile != "" {
-		p12Data, err := os.ReadFile(conf.CertFile)
-		if err != nil {
-			log.Fatalf("Read certificate file error: %s", err)
+	var vpnClient client.Client
+	switch conf.Protocol {
+	case "easyconnect":
+		tlsCert := tls.Certificate{}
+		if conf.CertFile != "" {
+			p12Data, err := os.ReadFile(conf.CertFile)
+			if err != nil {
+				log.Fatalf("Read certificate file error: %s", err)
+			}
+
+			key, cert, err := pkcs12.Decode(p12Data, conf.CertPassword)
+			if err != nil {
+				log.Fatalf("Decode certificate file error: %s", err)
+			}
+
+			tlsCert = tls.Certificate{
+				Certificate: [][]byte{cert.Raw},
+				PrivateKey:  key.(crypto.PrivateKey),
+				Leaf:        cert,
+			}
 		}
 
-		key, cert, err := pkcs12.Decode(p12Data, conf.CertPassword)
+		vpnClient = easyconnectclient.NewClient(
+			conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
+			conf.Username,
+			conf.Password,
+			conf.TOTPSecret,
+			tlsCert,
+			conf.TwfID,
+			!conf.DisableMultiLine,
+			!conf.DisableServerConfig,
+			!conf.SkipDomainResource,
+		)
+
+		log.Printf("VPN protocol: %s", conf.Protocol)
+		err := vpnClient.(*easyconnectclient.Client).Setup()
 		if err != nil {
-			log.Fatalf("Decode certificate file error: %s", err)
+			log.Fatalf("VPN client setup error: %s", err)
+		}
+	case "atrust":
+		var err error
+		var resourceData []byte
+
+		if conf.ResourceFile != "" {
+			resourceData, err = os.ReadFile(conf.ResourceFile)
+			if err != nil {
+				log.Fatalf("Read resource file error: %s", err)
+			}
 		}
 
-		tlsCert = tls.Certificate{
-			Certificate: [][]byte{cert.Raw},
-			PrivateKey:  key.(crypto.PrivateKey),
-			Leaf:        cert,
+		var clientData []byte
+		if conf.ClientDataFile != "" {
+			clientData, err = os.ReadFile(conf.ClientDataFile)
+			if err != nil {
+				log.Printf("Read client data file error: %s", err)
+				log.Println("Will create a new client data file if log in successfully")
+			}
 		}
+
+		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.ConnectionID, conf.SignKey)
+
+		log.Printf("VPN protocol: %s", conf.Protocol)
+		clientData, err = vpnClient.(*atrustclient.Client).Setup(
+			conf.ServerAddress,
+			conf.ServerPort,
+			conf.Username,
+			conf.Password,
+			conf.Phone,
+			conf.LoginDomain,
+			conf.AuthType,
+			conf.GraphCodeFile,
+			conf.CasTicket,
+			clientData,
+			resourceData,
+		)
+		if err != nil {
+			log.Fatalf("VPN client setup error: %s", err)
+		}
+
+		if conf.ClientDataFile != "" {
+			err = os.WriteFile(conf.ClientDataFile, clientData, 0644)
+			if err != nil {
+				log.Fatalf("Write client data file error: %s", err)
+			}
+			log.Printf("Client data saved to %s", conf.ClientDataFile)
+		}
+	default:
+		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
 	}
 
-	vpnClient := easyconnect.NewClient(
-		conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
-		conf.Username,
-		conf.Password,
-		conf.TOTPSecret,
-		tlsCert,
-		conf.TwfID,
-		!conf.DisableMultiLine,
-		!conf.DisableServerConfig,
-		!conf.SkipDomainResource,
-	)
-	err := vpnClient.Setup()
-	if err != nil {
-		log.Fatalf("EasyConnect client setup error: %s", err)
-	}
-
-	log.Printf("EasyConnect client started")
+	log.Printf("VPN client started")
 
 	ipResources, err := vpnClient.IPResources()
 	if err != nil && !conf.DisableServerConfig {
@@ -103,63 +159,53 @@ func main() {
 		log.Println("No DNS resource")
 	}
 
-	if !conf.DisableZJUConfig {
-		if domainResources != nil {
+	if conf.Protocol == "easyconnect" {
+		if !conf.DisableZJUConfig {
+			if domainResources == nil {
+				domainResources = make(map[string]client.DomainResource)
+			}
+
 			domainResources["zju.edu.cn"] = client.DomainResource{
 				PortMin:  1,
 				PortMax:  65535,
 				Protocol: "all",
 			}
-		} else {
-			domainResources = map[string]client.DomainResource{
-				"zju.edu.cn": {
-					PortMin:  1,
-					PortMax:  65535,
-					Protocol: "all",
-				},
-			}
-		}
 
-		if ipResources != nil {
-			ipResources = append(ipResources, client.IPResource{
+			if ipResources == nil {
+				ipResources = []client.IPResource{}
+			}
+
+			ipResources = append([]client.IPResource{{
 				IPMin:    net.ParseIP("10.0.0.0"),
 				IPMax:    net.ParseIP("10.255.255.255"),
 				PortMin:  1,
 				PortMax:  65535,
 				Protocol: "all",
-			})
-		} else {
-			ipResources = []client.IPResource{{
-				IPMin:    net.ParseIP("10.0.0.0"),
-				IPMax:    net.ParseIP("10.255.255.255"),
-				PortMin:  1,
-				PortMax:  65535,
-				Protocol: "all",
-			}}
-		}
+			}}, ipResources...)
 
-		ipSetBuilder := netaddr.IPSetBuilder{}
-		if ipSet != nil {
-			ipSetBuilder.AddSet(ipSet)
-		}
-		ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix("10.0.0.0/8"))
-		ipSet, _ = ipSetBuilder.IPSet()
-	}
-
-	for _, customProxyDomain := range conf.CustomProxyDomain {
-		if domainResources != nil {
-			domainResources[customProxyDomain] = client.DomainResource{
-				PortMin:  1,
-				PortMax:  65535,
-				Protocol: "all",
+			ipSetBuilder := netaddr.IPSetBuilder{}
+			if ipSet != nil {
+				ipSetBuilder.AddSet(ipSet)
 			}
-		} else {
-			domainResources = map[string]client.DomainResource{
-				customProxyDomain: {
+			ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix("10.0.0.0/8"))
+			ipSet, _ = ipSetBuilder.IPSet()
+		}
+
+		for _, customProxyDomain := range conf.CustomProxyDomain {
+			if domainResources != nil {
+				domainResources[customProxyDomain] = client.DomainResource{
 					PortMin:  1,
 					PortMax:  65535,
 					Protocol: "all",
-				},
+				}
+			} else {
+				domainResources = map[string]client.DomainResource{
+					customProxyDomain: {
+						PortMin:  1,
+						PortMax:  65535,
+						Protocol: "all",
+					},
+				}
 			}
 		}
 	}
@@ -174,7 +220,7 @@ func main() {
 			log.Printf("Add route to %s", prefix.String())
 			_ = vpnStack.AddRoute(prefix.String())
 		}
-	} else if !conf.AddRoute && !conf.DisableZJUConfig {
+	} else if !conf.AddRoute && !conf.DisableZJUConfig && conf.Protocol == "easyconnect" {
 		log.Println("Add route to 10.0.0.0/8")
 		_ = vpnStack.AddRoute("10.0.0.0/8")
 	}
@@ -215,6 +261,9 @@ func main() {
 
 	go vpnStack.Run()
 
+	if conf.Protocol == "atrust" {
+		conf.ProxyAll = false
+	}
 	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
 
 	if conf.DNSServerBind != "" {

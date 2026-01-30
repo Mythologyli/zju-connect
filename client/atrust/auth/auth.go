@@ -49,9 +49,8 @@ type Cookie struct {
 }
 
 type ClientAuthData struct {
-	Cookies      []Cookie `json:"cookies"`
-	DeviceID     string   `json:"device_id"`
-	ConnectionID string   `json:"connection_id"`
+	Cookies  []Cookie `json:"cookies"`
+	DeviceID string   `json:"device_id"`
 }
 
 type Session struct {

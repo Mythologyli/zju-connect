@@ -2,11 +2,16 @@ package tun
 
 import (
 	"context"
-	"inet.af/netaddr"
 	"net"
+
+	"inet.af/netaddr"
 )
 
 func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+	if s.endpoint.client.CanUseTCPTunnel() {
+		return s.endpoint.client.DialTCP(ctx, addr)
+	}
+
 	prefix, ok := netaddr.FromStdIP(addr.IP)
 	if ok && s.endpoint.ipSet.Contains(prefix) {
 		return s.endpoint.tcpDialer.Dial("tcp4", addr.String())

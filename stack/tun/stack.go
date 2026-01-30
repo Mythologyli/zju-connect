@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"io"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
@@ -22,7 +22,7 @@ const MTU uint32 = 1400
 
 type Stack struct {
 	endpoint    *Endpoint
-	rvpnConn    io.ReadWriteCloser
+	l3Conn      io.ReadWriteCloser
 	resolve     zcdns.LocalServer
 	ipResources []client.IPResource
 }
@@ -33,7 +33,7 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 
 func (s *Stack) Run() {
 	var connErr error
-	s.rvpnConn, connErr = easyconnect.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.l3Conn, connErr = s.endpoint.client.NewL3Conn()
 	if connErr != nil {
 		panic(connErr)
 	}
@@ -41,7 +41,7 @@ func (s *Stack) Run() {
 	go func() {
 		for {
 			buf := make([]byte, MTU+tun.PacketOffset)
-			n, err := s.rvpnConn.Read(buf)
+			n, err := s.l3Conn.Read(buf)
 			if err != nil {
 				panic(err)
 			}
@@ -150,7 +150,7 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 	if !packet.DestinationIP().IsGlobalUnicast() {
 		return s.endpoint.Write(packet)
 	}
-	n, err := s.rvpnConn.Write(packet)
+	n, err := s.l3Conn.Write(packet)
 	if err != nil {
 		panic(err)
 	}
@@ -167,7 +167,7 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 		return s.endpoint.Write(packet)
 	}
 
-	n, err := s.rvpnConn.Write(packet)
+	n, err := s.l3Conn.Write(packet)
 	if err != nil {
 		panic(err)
 	}
@@ -183,7 +183,7 @@ func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.IC
 		return nil
 	}
 
-	n, err := s.rvpnConn.Write(packet)
+	n, err := s.l3Conn.Write(packet)
 	if err != nil {
 		panic(err)
 	}

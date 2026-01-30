@@ -1,14 +1,16 @@
 package easyconnect
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
-	"inet.af/netaddr"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
 )
 
 type Client struct {
@@ -61,7 +63,7 @@ func (c *Client) IP() (net.IP, error) {
 		return nil, errors.New("IP not available")
 	}
 
-	return c.ip, nil
+	return c.ip.To4(), nil
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {
@@ -102,6 +104,14 @@ func (c *Client) DNSServer() (string, error) {
 	}
 
 	return c.dnsServer, nil
+}
+
+func (c *Client) CanUseTCPTunnel() bool {
+	return false
+}
+
+func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+	return nil, errors.New("not supported")
 }
 
 func (c *Client) Setup() error {

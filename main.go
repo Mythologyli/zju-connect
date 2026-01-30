@@ -24,7 +24,6 @@ import (
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
 	"github.com/mythologyli/zju-connect/stack"
-	atruststack "github.com/mythologyli/zju-connect/stack/atrust"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
@@ -214,32 +213,28 @@ func main() {
 	}
 
 	var vpnStack stack.Stack
-	if conf.Protocol == "easyconnect" {
-		if conf.TUNMode {
-			vpnTUNStack, err := tun.NewStack(vpnClient.(*easyconnectclient.Client), conf.DNSHijack, ipResources)
-			if err != nil {
-				log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
-			}
-
-			if conf.AddRoute && ipSet != nil {
-				for _, prefix := range ipSet.Prefixes() {
-					log.Printf("Add route to %s", prefix.String())
-					_ = vpnTUNStack.AddRoute(prefix.String())
-				}
-			} else if !conf.AddRoute && !conf.DisableZJUConfig {
-				log.Println("Add route to 10.0.0.0/8")
-				_ = vpnTUNStack.AddRoute("10.0.0.0/8")
-			}
-
-			vpnStack = vpnTUNStack
-		} else {
-			vpnStack, err = gvisor.NewStack(vpnClient.(*easyconnectclient.Client))
-			if err != nil {
-				log.Fatalf("gVisor stack setup error: %s", err)
-			}
+	if conf.TUNMode {
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
+		if err != nil {
+			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
+
+		if conf.AddRoute && ipSet != nil {
+			for _, prefix := range ipSet.Prefixes() {
+				log.Printf("Add route to %s", prefix.String())
+				_ = vpnTUNStack.AddRoute(prefix.String())
+			}
+		} else if !conf.AddRoute && !conf.DisableZJUConfig && conf.Protocol == "easyconnect" {
+			log.Println("Add route to 10.0.0.0/8")
+			_ = vpnTUNStack.AddRoute("10.0.0.0/8")
+		}
+
+		vpnStack = vpnTUNStack
 	} else {
-		vpnStack = atruststack.NewStack(vpnClient.(*atrustclient.Client))
+		vpnStack, err = gvisor.NewStack(vpnClient)
+		if err != nil {
+			log.Fatalf("gVisor stack setup error: %s", err)
+		}
 	}
 
 	useZJUDNS := !conf.DisableZJUDNS
@@ -286,8 +281,8 @@ func main() {
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
-	if conf.Protocol == "easyconnect" && conf.TUNMode {
-		clientIP, _ := vpnClient.(*easyconnectclient.Client).IP()
+	if conf.TUNMode {
+		clientIP, _ := vpnClient.IP()
 		go service.ServeDNS(clientIP.String()+":53", localResolver)
 	}
 

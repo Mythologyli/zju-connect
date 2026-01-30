@@ -2,13 +2,18 @@ package gvisor
 
 import (
 	"context"
+	"net"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"net"
 )
 
 func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+	if s.endpoint.client.CanUseTCPTunnel() {
+		return s.endpoint.client.DialTCP(ctx, addr)
+	}
+
 	return gonet.DialTCP(s.gvisorStack, tcpip.FullAddress{
 		NIC:  NICID,
 		Port: uint16(addr.Port),
