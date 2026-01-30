@@ -416,7 +416,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 
 	if err == nil {
 		if atomic.CompareAndSwapUint32(&c.vipRequested, 0, 1) {
-			_ = c.writeFrame([]byte{l3Version, cmdSecondVipReq})
+			//_ = c.writeFrame([]byte{l3Version, cmdSecondVipReq}) // fix
 		}
 	}
 }
