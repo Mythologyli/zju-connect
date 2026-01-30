@@ -161,7 +161,7 @@ func init() {
 	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
 	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "aTrust Graph Check Code File")
-	flag.StringVar(&conf.CasTicket, "cas-ticket", "", "aTrust CAS Ticket")
+	flag.StringVar(&conf.CasTicket, "cas-ticket", "", "aTrust CAS Ticket (optional, interactive mode if not set)")
 	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")
 	flag.StringVar(&conf.DeviceID, "device-id", "", "aTrust Device ID (mostly for debug usage)")
 	flag.StringVar(&conf.ConnectionID, "connection-id", "", "aTrust Connection ID (mostly for debug usage)")
@@ -280,8 +280,6 @@ func init() {
 		switch conf.AuthType {
 		case "auth/psw":
 			missing = conf.Username == "" || conf.Password == ""
-		case "auth/cas":
-			missing = conf.CasTicket == ""
 		case "auth/smsCheckCode":
 			missing = conf.Phone == ""
 		}
