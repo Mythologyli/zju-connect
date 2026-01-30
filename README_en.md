@@ -18,11 +18,11 @@
 
 + If you are from ZJU:
   + Windows users are recommended to use [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)
-  + Linux/macOS users can try the [EZ4Connect](https://github.com/PageChen04/EZ4Connect) developed by [PageChen04](https://github.com/PageChen04) (support aTrust) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
+  + Linux/macOS users can try the [EZ4Connect](https://github.com/chenx-dust/EZ4Connect) developed by [Chenx Dust](https://github.com/chenx-dust) (support aTrust) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
     Please set the server address to `rvpn.zju.edu.cn:443`
 + If you are not from ZJU:
 
-  You can try the [EZ4Connect](https://github.com/PageChen04/EZ4Connect) developed by [PageChen04](https://github.com/PageChen04) (support aTrust) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
+  You can try the [EZ4Connect](https://github.com/chenx-dust/EZ4Connect) developed by [Chenx Dust](https://github.com/chenx-dust) (support aTrust) or the [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge) developed by [kowyo](https://github.com/kowyo)
 
 #### Run Directly
 
