@@ -55,7 +55,7 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 	if err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: send packet appID=%s group=%s len=%d", appID, nodeGroupID, len(packet))
+	log.DebugPrintf("l3-tunnel send packet appID=%s group=%s len=%d", appID, nodeGroupID, len(packet))
 	logPacket("send", packet)
 	return conn.WritePacket(meta, appID, nodeGroupID, packet)
 }
@@ -98,7 +98,7 @@ func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {
 
 func logPacket(direction string, packet []byte) {
 	if len(packet) == 0 {
-		log.DebugPrintf("atrust-l3: %s packet len=0", direction)
+		log.DebugPrintf("l3-tunnel %s packet len=0", direction)
 		return
 	}
 
@@ -107,7 +107,7 @@ func logPacket(direction string, packet []byte) {
 	case zctcpip.IPv4Version:
 		ipHeader := zctcpip.IPv4Packet(packet)
 		if !ipHeader.Valid() {
-			log.DebugPrintf("atrust-l3: %s ipv4 invalid len=%d", direction, len(packet))
+			log.DebugPrintf("l3-tunnel %s ipv4 invalid len=%d", direction, len(packet))
 			log.DebugDumpHex(packet)
 			return
 		}
@@ -115,40 +115,40 @@ func logPacket(direction string, packet []byte) {
 		case zctcpip.TCP:
 			payload := ipHeader.Payload()
 			if len(payload) < zctcpip.TCPHeaderSize {
-				log.DebugPrintf("atrust-l3: %s tcp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+				log.DebugPrintf("l3-tunnel %s tcp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 				log.DebugDumpHex(packet)
 				return
 			}
 			tcpHeader := zctcpip.TCPPacket(payload)
 			if !tcpHeader.Valid() {
-				log.DebugPrintf("atrust-l3: %s tcp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+				log.DebugPrintf("l3-tunnel %s tcp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 				log.DebugDumpHex(packet)
 				return
 			}
-			log.DebugPrintf("atrust-l3: %s tcp %s:%d -> %s:%d len=%d", direction, ipHeader.SourceIP(), tcpHeader.SourcePort(), ipHeader.DestinationIP(), tcpHeader.DestinationPort(), len(packet))
+			log.DebugPrintf("l3-tunnel %s tcp %s:%d -> %s:%d len=%d", direction, ipHeader.SourceIP(), tcpHeader.SourcePort(), ipHeader.DestinationIP(), tcpHeader.DestinationPort(), len(packet))
 		case zctcpip.UDP:
 			payload := ipHeader.Payload()
 			if len(payload) < zctcpip.UDPHeaderSize {
-				log.DebugPrintf("atrust-l3: %s udp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+				log.DebugPrintf("l3-tunnel %s udp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 				log.DebugDumpHex(packet)
 				return
 			}
 			udpHeader := zctcpip.UDPPacket(payload)
 			if !udpHeader.Valid() {
-				log.DebugPrintf("atrust-l3: %s udp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+				log.DebugPrintf("l3-tunnel %s udp %s -> %s len=%d invalid", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 				log.DebugDumpHex(packet)
 				return
 			}
-			log.DebugPrintf("atrust-l3: %s udp %s:%d -> %s:%d len=%d", direction, ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort(), len(packet))
+			log.DebugPrintf("l3-tunnel %s udp %s:%d -> %s:%d len=%d", direction, ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort(), len(packet))
 		case zctcpip.ICMP:
-			log.DebugPrintf("atrust-l3: %s icmp %s -> %s len=%d", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+			log.DebugPrintf("l3-tunnel %s icmp %s -> %s len=%d", direction, ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 		default:
-			log.DebugPrintf("atrust-l3: %s proto %d %s -> %s len=%d", direction, ipHeader.Protocol(), ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
+			log.DebugPrintf("l3-tunnel %s proto %d %s -> %s len=%d", direction, ipHeader.Protocol(), ipHeader.SourceIP(), ipHeader.DestinationIP(), len(packet))
 		}
 	case 6:
-		log.DebugPrintf("atrust-l3: %s ipv6 len=%d", direction, len(packet))
+		log.DebugPrintf("l3-tunnel %s ipv6 len=%d", direction, len(packet))
 	default:
-		log.DebugPrintf("atrust-l3: %s ipver %d len=%d", direction, version, len(packet))
+		log.DebugPrintf("l3-tunnel %s ipver %d len=%d", direction, version, len(packet))
 	}
 	log.DebugDumpHex(packet)
 }

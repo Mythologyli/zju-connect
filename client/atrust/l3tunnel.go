@@ -1,11 +1,9 @@
 package atrust
 
 import (
-	"crypto/md5"
 	"fmt"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 )
@@ -46,11 +44,6 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 	t.ip = ip
 
 	return t, nil
-}
-
-func buildConnectionID(deviceID string) string {
-	sum := md5.Sum([]byte(deviceID))
-	return fmt.Sprintf("%X-%d", sum, time.Now().UnixMicro())
 }
 
 func (t *L3Tunnel) updateVIP(ips []net.IP) {

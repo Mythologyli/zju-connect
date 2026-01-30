@@ -187,7 +187,7 @@ func (c *l3TunnelConn) readLoop() {
 	for {
 		fr, err := c.readFrame()
 		if err != nil {
-			log.DebugPrintf("atrust-l3: read frame failed: %v", err)
+			log.DebugPrintf("l3-tunnel read frame failed: %v", err)
 			_ = c.Close()
 			return
 		}
@@ -195,7 +195,7 @@ func (c *l3TunnelConn) readLoop() {
 		switch fr.cmd {
 		case cmdDataResp:
 			if fr.dataMode == "len" {
-				log.DebugPrintf("atrust-l3: recv data packet len=%d", len(fr.payload))
+				log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
 				select {
 				case c.incoming <- fr.payload:
 				case <-c.closeCh:
@@ -204,14 +204,14 @@ func (c *l3TunnelConn) readLoop() {
 			}
 			packets, err := parseDataPayload(fr.payload)
 			if err != nil {
-				log.DebugPrintf("atrust-l3: parse data payload failed: %v", err)
+				log.DebugPrintf("l3-tunnel parse data payload failed: %v", err)
 				continue
 			}
 			tokenLen := 0
 			if len(fr.payload) > 0 {
 				tokenLen = int(fr.payload[0])
 			}
-			log.DebugPrintf("atrust-l3: recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
+			log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
 			for _, pkt := range packets {
 				select {
 				case c.incoming <- pkt:
@@ -220,15 +220,15 @@ func (c *l3TunnelConn) readLoop() {
 				}
 			}
 		case cmdAuthResp:
-			log.DebugPrintf("atrust-l3: recv auth resp status=%d payloadLen=%d", fr.status, len(fr.payload))
+			log.DebugPrintf("l3-tunnel recv auth resp status=%d payloadLen=%d", fr.status, len(fr.payload))
 			c.handleAuthResp(fr.status, fr.payload)
 		case cmdSecondVipResp:
-			log.DebugPrintf("atrust-l3: recv second vip status=%d payloadLen=%d", fr.status, len(fr.payload))
+			log.DebugPrintf("l3-tunnel recv second vip status=%d payloadLen=%d", fr.status, len(fr.payload))
 			c.handleSecondVipResp(fr.status, fr.payload)
 		case cmdHeartbeatResp:
-			log.DebugPrintf("atrust-l3: recv heartbeat")
+			log.DebugPrintf("l3-tunnel recv heartbeat")
 		default:
-			log.DebugPrintf("atrust-l3: ignore cmd 0x%02x", fr.cmd)
+			log.DebugPrintf("l3-tunnel ignore cmd 0x%02x", fr.cmd)
 		}
 	}
 }
@@ -279,7 +279,7 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 				}
 				raw := append(append([]byte{}, header...), payload...)
 				logFrame("recv", raw)
-				log.DebugPrintf("atrust-l3: recv data resp mode=%s payloadLen=%d", mode, len(payload))
+				log.DebugPrintf("l3-tunnel recv data resp mode=%s payloadLen=%d", mode, len(payload))
 				return frame{cmd: cmd, payload: payload, dataMode: mode}, nil
 			}
 
@@ -337,13 +337,13 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 	}
 	token := ct.connectToken
 	if token == "" {
-		return fmt.Errorf("atrust-l3: missing connect token for %s", ct.key)
+		return fmt.Errorf("l3-tunnel missing connect token for %s", ct.key)
 	}
 	if len(token) > 0xFF {
-		return fmt.Errorf("atrust-l3: connect token too long: %d", len(token))
+		return fmt.Errorf("l3-tunnel connect token too long: %d", len(token))
 	}
 	payload := buildDataPayload(token, [][]byte{pkt})
-	log.DebugPrintf("atrust-l3: send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
+	log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
 	return c.writeFrame(payload)
 }
 
@@ -365,7 +365,7 @@ func (c *l3TunnelConn) ensureAuth(ct *conntrack, meta packetMeta) error {
 	case <-ct.authCh:
 		return ct.authErr
 	case <-time.After(8 * time.Second):
-		return fmt.Errorf("atrust-l3: auth timeout for %s", ct.key)
+		return fmt.Errorf("l3-tunnel auth timeout for %s", ct.key)
 	}
 }
 
@@ -374,7 +374,7 @@ func (c *l3TunnelConn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
 	if err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: send auth authID=%d meta=%s payloadLen=%d", ct.authID, formatMeta(meta), len(req))
+	log.DebugPrintf("l3-tunnel send auth authID=%d meta=%s payloadLen=%d", ct.authID, formatMeta(meta), len(req))
 	payload := make([]byte, 0, 4+len(req))
 	payload = append(payload, l3Version, cmdAuthReq)
 	lenBytes := make([]byte, 2)
@@ -411,7 +411,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 	if err == nil && token == "" {
 		err = fmt.Errorf("missing connect token")
 	}
-	log.DebugPrintf("atrust-l3: auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
+	log.DebugPrintf("l3-tunnel auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
 	c.conntrackMgr.markAuth(resp.Data.ConntrackHash, token, err)
 
 	if err == nil {
@@ -423,7 +423,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 
 func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {
 	if status != 0 {
-		log.DebugPrintf("atrust-l3: second vip status %d", status)
+		log.DebugPrintf("l3-tunnel second vip status %d", status)
 		return
 	}
 	ips := extractVIPs(payload)
@@ -453,7 +453,7 @@ func (c *l3TunnelConn) writeFrame(data []byte) error {
 func (c *l3TunnelConn) writeRaw(label string, data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	log.DebugPrintf("atrust-l3: %s len=%d", label, len(data))
+	log.DebugPrintf("l3-tunnel %s len=%d", label, len(data))
 	log.DebugDumpHex(data)
 	_, err := c.tlsConn.Write(data)
 	return err
@@ -705,9 +705,9 @@ func formatMeta(meta packetMeta) string {
 
 func logFrame(prefix string, data []byte) {
 	if len(data) >= 2 {
-		log.DebugPrintf("atrust-l3: %s frame cmd=0x%02x len=%d", prefix, data[1], len(data))
+		log.DebugPrintf("l3-tunnel %s frame cmd=0x%02x len=%d", prefix, data[1], len(data))
 	} else {
-		log.DebugPrintf("atrust-l3: %s frame len=%d", prefix, len(data))
+		log.DebugPrintf("l3-tunnel %s frame len=%d", prefix, len(data))
 	}
 	log.DebugDumpHex(data)
 }
@@ -727,20 +727,20 @@ func (c *l3TunnelConn) authTunnel() error {
 	if _, err := io.ReadFull(c.reader, method); err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: recv tunnel auth method len=%d", len(method))
+	log.DebugPrintf("l3-tunnel recv tunnel auth method len=%d", len(method))
 	log.DebugDumpHex(method)
 	if method[0] != l3Version || method[1] != 0xD0 {
-		return fmt.Errorf("atrust-l3: unexpected auth method resp: %02x %02x", method[0], method[1])
+		return fmt.Errorf("l3-tunnel unexpected auth method resp: %02x %02x", method[0], method[1])
 	}
 
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(c.reader, header); err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: recv tunnel auth header len=%d", len(header))
+	log.DebugPrintf("l3-tunnel recv tunnel auth header len=%d", len(header))
 	log.DebugDumpHex(header)
 	if header[0] != 0x53 {
-		return fmt.Errorf("atrust-l3: unexpected auth resp version: 0x%02x", header[0])
+		return fmt.Errorf("l3-tunnel unexpected auth resp version: 0x%02x", header[0])
 	}
 	status := header[1]
 	length := int(binary.BigEndian.Uint16(header[2:4]))
@@ -750,10 +750,10 @@ func (c *l3TunnelConn) authTunnel() error {
 			return err
 		}
 	}
-	log.DebugPrintf("atrust-l3: recv tunnel auth payload len=%d status=%d", len(payload), status)
+	log.DebugPrintf("l3-tunnel recv tunnel auth payload len=%d status=%d", len(payload), status)
 	log.DebugDumpHex(payload)
 	if status != 0 {
-		return fmt.Errorf("atrust-l3: tunnel auth status %d", status)
+		return fmt.Errorf("l3-tunnel tunnel auth status %d", status)
 	}
 	if len(payload) > 0 {
 		var resp authResponseSID
@@ -761,7 +761,7 @@ func (c *l3TunnelConn) authTunnel() error {
 			return err
 		}
 		if resp.Code != 0 {
-			return fmt.Errorf("atrust-l3: tunnel auth failed: %d %s", resp.Code, resp.Message)
+			return fmt.Errorf("l3-tunnel tunnel auth failed: %d %s", resp.Code, resp.Message)
 		}
 	}
 
@@ -769,7 +769,7 @@ func (c *l3TunnelConn) authTunnel() error {
 	if _, err := io.ReadFull(c.reader, vipHeader); err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: recv tunnel vip header len=%d", len(vipHeader))
+	log.DebugPrintf("l3-tunnel recv tunnel vip header len=%d", len(vipHeader))
 	log.DebugDumpHex(vipHeader)
 	if vipHeader[0] != l3Version {
 		return nil
@@ -784,7 +784,7 @@ func (c *l3TunnelConn) authTunnel() error {
 	if _, err := io.ReadFull(c.reader, vipData); err != nil {
 		return err
 	}
-	log.DebugPrintf("atrust-l3: recv tunnel vip data len=%d", len(vipData))
+	log.DebugPrintf("l3-tunnel recv tunnel vip data len=%d", len(vipData))
 	log.DebugDumpHex(vipData)
 	ips := parseVirtualIPData(vipData)
 	if len(ips) > 0 && c.onVIP != nil {

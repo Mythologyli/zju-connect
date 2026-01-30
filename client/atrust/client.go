@@ -1,6 +1,7 @@
 package atrust
 
 import (
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
@@ -154,10 +156,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
 		}
 		c.DeviceID = clientAuthData.DeviceID
-		if clientAuthData.ConnectionID == "" {
-			clientAuthData.ConnectionID = randHex(32)
-		}
-		c.ConnectionID = clientAuthData.ConnectionID
+		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
 
 		var serverHost string
@@ -207,4 +206,9 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	}
 
 	return authData, nil
+}
+
+func buildConnectionID(deviceID string) string {
+	sum := md5.Sum([]byte(deviceID))
+	return fmt.Sprintf("%X-%d", sum, time.Now().UnixMicro())
 }
