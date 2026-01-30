@@ -11,22 +11,23 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 	"io"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/resolve"
 )
 
-type atrustConn struct {
+type tcpTunnelConn struct {
 	tlsConn *tls.Conn
 	reader  *bufio.Reader
 	readBuf []byte
 }
 
-func (c *atrustConn) Read(b []byte) (int, error) {
+func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	if len(c.readBuf) > 0 {
 		n := copy(b, c.readBuf)
 		c.readBuf = c.readBuf[n:]
@@ -99,7 +100,7 @@ func (c *atrustConn) Read(b []byte) (int, error) {
 	}
 }
 
-func (c *atrustConn) Write(b []byte) (int, error) {
+func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 	header := []byte{0x01, 0x00}
 	length := len(b)
 	if length > 0xFFFF {
@@ -117,7 +118,7 @@ func (c *atrustConn) Write(b []byte) (int, error) {
 	return length, err
 }
 
-func (c *atrustConn) Close() error {
+func (c *tcpTunnelConn) Close() error {
 	closeMsg := []byte{0x01, 0x01, 0x00, 0x00}
 	_, _ = c.tlsConn.Write(closeMsg)
 	log.DebugPrint("Sent close message")
@@ -125,23 +126,23 @@ func (c *atrustConn) Close() error {
 	return c.tlsConn.Close()
 }
 
-func (c *atrustConn) LocalAddr() net.Addr {
+func (c *tcpTunnelConn) LocalAddr() net.Addr {
 	return c.tlsConn.LocalAddr()
 }
 
-func (c *atrustConn) RemoteAddr() net.Addr {
+func (c *tcpTunnelConn) RemoteAddr() net.Addr {
 	return c.tlsConn.RemoteAddr()
 }
 
-func (c *atrustConn) SetDeadline(t time.Time) error {
+func (c *tcpTunnelConn) SetDeadline(t time.Time) error {
 	return c.tlsConn.SetDeadline(t)
 }
 
-func (c *atrustConn) SetReadDeadline(t time.Time) error {
+func (c *tcpTunnelConn) SetReadDeadline(t time.Time) error {
 	return c.tlsConn.SetReadDeadline(t)
 }
 
-func (c *atrustConn) SetWriteDeadline(t time.Time) error {
+func (c *tcpTunnelConn) SetWriteDeadline(t time.Time) error {
 	return c.tlsConn.SetWriteDeadline(t)
 }
 
@@ -160,7 +161,7 @@ func calcXRequestSig(key []byte, data []byte) string {
 	return strings.ToUpper(hex.EncodeToString(sum))
 }
 
-func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
 	appID := ""
 	nodeGroupID := ""
 	domain := ""
@@ -172,7 +173,7 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 			domain = res.(string)
 		}
 	} else {
-		for _, resource := range s.ipResources {
+		for _, resource := range c.ipResources {
 			if bytes.Compare(addr.IP, resource.IPMin) >= 0 && bytes.Compare(addr.IP, resource.IPMax) <= 0 {
 				if resource.PortMin <= addr.Port && addr.Port <= resource.PortMax {
 					if resource.Protocol == "tcp" || resource.Protocol == "all" {
@@ -184,16 +185,16 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 		}
 	}
 
-	s.bestNodesRWMutex.RLock()
-	conn, err := tls.Dial("tcp", s.bestNodes[nodeGroupID], &tls.Config{
+	c.BestNodesRWMutex.RLock()
+	conn, err := tls.Dial("tcp", c.BestNodes[nodeGroupID], &tls.Config{
 		InsecureSkipVerify: true,
 	})
-	s.bestNodesRWMutex.RUnlock()
+	c.BestNodesRWMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
 
-	connectionId := s.connectID + "-" + randUint64()
+	connectionId := c.ConnectionID + "-" + randUint64()
 
 	procName := "google-chrome-stable"
 	procPath := "/usr/bin/google-chrome-stable"
@@ -218,9 +219,9 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 
 	msg := fmt.Sprintf(
 		`{"sid":"%s","appId":"%s","url":"tcp://%s","deviceId":"%s","connectionId":"%s","procHash":"%s","userName":"%s","rcAppliedInfo":0,"lang":"en-US","destAddr":"%s","env":{"application":{"runtime":{"process":{"name":"%s","digital_signature":"TrustAppClosed","platform":"Linux","fingerprint":"%s","description":"TrustAppClosed","path":"%s","version":"TrustAppClosed","security_env":"normal"},"process_trusted":"TRUSTED"}}},"xRequestSig":""}`,
-		s.sid, appID, destAddr, s.deviceID, connectionId, procHash, s.username, destAddr, procName, procHash, procPath,
+		c.SID, appID, destAddr, c.DeviceID, connectionId, procHash, c.Username, destAddr, procName, procHash, procPath,
 	)
-	signKeyBytes, err := hex.DecodeString(s.signKey)
+	signKeyBytes, err := hex.DecodeString(c.SignKey)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("invalid sign key: %w", err)
@@ -263,12 +264,8 @@ func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error
 	}
 	log.DebugDumpHex(destMsg)
 
-	return &atrustConn{
+	return &tcpTunnelConn{
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
 	}, nil
-}
-
-func (s *Stack) DialUDP(ctx context.Context, addr *net.UDPAddr) (net.Conn, error) {
-	return nil, fmt.Errorf("not implemented")
 }

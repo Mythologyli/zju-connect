@@ -1,9 +1,8 @@
-package atrustl3
+package atrust
 
 import (
 	"bufio"
 	"bytes"
-	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
@@ -22,6 +21,18 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+const (
+	l3Version        = 0x05
+	cmdAuthReq       = 0x13
+	cmdAuthResp      = 0x93
+	cmdDataReq       = 0x14
+	cmdDataResp      = 0x94
+	cmdHeartbeatReq  = 0x15
+	cmdHeartbeatResp = 0x95
+	cmdSecondVipReq  = 0x16
+	cmdSecondVipResp = 0x96
+)
+
 type clientInfo struct {
 	sid          string
 	deviceID     string
@@ -29,7 +40,7 @@ type clientInfo struct {
 	username     string
 }
 
-type l3Conn struct {
+type l3TunnelConn struct {
 	tlsConn      *tls.Conn
 	reader       *bufio.Reader
 	writeMu      sync.Mutex
@@ -130,7 +141,7 @@ type frame struct {
 	dataMode string
 }
 
-func newL3Conn(addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3Conn, error) {
+func newL3TunnelConn(addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
 	tlsConn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
@@ -142,7 +153,7 @@ func newL3Conn(addr string, info clientInfo, signKeyHex string, onVIP func([]net
 		return nil, fmt.Errorf("invalid sign key: %w", err)
 	}
 
-	c := &l3Conn{
+	c := &l3TunnelConn{
 		tlsConn:      tlsConn,
 		reader:       bufio.NewReader(tlsConn),
 		incoming:     make(chan []byte, 128),
@@ -163,7 +174,7 @@ func newL3Conn(addr string, info clientInfo, signKeyHex string, onVIP func([]net
 	return c, nil
 }
 
-func (c *l3Conn) Close() error {
+func (c *l3TunnelConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
@@ -172,7 +183,7 @@ func (c *l3Conn) Close() error {
 	return err
 }
 
-func (c *l3Conn) readLoop() {
+func (c *l3TunnelConn) readLoop() {
 	for {
 		fr, err := c.readFrame()
 		if err != nil {
@@ -222,7 +233,7 @@ func (c *l3Conn) readLoop() {
 	}
 }
 
-func (c *l3Conn) heartbeatLoop() {
+func (c *l3TunnelConn) heartbeatLoop() {
 	ticker := time.NewTicker(25 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -235,7 +246,7 @@ func (c *l3Conn) heartbeatLoop() {
 	}
 }
 
-func (c *l3Conn) readFrame() (frame, error) {
+func (c *l3TunnelConn) readFrame() (frame, error) {
 	for {
 		header := make([]byte, 2)
 		if _, err := io.ReadFull(c.reader, header); err != nil {
@@ -310,7 +321,7 @@ func (c *l3Conn) readFrame() (frame, error) {
 	}
 }
 
-func (c *l3Conn) ReadPacket() ([]byte, error) {
+func (c *l3TunnelConn) ReadPacket() ([]byte, error) {
 	select {
 	case pkt := <-c.incoming:
 		return pkt, nil
@@ -319,7 +330,7 @@ func (c *l3Conn) ReadPacket() ([]byte, error) {
 	}
 }
 
-func (c *l3Conn) WritePacket(meta packetMeta, appID, nodeGroupID string, pkt []byte) error {
+func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, pkt []byte) error {
 	ct := c.conntrackMgr.getOrCreate(meta.key, appID, nodeGroupID)
 	if err := c.ensureAuth(ct, meta); err != nil {
 		return err
@@ -336,7 +347,7 @@ func (c *l3Conn) WritePacket(meta packetMeta, appID, nodeGroupID string, pkt []b
 	return c.writeFrame(payload)
 }
 
-func (c *l3Conn) ensureAuth(ct *conntrack, meta packetMeta) error {
+func (c *l3TunnelConn) ensureAuth(ct *conntrack, meta packetMeta) error {
 	select {
 	case <-ct.authCh:
 		return ct.authErr
@@ -358,7 +369,7 @@ func (c *l3Conn) ensureAuth(ct *conntrack, meta packetMeta) error {
 	}
 }
 
-func (c *l3Conn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
+func (c *l3TunnelConn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
 	req, err := buildAuthRequest(c.info, c.signKey, meta, ct)
 	if err != nil {
 		return err
@@ -373,7 +384,7 @@ func (c *l3Conn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
 	return c.writeFrame(payload)
 }
 
-func (c *l3Conn) handleAuthResp(status byte, payload []byte) {
+func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 	if status != 0 {
 		c.markAuthErrorFromPayload(payload, fmt.Errorf("auth status %d", status))
 		return
@@ -410,7 +421,7 @@ func (c *l3Conn) handleAuthResp(status byte, payload []byte) {
 	}
 }
 
-func (c *l3Conn) handleSecondVipResp(status byte, payload []byte) {
+func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {
 	if status != 0 {
 		log.DebugPrintf("atrust-l3: second vip status %d", status)
 		return
@@ -424,14 +435,14 @@ func (c *l3Conn) handleSecondVipResp(status byte, payload []byte) {
 	}
 }
 
-func (c *l3Conn) markAuthErrorFromPayload(payload []byte, err error) {
+func (c *l3TunnelConn) markAuthErrorFromPayload(payload []byte, err error) {
 	var resp authResponseIP
 	if json.Unmarshal(payload, &resp) == nil && resp.Data.ConntrackHash != 0 {
 		c.conntrackMgr.markAuth(resp.Data.ConntrackHash, "", err)
 	}
 }
 
-func (c *l3Conn) writeFrame(data []byte) error {
+func (c *l3TunnelConn) writeFrame(data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	logFrame("send", data)
@@ -439,7 +450,7 @@ func (c *l3Conn) writeFrame(data []byte) error {
 	return err
 }
 
-func (c *l3Conn) writeRaw(label string, data []byte) error {
+func (c *l3TunnelConn) writeRaw(label string, data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	log.DebugPrintf("atrust-l3: %s len=%d", label, len(data))
@@ -701,7 +712,7 @@ func logFrame(prefix string, data []byte) {
 	log.DebugDumpHex(data)
 }
 
-func (c *l3Conn) authTunnel() error {
+func (c *l3TunnelConn) authTunnel() error {
 	req, err := json.Marshal(authRequestSID{Sid: c.info.sid})
 	if err != nil {
 		return err
@@ -909,13 +920,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func calcXRequestSig(key []byte, data []byte) string {
-	h := hmac.New(sha256.New, key)
-	h.Write(data)
-	sum := h.Sum(nil)
-	return strings.ToUpper(hex.EncodeToString(sum))
-}
-
-func conntrackKey(meta packetMeta) string {
+func connTrackKey(meta packetMeta) string {
 	return fmt.Sprintf("%d:%s:%d-%s:%d", meta.atype, meta.srcIP.String(), meta.srcPort, meta.dstIP.String(), meta.dstPort)
 }

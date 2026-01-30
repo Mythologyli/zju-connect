@@ -1,8 +1,11 @@
 package client
 
 import (
-	"inet.af/netaddr"
+	"context"
+	"io"
 	"net"
+
+	"inet.af/netaddr"
 )
 
 type IPResource struct {
@@ -24,9 +27,14 @@ type DomainResource struct {
 }
 
 type Client interface {
+	IP() (net.IP, error)
 	IPSet() (*netaddr.IPSet, error)
 	IPResources() ([]IPResource, error)
 	DomainResources() (map[string]DomainResource, error)
 	DNSResource() (map[string]net.IP, error)
 	DNSServer() (string, error)
+
+	CanUseTCPTunnel() bool
+	DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error)
+	NewL3Conn() (io.ReadWriteCloser, error)
 }

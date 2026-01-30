@@ -6,6 +6,10 @@ import (
 )
 
 func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+	if s.endpoint.client.CanUseTCPTunnel() {
+		return s.endpoint.client.DialTCP(ctx, addr)
+	}
+
 	return s.endpoint.tcpDialer.Dial("tcp4", addr.String())
 }
 

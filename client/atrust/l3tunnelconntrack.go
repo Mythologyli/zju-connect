@@ -1,4 +1,4 @@
-package atrustl3
+package atrust
 
 import (
 	"sync"

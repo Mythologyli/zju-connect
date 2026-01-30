@@ -1,52 +1,14 @@
-package atrustl3
+package atrust
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 
-	tun "github.com/cxz66666/sing-tun"
-	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
 )
 
-func (s *Stack) Run() {
-	if s.majorGroup != "" {
-		if _, err := s.getConn(s.majorGroup); err != nil {
-			log.Printf("atrust-l3: connect to major node failed: %v", err)
-		}
-	}
-
-	for {
-		buf := make([]byte, MTU+tun.PacketOffset)
-		n, err := s.endpoint.Read(buf)
-		if err != nil {
-			if hook_func.IsTerminal() {
-				return
-			}
-			log.Printf("Error occurred while reading from TUN stack: %v", err)
-			return
-		}
-
-		if n < zctcpip.IPv4PacketMinLength {
-			continue
-		}
-
-		packet := buf[tun.PacketOffset:n]
-		switch ipVersion := packet[0] >> 4; ipVersion {
-		case zctcpip.IPv4Version:
-			if err := s.processIPV4(packet); err != nil {
-				log.DebugPrintf("Error occurred while processing IP packet: %v", err)
-			}
-		default:
-			log.DebugPrintf("unsupport IP version %d", ipVersion)
-		}
-	}
-}
-
-func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
+func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 	protocol := ""
 	port := -1
 	switch packet.Protocol() {
@@ -54,15 +16,6 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 		protocol = "tcp"
 		port = int(zctcpip.TCPPacket(packet.Payload()).DestinationPort())
 	case zctcpip.UDP:
-		udpPacket := zctcpip.UDPPacket(packet.Payload())
-		if s.shouldHijackUDPDns(packet, udpPacket) {
-			newPacket := make(zctcpip.IPv4Packet, len(packet))
-			copy(newPacket, packet)
-			newUdpPacket := zctcpip.UDPPacket(newPacket.Payload())
-			go s.doHijackUDPDns(newPacket, newUdpPacket)
-			return nil
-		}
-
 		protocol = "udp"
 		port = int(zctcpip.UDPPacket(packet.Payload()).DestinationPort())
 	case zctcpip.ICMP:
@@ -71,15 +24,15 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 		return fmt.Errorf("protocol %d not supported, skip", packet.Protocol())
 	}
 
-	for _, resource := range s.ipResources {
+	for _, resource := range t.ipResources {
 		if bytes.Compare(packet.DestinationIP(), resource.IPMin) >= 0 && bytes.Compare(packet.DestinationIP(), resource.IPMax) <= 0 {
 			if resource.Protocol == protocol || resource.Protocol == "all" {
 				if protocol == "icmp" {
-					return s.writePacket(packet, resource.AppID, resource.NodeGroupID)
+					return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
 				}
 
 				if resource.PortMin <= port && port <= resource.PortMax {
-					return s.writePacket(packet, resource.AppID, resource.NodeGroupID)
+					return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
 				}
 			}
 		}
@@ -91,14 +44,14 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 	return fmt.Errorf("no VPN resources found for %s, [%s], skip", packet.DestinationIP(), protocol)
 }
 
-func (s *Stack) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID string) error {
+func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID string) error {
 	meta, err := buildPacketMeta(packet)
 	if err != nil {
 		return err
 	}
-	meta.key = conntrackKey(meta)
+	meta.key = connTrackKey(meta)
 
-	conn, err := s.getConn(nodeGroupID)
+	conn, err := t.getConn(nodeGroupID)
 	if err != nil {
 		return err
 	}
@@ -141,51 +94,6 @@ func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {
 		srcPort: srcPort,
 		dstPort: dstPort,
 	}, nil
-}
-
-func (s *Stack) shouldHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UDPPacket) bool {
-	if udpHeader.DestinationPort() != 53 {
-		return false
-	}
-	return s.resolve.CheckDnsHijack(ipHeader.DestinationIP())
-}
-
-func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UDPPacket) {
-	log.DebugPrintf("hijack dns %s:%d -> %s:%d", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort())
-	msg := dns.Msg{}
-	if err := msg.Unpack(udpHeader.Payload()); err != nil {
-		log.Printf("unpack dns msg error: %v", err)
-		return
-	}
-	resMsg, err := s.resolve.HandleDnsMsg(context.Background(), &msg)
-	if err != nil {
-		log.Printf("hijack dns %s:%d -> %s:%d error: %v", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort(), err)
-		return
-	}
-
-	resByte, err := resMsg.Pack()
-	if err != nil {
-		log.Printf("pack dns msg error: %v", err)
-		return
-	}
-
-	totalLen := int(ipHeader.HeaderLen()) + zctcpip.UDPHeaderSize + len(resByte)
-
-	newPacket := make(zctcpip.IPv4Packet, totalLen)
-	copy(newPacket, ipHeader[:ipHeader.HeaderLen()])
-	newPacket.SetTotalLength(uint16(totalLen))
-	newPacket.SetSourceIP(ipHeader.DestinationIP())
-	newPacket.SetDestinationIP(ipHeader.SourceIP())
-
-	newUDPHeader := zctcpip.UDPPacket(newPacket.Payload())
-	newUDPHeader.SetSourcePort(udpHeader.DestinationPort())
-	newUDPHeader.SetDestinationPort(udpHeader.SourcePort())
-	newUDPHeader.SetLength(zctcpip.UDPHeaderSize + uint16(len(resByte)))
-	copy(newUDPHeader.Payload(), resByte)
-
-	newUDPHeader.ResetChecksum(newPacket.PseudoSum())
-	newPacket.ResetChecksum()
-	_ = s.endpoint.Write(newPacket)
 }
 
 func logPacket(direction string, packet []byte) {

@@ -3,23 +3,23 @@ package tun
 import (
 	"context"
 	"fmt"
-	tun "github.com/cxz66666/sing-tun"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
-	"golang.org/x/sys/unix"
-	"inet.af/netaddr"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"sync"
 	"syscall"
+
+	tun "github.com/cxz66666/sing-tun"
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/log"
+	"golang.org/x/sys/unix"
+	"inet.af/netaddr"
 )
 
 type Endpoint struct {
-	easyConnectClient *easyconnect.Client
+	client client.Client
 
 	ifce      tun.Tun
 	ifceName  string
@@ -85,16 +85,16 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *easyconnect.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
 	s.endpoint = &Endpoint{
-		easyConnectClient: easyConnectClient,
+		client: client,
 	}
 	s.endpoint.ipSetBuilder = netaddr.IPSetBuilder{}
 
-	s.endpoint.ip, err = easyConnectClient.IP()
+	s.endpoint.ip, err = client.IP()
 	if err != nil {
 		return nil, err
 	}

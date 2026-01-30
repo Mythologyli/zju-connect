@@ -24,8 +24,6 @@ import (
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
 	"github.com/mythologyli/zju-connect/stack"
-	atruststack "github.com/mythologyli/zju-connect/stack/atrust"
-	atrustl3 "github.com/mythologyli/zju-connect/stack/atrust-l3"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
@@ -215,51 +213,27 @@ func main() {
 	}
 
 	var vpnStack stack.Stack
-	if conf.Protocol == "easyconnect" {
-		if conf.TUNMode {
-			vpnTUNStack, err := tun.NewStack(vpnClient.(*easyconnectclient.Client), conf.DNSHijack, ipResources)
-			if err != nil {
-				log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
-			}
-
-			if conf.AddRoute && ipSet != nil {
-				for _, prefix := range ipSet.Prefixes() {
-					log.Printf("Add route to %s", prefix.String())
-					_ = vpnTUNStack.AddRoute(prefix.String())
-				}
-			} else if !conf.AddRoute && !conf.DisableZJUConfig {
-				log.Println("Add route to 10.0.0.0/8")
-				_ = vpnTUNStack.AddRoute("10.0.0.0/8")
-			}
-
-			vpnStack = vpnTUNStack
-		} else {
-			vpnStack, err = gvisor.NewStack(vpnClient.(*easyconnectclient.Client))
-			if err != nil {
-				log.Fatalf("gVisor stack setup error: %s", err)
-			}
+	if conf.TUNMode {
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
+		if err != nil {
+			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
+
+		if conf.AddRoute && ipSet != nil {
+			for _, prefix := range ipSet.Prefixes() {
+				log.Printf("Add route to %s", prefix.String())
+				_ = vpnTUNStack.AddRoute(prefix.String())
+			}
+		} else if !conf.AddRoute && !conf.DisableZJUConfig && conf.Protocol == "easyconnect" {
+			log.Println("Add route to 10.0.0.0/8")
+			_ = vpnTUNStack.AddRoute("10.0.0.0/8")
+		}
+
+		vpnStack = vpnTUNStack
 	} else {
-		if conf.TUNMode {
-			vpnTUNStack, err := atrustl3.NewStack(
-				vpnClient.(*atrustclient.Client),
-				conf.DNSHijack,
-				ipResources,
-			)
-			if err != nil {
-				log.Fatalf("aTrust L3 stack setup error, make sure you are root user : %s", err)
-			}
-
-			if conf.AddRoute && ipSet != nil {
-				for _, prefix := range ipSet.Prefixes() {
-					log.Printf("Add route to %s", prefix.String())
-					_ = vpnTUNStack.AddRoute(prefix.String())
-				}
-			}
-
-			vpnStack = vpnTUNStack
-		} else {
-			vpnStack = atruststack.NewStack(vpnClient.(*atrustclient.Client))
+		vpnStack, err = gvisor.NewStack(vpnClient)
+		if err != nil {
+			log.Fatalf("gVisor stack setup error: %s", err)
 		}
 	}
 
@@ -308,10 +282,8 @@ func main() {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
 	if conf.TUNMode {
-		if conf.Protocol == "easyconnect" {
-			clientIP, _ := vpnClient.(*easyconnectclient.Client).IP()
-			go service.ServeDNS(clientIP.String()+":53", localResolver)
-		}
+		clientIP, _ := vpnClient.IP()
+		go service.ServeDNS(clientIP.String()+":53", localResolver)
 	}
 
 	if conf.SocksBind != "" {
