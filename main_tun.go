@@ -30,7 +30,7 @@ import (
 
 var conf configs.Config
 
-const zjuConnectVersion = "0.9.1-tun-only"
+const zjuConnectVersion = "v1.0.0-beta.1-tun-only"
 
 func main() {
 	log.Init()
