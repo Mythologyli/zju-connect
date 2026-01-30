@@ -208,7 +208,6 @@ func (c *Client) parseResource(resource []byte) error {
 		}
 	}
 
-	c.ipSet, _ = ipSetBuilder.IPSet()
 	if clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS != "" {
 		c.dnsServer = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS
 		log.DebugPrintf("Set DNS server: %s", c.dnsServer)
@@ -233,11 +232,24 @@ func (c *Client) parseResource(resource []byte) error {
 					address += ":441"
 				}
 				addressList = append(addressList, address)
+
+				// Remove ip from ipSetBuilder to prevent circular routing
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					continue
+				}
+				ip := net.ParseIP(host)
+				if ip != nil && ip.To4() != nil {
+					ipSetBuilder.Remove(netaddr.MustParseIP(ip.String()))
+					log.DebugPrintf("Remove IP from IP set to prevent circular routing: %s", ip)
+				}
 			}
 		}
 		c.NodeGroups[nodeGroup.ID] = addressList
 		log.DebugPrintf("Node Group ID: %s, Addresses: %v", nodeGroup.ID, addressList)
 	}
+
+	c.ipSet, _ = ipSetBuilder.IPSet()
 
 	return nil
 }
