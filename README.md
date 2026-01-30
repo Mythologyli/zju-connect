@@ -88,7 +88,7 @@
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数
 
-+ `disable-zju-dns`: 禁用 ZJU DNS 改用本地 DNS，一般不需要加此参数
++ `disable-zju-dns`: 禁用远端 DNS 改用本地 DNS，一般不需要加此参数
 
 + `disable-multi-line`: 禁用自动根据延时选择线路。加此参数后，使用 `server` 参数指定的线路
 
@@ -114,9 +114,9 @@
 
 + `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
 
-+ `zju-dns-server`: ZJU DNS 服务器地址，默认为 `10.10.0.21`。设置为 auto 时使用从服务端获取的 DNS 服务器，如果未能获取则禁用 ZJU DNS
++ `zju-dns-server`: 远端 DNS 服务器地址，默认为 `auto`。设置为 auto 时使用从服务端获取的 DNS 服务器，如果未能获取则禁用远端 DNS
 
-+ `secondary-dns-server`: 当使用 ZJU DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
++ `secondary-dns-server`: 当使用远端 DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
 
 + `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
 
@@ -145,7 +145,7 @@
 - [x] SOCKS5 代理服务
 - [x] HTTP 代理服务
 - [x] Shadowsocks 代理服务
-- [x] ZJU DNS 解析
+- [x] 远端 DNS 解析
 - [x] ZJU 规则添加
 - [x] 支持 IPv6 直连
 - [x] DNS 缓存加速

@@ -113,9 +113,9 @@
 
 + `disable-keep-alive`: Disable periodic keep-alive, generally no need to add this argument
 
-+ `zju-dns-server`: ZJU DNS server address, default is `10.10.0.21`. Set to `auto` to use the DNS server obtained from the server, and disable ZJU DNS if it fails to obtain
++ `zju-dns-server`: Remote DNS server address, default is `auto`. Set to `auto` to use the DNS server obtained from the server, and disable remote DNS if it fails to obtain
 
-+ `secondary-dns-server`: Standby DNS server used when ZJU DNS server cannot be used, default is `114.114.114.114`. Leave blank to use the system default DNS, but must be set when `dns-hijack` is enabled
++ `secondary-dns-server`: Standby DNS server used when remote DNS server cannot be used, default is `114.114.114.114`. Leave blank to use the system default DNS, but must be set when `dns-hijack` is enabled
 
 + `dns-server-bind`: DNS server listening address, default is empty to disable. For example, set to `127.0.0.1:53`, then you can send DNS requests to `127.0.0.1:53`
 
@@ -144,7 +144,7 @@
 - [x] SOCKS5 proxy service
 - [x] HTTP proxy service
 - [x] Shadowsocks proxy service
-- [x] ZJU DNS resolution
+- [x] Remote DNS resolution
 - [x] ZJU rules addition
 - [x] Support IPv6 direct connection
 - [x] DNS cache acceleration

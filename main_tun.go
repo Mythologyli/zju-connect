@@ -226,27 +226,27 @@ func main() {
 		_ = vpnStack.AddRoute("10.0.0.0/8")
 	}
 
-	useZJUDNS := !conf.DisableZJUDNS
-	zjuDNSServer := conf.ZJUDNSServer
-	if useZJUDNS && zjuDNSServer == "auto" {
-		zjuDNSServer, err = vpnClient.DNSServer()
+	useRemoteDNS := !conf.DisableRemoteDNS
+	remoteDNSServer := conf.RemoteDNSServer
+	if useRemoteDNS && remoteDNSServer == "auto" {
+		remoteDNSServer, err = vpnClient.DNSServer()
 		if err != nil {
-			useZJUDNS = false
-			zjuDNSServer = "10.10.0.21"
-			log.Println("No DNS server provided by server. Disable ZJU DNS")
+			useRemoteDNS = false
+			remoteDNSServer = "10.10.0.21"
+			log.Println("No DNS server provided by server. Disable remote DNS")
 		} else {
-			log.Printf("Use DNS server %s provided by server", zjuDNSServer)
+			log.Printf("Use DNS server %s provided by server", remoteDNSServer)
 		}
 	}
 
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
-		zjuDNSServer,
+		remoteDNSServer,
 		conf.SecondaryDNSServer,
 		conf.DNSTTL,
 		domainResources,
 		dnsResource,
-		useZJUDNS,
+		useRemoteDNS,
 	)
 
 	for _, customDns := range conf.CustomDNSList {
@@ -257,7 +257,7 @@ func main() {
 		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
 		log.Printf("Add custom DNS: %s -> %s\n", customDns.HostName, customDns.IP)
 	}
-	localResolver := service.NewDnsServer(vpnResolver, []string{zjuDNSServer, conf.SecondaryDNSServer})
+	localResolver := service.NewDnsServer(vpnResolver, []string{remoteDNSServer, conf.SecondaryDNSServer})
 	vpnStack.SetupResolve(localResolver)
 
 	go vpnStack.Run()
@@ -296,8 +296,8 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if !useZJUDNS {
-			log.Println("Keep alive is disabled because ZJU DNS is disabled")
+		if !useRemoteDNS {
+			log.Println("Keep alive is disabled because remote DNS is disabled")
 		} else {
 			go service.KeepAlive(vpnResolver)
 		}

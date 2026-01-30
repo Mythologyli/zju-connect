@@ -3,14 +3,15 @@ package resolve
 import (
 	"context"
 	"errors"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
-	"github.com/patrickmn/go-cache"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/stack"
+	"github.com/patrickmn/go-cache"
 )
 
 type Resolver struct {
@@ -83,7 +84,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 					if ips, err = r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 						resolveLock.Unlock()
 						// All remote DNS failed, so we keep do nothing but use secondary dns
-						log.Printf("Resolve IPv4 addr failed using ZJU UDP/TCP DNS: " + host + ", using secondary DNS instead")
+						log.Printf("Resolve IPv4 addr failed using remote UDP/TCP DNS: " + host + ", using secondary DNS instead")
 						return r.ResolveWithSecondaryDNS(ctx, host)
 					} else {
 						r.tcpLock.Lock()
@@ -108,7 +109,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 				// Only try tcp and secondary DNS
 				if ips, err := r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 					resolveLock.Unlock()
-					log.Printf("Resolve IPv4 addr failed using ZJU TCP DNS: " + host + ", using secondary DNS instead")
+					log.Printf("Resolve IPv4 addr failed using remote TCP DNS: " + host + ", using secondary DNS instead")
 					return r.ResolveWithSecondaryDNS(ctx, host)
 				} else {
 					r.setDNSCache(host, ips[0])

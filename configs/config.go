@@ -16,9 +16,9 @@ type (
 		ShadowsocksURL     string
 		DialDirectProxy    string
 		DisableZJUConfig   bool
-		DisableZJUDNS      bool
+		DisableRemoteDNS   bool
 		DNSTTL             uint64
-		ZJUDNSServer       string
+		RemoteDNSServer    string
 		SecondaryDNSServer string
 		DNSServerBind      string
 		CustomDNSList      []SingleCustomDNS
@@ -79,7 +79,7 @@ type (
 		DisableServerConfig     *bool                      `toml:"disable_server_config"`
 		SkipDomainResource      *bool                      `toml:"skip_domain_resource"`
 		DisableZJUConfig        *bool                      `toml:"disable_zju_config"`
-		DisableZJUDNS           *bool                      `toml:"disable_zju_dns"`
+		DisableRemoteDNS        *bool                      `toml:"disable_zju_dns"` // TODO: rename to disable_remote_dns
 		DisableMultiLine        *bool                      `toml:"disable_multi_line"`
 		ProxyAll                *bool                      `toml:"proxy_all"`
 		SocksBind               *string                    `toml:"socks_bind"`
@@ -93,7 +93,7 @@ type (
 		AddRoute                *bool                      `toml:"add_route"`
 		DNSTTL                  *uint64                    `toml:"dns_ttl"`
 		DisableKeepAlive        *bool                      `toml:"disable_keep_alive"`
-		ZJUDNSServer            *string                    `toml:"zju_dns_server"`
+		RemoteDNSServer         *string                    `toml:"zju_dns_server"` // TODO: rename to remote_dns_server
 		SecondaryDNSServer      *string                    `toml:"secondary_dns_server"`
 		DNSServerBind           *string                    `toml:"dns_server_bind"`
 		DNSHijack               *bool                      `toml:"dns_hijack"`
