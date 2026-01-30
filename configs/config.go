@@ -48,7 +48,6 @@ type (
 		CasTicket      string
 		SID            string
 		DeviceID       string
-		ConnectionID   string
 		SignKey        string
 		ResourceFile   string
 	}
@@ -107,7 +106,6 @@ type (
 		CasTicket           *string                    `toml:"cas_ticket"`
 		SID                 *string                    `toml:"sid"`
 		DeviceID            *string                    `toml:"device_id"`
-		ConnectionID        *string                    `toml:"connection_id"`
 		SignKey             *string                    `toml:"sign_key"`
 		ResourceFile        *string                    `toml:"resource_file"`
 	}

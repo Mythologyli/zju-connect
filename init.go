@@ -69,7 +69,6 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.CasTicket = getTOMLVal(confTOML.CasTicket, "")
 	conf.SID = getTOMLVal(confTOML.SID, "")
 	conf.DeviceID = getTOMLVal(confTOML.DeviceID, "")
-	conf.ConnectionID = getTOMLVal(confTOML.ConnectionID, "")
 	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
 	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 
@@ -164,7 +163,6 @@ func init() {
 	flag.StringVar(&conf.CasTicket, "cas-ticket", "", "aTrust CAS Ticket (optional, interactive mode if not set)")
 	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")
 	flag.StringVar(&conf.DeviceID, "device-id", "", "aTrust Device ID (mostly for debug usage)")
-	flag.StringVar(&conf.ConnectionID, "connection-id", "", "aTrust Connection ID (mostly for debug usage)")
 	flag.StringVar(&conf.SignKey, "sign-key", "", "aTrust Sign Key (mostly for debug usage)")
 	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")

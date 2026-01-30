@@ -43,13 +43,12 @@ type Client struct {
 	l3Tunnel *L3Tunnel
 }
 
-func NewClient(username, sid, deviceID, connectionID, signKey string) *Client {
+func NewClient(username, sid, deviceID, signKey string) *Client {
 	return &Client{
-		Username:     username,
-		SID:          sid,
-		DeviceID:     deviceID,
-		ConnectionID: connectionID,
-		SignKey:      signKey,
+		Username: username,
+		SID:      sid,
+		DeviceID: deviceID,
+		SignKey:  signKey,
 	}
 }
 
@@ -135,9 +134,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
-		if c.ConnectionID == "" {
-			c.ConnectionID = randHex(32)
-		}
+		c.ConnectionID = buildConnectionID(c.DeviceID)
 		if c.SignKey == "" {
 			c.SignKey = randHex(64)
 		}

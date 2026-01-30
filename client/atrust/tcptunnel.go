@@ -193,9 +193,6 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
-
-	connectionId := c.ConnectionID + "-" + randUint64()
-
 	procName := "google-chrome-stable"
 	procPath := "/usr/bin/google-chrome-stable"
 	if addr.Port == 22 {
@@ -219,7 +216,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 
 	msg := fmt.Sprintf(
 		`{"sid":"%s","appId":"%s","url":"tcp://%s","deviceId":"%s","connectionId":"%s","procHash":"%s","userName":"%s","rcAppliedInfo":0,"lang":"en-US","destAddr":"%s","env":{"application":{"runtime":{"process":{"name":"%s","digital_signature":"TrustAppClosed","platform":"Linux","fingerprint":"%s","description":"TrustAppClosed","path":"%s","version":"TrustAppClosed","security_env":"normal"},"process_trusted":"TRUSTED"}}},"xRequestSig":""}`,
-		c.SID, appID, destAddr, c.DeviceID, connectionId, procHash, c.Username, destAddr, procName, procHash, procPath,
+		c.SID, appID, destAddr, c.DeviceID, c.ConnectionID, procHash, c.Username, destAddr, procName, procHash, procPath,
 	)
 	signKeyBytes, err := hex.DecodeString(c.SignKey)
 	if err != nil {
