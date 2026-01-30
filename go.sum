@@ -8,8 +8,6 @@ github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc h1:biVzkmvwrH8
 github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/cloudflare/circl v1.5.0 h1:hxIWksrX6XN5a1L2TI/h53AGPhNHoUBo+TD1ms9+pys=
 github.com/cloudflare/circl v1.5.0/go.mod h1:uddAzsPgqdMAYatqJ0lsjX1oECcQLIlRpzZh3pJrofs=
-github.com/cloverstd/tcping v0.1.1 h1:3Yp9nvSDI7Z63zoVQDJzVk1PUczrF9tJoOrKGV30iOk=
-github.com/cloverstd/tcping v0.1.1/go.mod h1:NYXTrTDwlwuOKQ0vwksUVUbIr0sxDDsf1J6aFpScCBo=
 github.com/containers/winquit v1.1.0 h1:jArun04BNDQvt2W0Y78kh9TazN2EIEMG5Im6/JY7+pE=
 github.com/containers/winquit v1.1.0/go.mod h1:PsPeZlnbkmGGIToMPHF1zhWjBUkd8aHjMOr/vFcPxw8=
 github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292 h1:ualmTq9VM4rYWNYgr7/9Pg6SHz1uXWHKmI2Ufd8sEQY=

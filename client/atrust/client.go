@@ -128,7 +128,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return c.l3Tunnel.NewL3Conn()
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
 	c.serverAddress = serverAddress
 
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
@@ -200,6 +200,10 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	c.l3Tunnel, err = NewL3Tunnel(c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L3 tunnel: %v", err)
+	}
+
+	if updateBestNodesInterval > 0 {
+		go c.updateBestNodes(updateBestNodesInterval)
 	}
 
 	return authData, nil

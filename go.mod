@@ -9,7 +9,6 @@ require github.com/refraction-networking/utls v1.6.7
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/beevik/etree v1.5.0
-	github.com/cloverstd/tcping v0.1.1
 	github.com/containers/winquit v1.1.0
 	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
 	github.com/miekg/dns v1.1.63

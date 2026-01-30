@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloverstd/tcping/ping"
+	"github.com/mythologyli/zju-connect/internal/ping"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -14,7 +14,7 @@ const pingNum = 3
 func getBestNodes(nodeGroups map[string][]string) map[string]string {
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
-		if len(nodes) > 0 {
+		if len(nodes) > 1 {
 			var pingList []ping.TCPing
 			var chList []<-chan struct{}
 
@@ -67,8 +67,21 @@ func getBestNodes(nodeGroups map[string][]string) map[string]string {
 				log.Printf("No reachable node in group %s, using the first node", group)
 				bestNodes[group] = nodes[0]
 			}
+		} else if len(nodes) == 1 {
+			bestNodes[group] = nodes[0]
 		}
 	}
 
 	return bestNodes
+}
+
+func (c *Client) updateBestNodes(updateBestNodesInterval int) {
+	for {
+		time.Sleep(time.Duration(updateBestNodesInterval) * time.Second)
+
+		bestNodes := getBestNodes(c.NodeGroups)
+		c.BestNodesRWMutex.Lock()
+		c.BestNodes = bestNodes
+		c.BestNodesRWMutex.Unlock()
+	}
 }

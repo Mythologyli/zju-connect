@@ -124,6 +124,7 @@ func main() {
 			conf.CasTicket,
 			clientData,
 			resourceData,
+			conf.UpdateBestNodesInterval,
 		)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
