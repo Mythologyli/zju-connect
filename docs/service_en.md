@@ -143,4 +143,4 @@ For OpenWrt system, you can use procd init script to make zju-connect start auto
 
     1. The internal IP range used by ZJU campus network is `10.0.0.0/8`, you may need to remove this IP range from the direct connection list/LAN list of the proxy plugin and add it to the proxy list.
 
-    2. Please make sure that the RVPN server used is directly connected to OpenWrt. If `rvpn.zju.edu.cn` is not configured as a direct connection, this domain name may match the routing rules and other `zju.edu.cn` traffic will be sent to the zju-connect proxy, which will cause network anomalies.
+    2. Please make sure that the RVPN server used is directly connected to OpenWrt. If `rvpn.zju.edu.cn`/`vpn.zju.edu.cn` is not configured as a direct connection, this domain name may match the routing rules and other `zju.edu.cn` traffic will be sent to the zju-connect proxy, which will cause network anomalies.
