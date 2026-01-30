@@ -23,6 +23,10 @@ type (
 		DNSServerBind      string
 		CustomDNSList      []SingleCustomDNS
 		DisableKeepAlive   bool
+		TCPTunnelMode      bool
+		TUNMode            bool
+		AddRoute           bool
+		DNSHijack          bool
 		DebugDump          bool
 
 		// EasyConnect fields
@@ -34,9 +38,6 @@ type (
 		DisableMultiLine    bool
 		ProxyAll            bool
 		CustomProxyDomain   []string
-		TUNMode             bool
-		AddRoute            bool
-		DNSHijack           bool
 		TwfID               string
 
 		// aTrust fields
@@ -86,6 +87,7 @@ type (
 		HTTPBind            *string                    `toml:"http_bind"`
 		ShadowsocksURL      *string                    `toml:"shadowsocks_url"`
 		DialDirectProxy     *string                    `toml:"dial_direct_proxy"`
+		TCPTunnelMode       *bool                      `toml:"tcp_tunnel_mode"`
 		TUNMode             *bool                      `toml:"tun_mode"`
 		AddRoute            *bool                      `toml:"add_route"`
 		DNSTTL              *uint64                    `toml:"dns_ttl"`

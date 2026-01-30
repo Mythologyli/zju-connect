@@ -25,6 +25,7 @@ import (
 	"github.com/mythologyli/zju-connect/service"
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
+	"github.com/mythologyli/zju-connect/stack/tcptunnel"
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
@@ -213,7 +214,12 @@ func main() {
 	}
 
 	var vpnStack stack.Stack
-	if conf.TUNMode {
+	if conf.TCPTunnelMode {
+		vpnStack, err = tcptunnel.NewStack(vpnClient)
+		if err != nil {
+			log.Fatalf("TCP Tunnel stack setup error: %s", err)
+		}
+	} else if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
 		if err != nil {
 			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
