@@ -123,3 +123,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || 'nightly' }} zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+
+  nightly:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move nightly tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly
+          git push origin nightly --force
