@@ -112,7 +112,6 @@ jobs:
           path: build_assets/*
 
       - name: Create ZIP archive
-        if: github.event_name == 'release'
         run: |
           pushd build_assets || exit 1
           zip -9vr ../zju-connect-$ASSET_NAME.zip .
@@ -128,6 +127,9 @@ jobs:
     if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v3
+
       - name: Move nightly tag
         run: |
           git config user.name "github-actions[bot]"
