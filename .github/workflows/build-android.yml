@@ -76,15 +76,15 @@ jobs:
           path: build_assets/*
 
       - name: Create ZIP archive
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         run: |
           pushd build_assets || exit 1
           zip -9vr ../zju-connect-android-aar.zip .
           popd || exit 1
 
       - name: Upload release binary
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} zju-connect-android-aar.zip
+          gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || 'nightly' }} zju-connect-android-aar.zip
