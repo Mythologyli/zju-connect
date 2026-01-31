@@ -56,7 +56,7 @@ func checkBindPortLegal(ctx context.Context, config configs.Config) error {
 		if len(addrStr) != 0 {
 			addr, err := net.ResolveTCPAddr("tcp", addrStr)
 			if err != nil || addr.Port == 0 {
-				return errors.New(fmt.Sprintf("配置项中 %s 填写错误，请参考Readme中填写", addr))
+				return errors.New(fmt.Sprintf("the value for %s in the config is incorrect. Please refer to the README for the correct format", addr))
 			}
 			checkTCPPorts = append(checkTCPPorts, uint32(addr.Port))
 		}
@@ -66,7 +66,7 @@ func checkBindPortLegal(ctx context.Context, config configs.Config) error {
 		if len(addrStr) != 0 {
 			addr, err := net.ResolveUDPAddr("udp", addrStr)
 			if err != nil || addr.Port == 0 {
-				return errors.New(fmt.Sprintf("配置项中 %s 填写错误，请参考Readme中填写", addr))
+				return errors.New(fmt.Sprintf("the value for %s in the config is incorrect. Please refer to the README for the correct format", addr))
 			}
 			checkUDPPorts = append(checkUDPPorts, uint32(addr.Port))
 		}
@@ -89,7 +89,7 @@ func checkBindPortLegal(ctx context.Context, config configs.Config) error {
 				// darwin "*" means "0.0.0.0"
 				if checkPort == conn.Laddr.Port && (conn.Laddr.IP == "::" || conn.Laddr.IP == "*" ||
 					conn.Laddr.IP == "0.0.0.0" || conn.Laddr.IP == "127.0.0.1") {
-					return errors.New(fmt.Sprintf("%s端口%s已经被进程%d占用，请更换端口或结束占用该端口的进程", kind, conn.Laddr.String(), conn.Pid))
+					return errors.New(fmt.Sprintf("%s port %s is already in use by process %d. Please choose a different port or terminate the existing process", kind, conn.Laddr.String(), conn.Pid))
 				}
 			}
 		}

@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"strings"
 
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 )
@@ -51,9 +54,21 @@ func ServeTCPForwarding(stack stack.Stack, bindAddress string, remoteAddress str
 
 	log.Printf("TCP port forwarding: %s -> %s", bindAddress, remoteAddress)
 
+	hook_func.RegisterTerminalFunc("CloseTCPForwardingPort", func(ctx context.Context) error {
+		log.Println("Closing TCP forwarding port...")
+		if err := ln.Close(); err != nil {
+			return fmt.Errorf("close TCP forwarding listener failed: %w", err)
+		}
+		return nil
+	})
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Println("TCP forwarding port closed")
+				return
+			}
 			panic(err)
 		}
 

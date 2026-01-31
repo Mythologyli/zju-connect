@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 )
@@ -216,5 +217,17 @@ func ServeUDPForwarding(stack stack.Stack, bindAddress string, remoteAddress str
 	log.Printf("UDP port forwarding: %s -> %s", bindAddress, remoteAddress)
 
 	udpForward := newUDPForward(stack, bindAddress, remoteAddress)
+
+	hook_func.RegisterTerminalFunc("CloseUDPForwardingPort", func(ctx context.Context) error {
+		log.Println("Closing UDP forwarding port...")
+
+		udpForward.closed = true
+		if err := udpForward.listenerConn.Close(); err != nil {
+			return fmt.Errorf("close UDP forwarding listener failed: %w", err)
+		}
+
+		return nil
+	})
+
 	udpForward.startUDPForward()
 }

@@ -22,7 +22,7 @@ func ListNetworkServices() ([]string, error) {
 
 	lines := strings.Split(string(output), "\n")
 	var services []string
-	for _, line := range lines[1:] { // 跳过第一行标题
+	for _, line := range lines[1:] { // Skip the first header line
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "*") {
 			services = append(services, line)
@@ -75,7 +75,7 @@ func init() {
 		if config.TUNMode {
 			current, _ := user.Current()
 			if current.Uid != "0" {
-				return errors.New("请使用sudo运行TUN模式")
+				return errors.New("run TUN mode using sudo to grant necessary permissions")
 			}
 		}
 		return nil
