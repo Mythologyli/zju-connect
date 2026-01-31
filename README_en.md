@@ -67,17 +67,19 @@
 
 [Link](docs/docker_en.md)
 
-### ⚠️ Warning
+### Warning
 
 1. When using other proxy tools with TUN mode enabled and zju-connect as a downstream proxy, please be sure to provide the correct network diversion rules, refer to [this issue](https://github.com/Mythologyli/zju-connect/issues/57)
 
-### ⚠️ TUN mode precautions
+### TUN mode precautions
 
 1. Need to run with administrator privileges
 
 2. Windows system needs to go to [Wintun official website](https://www.wintun.net) to download `wintun.dll` and place it in the same directory as the executable file
 
 3. To ensure that domains are resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
+
+4. When using the aTrust protocol, direct TCP traffic involving domain names via the TUN network interface may encounter errors because TUN mode does not implement Fake IP. Please attempt to route this TCP traffic through SOCKS5/HTTP proxies instead.
 
 ### Arguments
 
@@ -171,10 +173,6 @@
 + `device-id`: aTrust device ID, for debugging purposes, generally no need to add this argument.
 + `sign-key`: aTrust signature key, for debugging purposes, generally no need to add this argument.
 + `resource-file`: aTrust resource file, for debugging purposes, generally no need to add this argument.
-
-### TUN Mode Precautions
-
-When using the aTrust protocol, direct TCP traffic involving domain names via the TUN network interface may encounter errors because TUN mode does not implement Fake IP. Please attempt to route this TCP traffic through SOCKS5/HTTP proxies instead.
 
 ### Schedule
 

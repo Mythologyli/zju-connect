@@ -70,17 +70,19 @@
 
 [链接](docs/docker.md)
 
-### ⚠️ 警告
+### 警告
 
 1. 当使用其他开启了 TUN 模式的代理工具，同时配合 zju-connect 作为下游代理时，请注意务必提供正确的分流规则，参考[此 issue](https://github.com/Mythologyli/zju-connect/issues/57)
 
-### ⚠️ TUN 模式注意事项
+### TUN 模式注意事项
 
 1. 需要管理员权限运行
 
 2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
 
 3. 为保证域名解析正确，建议配置 `dns-hijack` 劫持系统 DNS
+
+4. 在使用 aTrust 协议时，由于 TUN 模式并未实现 Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错。请尝试使用 SOCKS5/HTTP 代理这些 TCP 流量
 
 ### 参数说明
 
@@ -114,7 +116,7 @@
 
 + `tcp-tunnel-mode`: TCP 隧道模式，默认为 `false`。启用后仅可通过 TCP 隧道代理 TCP 流量。由于只有 aTrust 支持 TCP 隧道，此模式在 EasyConnect 下无效。启用后会禁用 TUN 模式
 
-+ `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
++ `tun-mode`: TUN 模式（实验性）。请阅读 TUN 模式注意事项
 
 + `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由
 
@@ -185,10 +187,6 @@
 + `sign-key`: aTrust 签名密钥，调试用途，一般不需要加此参数
 
 + `resource-file`: aTrust 资源文件，调试用途，一般不需要加此参数
-
-### TUN 模式注意事项
-
-在使用 aTrust 协议时，由于 TUN 模式并未实现 Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错。请尝试使用 SOCKS5/HTTP 代理这些 TCP 流量。
 
 ### 计划表
 
