@@ -1,24 +1,17 @@
-username = "username"
-password = "password"
-totp_secret = ""
-cert_file = ""
-cert_password = ""
-
-# Advanced settings
+protocol = "easyconnect" # "easyconnect" or "anyconnect"
 server_address = "rvpn.zju.edu.cn"
 server_port = 443
-disable_server_config = false
-skip_domain_resource = false
+username = "username"
+password = "password"
 disable_zju_config = false
 disable_zju_dns = false
-disable_multi_line = false
-proxy_all = false
 socks_bind = ":1080"
 socks_user = ""
 socks_passwd = ""
 http_bind = ":1081"
 shadowsocks_url = "" # "ss://aes-128-gcm:password@:1082"
 dial_direct_proxy = "" # "http://127.0.0.1:7890" or "socks://127.0.0.1:7890"
+tcp_tunnel_mode = false
 tun_mode = false
 add_route = false
 dns_ttl = 3600
@@ -41,7 +34,30 @@ custom_dns = [
 #    { host_name = "www.cc98.org", ip = "10.10.98.98"}
 ]
 
+
+# EasyConnect specific settings
+totp_secret = ""
+cert_file = ""
+cert_password = ""
+disable_server_config = false
+skip_domain_resource = false
+disable_multi_line = false
+proxy_all = false
 custom_proxy_domain = [
 #    "science.org",
 #    "nature.com"
 ]
+
+
+# aTrust specific settings
+auth_type = "auth/psw"
+login_domain = "Radius"
+client_data_file = "client_data.json"
+graph_code_file = "graph_code.jpg"
+cas_ticket = ""
+phone = ""
+update_best_nodes_interval = 300
+sid = ""
+device_id = ""
+sign_key = ""
+resource_file = ""
