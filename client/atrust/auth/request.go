@@ -203,7 +203,7 @@ func (s *Session) authSms(authId string) error {
 	}
 	log.DebugPrintf("Parsed send sms: %+v", re)
 
-	if re.Code != 0 {
+	if re.Code != 0 && re.Code != 75500401 {
 		log.Printf("authSms failed with code %d: %s", re.Code, re.Message)
 		return fmt.Errorf("authSms failed with code %d: %s", re.Code, re.Message)
 	}
