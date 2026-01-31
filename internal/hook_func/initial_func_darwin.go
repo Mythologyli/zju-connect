@@ -80,7 +80,7 @@ func init() {
 		}
 		return nil
 	})
-	RegisterInitialFunc("check bind port", checkBindPortLegal)
+	//RegisterInitialFunc("check bind port", checkBindPortLegal) // TODO: figure out whether to check port or not
 	RegisterInitialFunc("set dns server", func(ctx context.Context, config configs.Config) error {
 		services, err := ListNetworkServices()
 		if err != nil {
