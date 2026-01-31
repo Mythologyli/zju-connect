@@ -301,5 +301,8 @@ func init() {
 	if conf.Protocol == "atrust" && conf.ServerAddress == "rvpn.zju.edu.cn" {
 		fmt.Println("ZJU Connect: set default aTrust server address to vpn.zju.edu.cn")
 		conf.ServerAddress = "vpn.zju.edu.cn"
+	} else if conf.Protocol == "easyconnect" && conf.ServerAddress == "vpn.zju.edu.cn" {
+		fmt.Println("ZJU Connect: set default EasyConnect server address to rvpn.zju.edu.cn")
+		conf.ServerAddress = "rvpn.zju.edu.cn"
 	}
 }
