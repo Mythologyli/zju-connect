@@ -15,10 +15,6 @@ permissions: write-all
 
 jobs:
   build:
-    strategy:
-      matrix:
-        build_tag: [ full, tun ]
-
     runs-on: ubuntu-latest
 
     steps:
@@ -56,8 +52,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       # https://github.com/docker/build-push-action
-      - name: Build and push full version
-        if: ${{ matrix.build_tag == 'full' }}
+      - name: Build and push
         uses: docker/build-push-action@v3
         with:
           context: .
@@ -65,17 +60,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            build_tag=${{ matrix.build_tag }}
-            
-      - name: Bulid and push not full version
-        if: ${{ matrix.build_tag != 'full' }}
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.build_tag }}
-          labels: ${{ steps.meta.outputs.labels }}-${{ matrix.build_tag }}
-          build-args: |
-            build_tag=${{ matrix.build_tag }}

@@ -16,6 +16,8 @@ import (
 	"github.com/mythologyli/zju-connect/configs"
 )
 
+const zjuConnectVersion = "1.0.0-beta.1"
+
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 	if valPointer == nil {
 		return defaultVal

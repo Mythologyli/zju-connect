@@ -33,8 +33,6 @@ import (
 
 var conf configs.Config
 
-const zjuConnectVersion = "1.0.0-beta.1"
-
 func main() {
 	log.Init()
 
