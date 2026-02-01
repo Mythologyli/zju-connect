@@ -8,23 +8,27 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
+	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	gvisorstack "gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 const MTU uint32 = 1400
 
 type Stack struct {
-	endpoint    *Endpoint
-	l3Conn      io.ReadWriteCloser
-	resolve     zcdns.LocalServer
-	ipResources []client.IPResource
+	endpoint            *Endpoint
+	tcpListenerEndpoint *TCPListenerEndpoint
+	tcpListenerStack    *gvisorstack.Stack
+	l3Conn              io.ReadWriteCloser
+	resolve             zcdns.LocalServer
+	ipResources         []client.IPResource
 }
 
 func (s *Stack) SetupResolve(r zcdns.LocalServer) {
@@ -32,6 +36,14 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) Run() {
+	if s.endpoint.client.CanUseTCPTunnel() {
+		err := s.CreateTCPListener()
+		if err != nil {
+			panic(err)
+		}
+		s.StartTCPListener()
+	}
+
 	var connErr error
 	s.l3Conn, connErr = s.endpoint.client.NewL3Conn()
 	if connErr != nil {
@@ -150,6 +162,15 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 	if !packet.DestinationIP().IsGlobalUnicast() {
 		return s.endpoint.Write(packet)
 	}
+
+	if s.endpoint.client.CanUseTCPTunnel() {
+		pkt := gvisorstack.NewPacketBuffer(gvisorstack.PacketBufferOptions{
+			Payload: buffer.MakeWithData(packet),
+		})
+		s.tcpListenerEndpoint.dispatcher.DeliverNetworkPacket(ipv4.ProtocolNumber, pkt)
+		return nil
+	}
+
 	n, err := s.l3Conn.Write(packet)
 	if err != nil {
 		panic(err)
