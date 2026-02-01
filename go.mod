@@ -8,8 +8,8 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.6.0
 	github.com/containers/winquit v1.1.0
-	github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292
 	github.com/miekg/dns v1.1.72
+	github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pquerna/otp v1.5.0
 	github.com/refraction-networking/utls v1.8.2

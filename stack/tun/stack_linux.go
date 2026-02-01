@@ -10,7 +10,7 @@ import (
 	"sync"
 	"syscall"
 
-	tun "github.com/cxz66666/sing-tun"
+	tun "github.com/mythologyli/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"

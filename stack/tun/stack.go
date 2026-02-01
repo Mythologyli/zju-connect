@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 
-	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
+	tun "github.com/mythologyli/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/ippool"

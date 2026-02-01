@@ -9,8 +9,6 @@ github.com/boombuler/barcode v1.1.0 h1:ChaYjBR63fr4LFyGn8E8nt7dBSt3MiU3zMOZqFvVk
 github.com/boombuler/barcode v1.1.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/containers/winquit v1.1.0 h1:jArun04BNDQvt2W0Y78kh9TazN2EIEMG5Im6/JY7+pE=
 github.com/containers/winquit v1.1.0/go.mod h1:PsPeZlnbkmGGIToMPHF1zhWjBUkd8aHjMOr/vFcPxw8=
-github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292 h1:ualmTq9VM4rYWNYgr7/9Pg6SHz1uXWHKmI2Ufd8sEQY=
-github.com/cxz66666/sing-tun v0.0.0-20231028191617-2867d9374292/go.mod h1:MBoiGEiPODP6YZko83BH5Nhnp2IqRIclCYNyFdLocWM=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -34,6 +32,8 @@ github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8 h1:hUL81H0Ic/XIDk
 github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8/go.mod h1:8LpS0IJW1VmWzUm3ylb0e2SK5QDm5lO/2qwWLZgRpBU=
 github.com/miekg/dns v1.1.72 h1:vhmr+TF2A3tuoGNkLDFK9zi36F2LS+hKTRW0Uf8kbzI=
 github.com/miekg/dns v1.1.72/go.mod h1:+EuEPhdHOsfk6Wk5TT2CzssZdqkmFhf8r+aVyDEToIs=
+github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7 h1:Ats4/mRTn+9i0NGzMAcL7Oe87YbxVydJZbE2tRFpaSA=
+github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7/go.mod h1:BRgzkZ6ECD7+2P7yldiS0RqYjLgA62eGiA3RvtOyrjo=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
