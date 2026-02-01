@@ -219,7 +219,7 @@ func main() {
 			log.Fatalf("TCP Tunnel stack setup error: %s", err)
 		}
 	} else if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, ipResources)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, conf.FakeIP, ipResources)
 		if err != nil {
 			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
@@ -232,6 +232,10 @@ func main() {
 		} else if !conf.AddRoute && !conf.DisableZJUConfig && conf.Protocol == "easyconnect" {
 			log.Println("Add route to 10.0.0.0/8")
 			_ = vpnTUNStack.AddRoute("10.0.0.0/8")
+		}
+
+		if conf.FakeIP {
+			_ = vpnTUNStack.AddRoute("198.18.0.0/16")
 		}
 
 		vpnStack = vpnTUNStack
@@ -275,6 +279,7 @@ func main() {
 	}
 	localResolver := service.NewDnsServer(vpnResolver, []string{remoteDNSServer, conf.SecondaryDNSServer})
 	vpnStack.SetupResolve(localResolver)
+	vpnStack.SetupIPPool(vpnResolver.IPPool)
 
 	go vpnStack.Run()
 

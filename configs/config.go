@@ -27,6 +27,7 @@ type (
 		TUNMode            bool
 		AddRoute           bool
 		DNSHijack          bool
+		FakeIP             bool
 		DebugDump          bool
 
 		// EasyConnect fields
@@ -97,6 +98,7 @@ type (
 		SecondaryDNSServer      *string                    `toml:"secondary_dns_server"`
 		DNSServerBind           *string                    `toml:"dns_server_bind"`
 		DNSHijack               *bool                      `toml:"dns_hijack"`
+		FakeIP                  *bool                      `toml:"fake_ip"`
 		DebugDump               *bool                      `toml:"debug_dump"`
 		PortForwarding          []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS               []SingleCustomDNSTOML      `toml:"custom_dns"`

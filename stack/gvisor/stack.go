@@ -6,6 +6,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -20,6 +21,7 @@ import (
 type Stack struct {
 	gvisorStack *stack.Stack
 	resolve     zcdns.LocalServer
+	ipPool      *ippool.IPPool[client.DomainResource]
 
 	endpoint *Endpoint
 }
@@ -154,6 +156,10 @@ func NewStack(client client.Client) (*Stack, error) {
 
 func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
+}
+
+func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[client.DomainResource]) {
+	s.ipPool = ipPool
 }
 
 func (s *Stack) Run() {

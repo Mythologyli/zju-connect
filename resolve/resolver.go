@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/patrickmn/go-cache"
@@ -25,6 +26,8 @@ type Resolver struct {
 
 	dnsCache *cache.Cache
 
+	IPPool *ippool.IPPool[client.DomainResource]
+
 	timer  *time.Timer
 	useTCP bool
 	// check to use tcp resolver or udp resolver
@@ -38,6 +41,7 @@ type Resolver struct {
 type contextKey string
 
 var (
+	ContextKeyFakeIP         = contextKey("FAKE_IP")
 	ContextKeyResolveHost    = contextKey("RESOLVE_HOST")
 	ContextKeyDomainResource = contextKey("DOMAIN_RESOURCE")
 )
@@ -49,9 +53,13 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 			resCtx = context.WithValue(resCtx, ContextKeyResolveHost, host)
 		}
 	}()
+	var domainResourceFound = false
+	var domainResource client.DomainResource
 	if r.domainResources != nil {
 		for domain, resource := range r.domainResources {
 			if strings.HasSuffix(host, domain) {
+				domainResourceFound = true
+				domainResource = resource
 				ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
 				log.DebugPrintf("Domain resource found: %s", domain)
 				break
@@ -67,7 +75,21 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	if r.dnsResource != nil {
 		if ip, found := r.dnsResource[host]; found {
 			log.Printf("%s -> %s", host, ip.String())
+			if domainResourceFound {
+				err := r.IPPool.SetIPDomain(ip, host, domainResource)
+				if err != nil {
+					log.DebugPrintf("Set IP err: %s", err)
+				}
+			}
 			return ctx, ip, nil
+		}
+
+		if fakeIPValue := ctx.Value(ContextKeyFakeIP); fakeIPValue != nil {
+			if domainResourceFound {
+				ip := r.IPPool.GenerateIP(host, domainResource)
+				log.Printf("%s -> %s (Fake IP)", host, ip.String())
+				return ctx, ip, nil
+			}
 		}
 	}
 
@@ -228,5 +250,12 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 	}
 	// sleep 10 times ttl
 	go resolver.CleanCache(time.Duration(ttl) * time.Second * 10)
+
+	var err error
+	resolver.IPPool, err = ippool.NewIPPool[client.DomainResource]("198.18.0.0/16")
+	if err != nil {
+		log.Fatalf("Create Fake IP Pool failed: %v", err)
+	}
+
 	return resolver
 }

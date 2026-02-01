@@ -85,10 +85,11 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(client client.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
+	s.fakeIP = fakeIP
 	s.endpoint = &Endpoint{
 		client: client,
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/resolve"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -140,12 +141,21 @@ func (s *Stack) handleInboundConn(lConn net.Conn, targetIP string, targetPort ui
 		_ = lConn.Close()
 	}(lConn)
 
+	domain, resource, ok := s.ipPool.GetDomain(net.ParseIP(targetIP))
+	ctx := context.Background()
+	if ok {
+		log.DebugPrintf("IP to domain %s", domain)
+		ctx = context.WithValue(ctx, resolve.ContextKeyDomainResource, resource)
+		ctx = context.WithValue(ctx, resolve.ContextKeyResolveHost, domain)
+	}
+
 	targetAddr := fmt.Sprintf("%s:%d", targetIP, targetPort)
+	log.Printf("%s -> VPN", targetAddr)
 	addr, err := net.ResolveTCPAddr("tcp", targetAddr)
 	if err != nil {
 		return
 	}
-	remoteConn, err := s.endpoint.client.DialTCP(context.Background(), addr)
+	remoteConn, err := s.endpoint.client.DialTCP(ctx, addr)
 	if err != nil {
 		log.Printf("Error dialing remote TCP %s via tunnel: %v", targetAddr, err)
 		return

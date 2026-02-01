@@ -79,7 +79,7 @@
 
 3. To ensure that domains are resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
 
-4. When using the aTrust protocol, direct TCP traffic involving domain names via the TUN network interface may encounter errors because TUN mode does not implement Fake IP. Please attempt to route this TCP traffic through SOCKS5/HTTP proxies instead.
+4. When using the aTrust protocol, direct TCP traffic involving domain names via the TUN interface may encounter errors if Fake IP is not enabled. It is highly recommended to configure both `dns-hijack` and `fake-ip` to ensure proper traffic routing and resolution.
 
 ### Arguments
 
@@ -128,6 +128,8 @@
 + `dns-server-bind`: DNS server listening address, default is empty (disabled). For example, set to `127.0.0.1:53`, then you can send DNS requests to `127.0.0.1:53`
 
 + `dns-hijack`: Hijack DNS requests when TUN mode is enabled, it's recommended to add this argument when using TUN mode
+
++ `fake-ip`: Enable Fake IP mode. Works with dns-hijack
 
 + `debug-dump`: Whether to enable debugging, generally no need to add this argument
 
@@ -198,10 +200,9 @@
 - [x] TOTP verification
 - [x] Certificate verification
 - [x] aTrust protocol support
+- [ ] Fake IP
 
 #### To Do
-
-- [ ] Fake IP
 
 ### Contributors
 

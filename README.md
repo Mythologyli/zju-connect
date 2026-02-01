@@ -82,7 +82,7 @@
 
 3. 为保证域名解析正确，建议配置 `dns-hijack` 劫持系统 DNS
 
-4. 在使用 aTrust 协议时，由于 TUN 模式并未实现 Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错。请尝试使用 SOCKS5/HTTP 代理这些 TCP 流量
+4. 在使用 aTrust 协议时，如果不使用 Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错。建议配置 `dns-hijack` 和 `fake-ip`
 
 ### 参数说明
 
@@ -131,6 +131,8 @@
 + `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
 
 + `dns-hijack`: 启用 TUN 模式时劫持 DNS 请求，建议在启用 TUN 模式时添加此参数
+
++ `fake-ip`: 启用 Fake IP 功能，与 dns-hijack 配合使用，建议在启用 TUN 模式时添加此参数
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 
@@ -212,10 +214,9 @@
 - [x] TOTP 验证
 - [x] 证书验证
 - [x] aTrust 协议支持
+- [x] Fake IP
 
 #### To Do
-
-- [ ] Fake IP
 
 ### 贡献者
 

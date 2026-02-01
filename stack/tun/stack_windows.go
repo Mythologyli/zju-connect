@@ -78,9 +78,10 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(client client.Client, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
 	s := &Stack{}
 	s.ipResources = ipResources
+	s.fakeIP = fakeIP
 
 	guid, err := windows.GUIDFromString(guid)
 	if err != nil {
@@ -132,14 +133,21 @@ func NewStack(client client.Client, dnsHijack bool, ipResources []client.IPResou
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
-	if dnsHijack {
-		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", s.endpoint.ip.String())
-	} else {
-		command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
-	}
+	command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)
+	}
+	if dnsHijack {
+		dnsServerIP := s.endpoint.ip.String()
+		if fakeIP {
+			dnsServerIP = "198.18.0.1"
+		}
+		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", dnsServerIP)
+		err = command.Run()
+		if err != nil {
+			log.Printf("Run %s failed: %v", command.String(), err)
+		}
 	}
 
 	hook_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {

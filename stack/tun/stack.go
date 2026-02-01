@@ -12,9 +12,11 @@ import (
 	"github.com/miekg/dns"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/resolve"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	gvisorstack "gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -29,10 +31,16 @@ type Stack struct {
 	l3Conn              io.ReadWriteCloser
 	resolve             zcdns.LocalServer
 	ipResources         []client.IPResource
+	ipPool              *ippool.IPPool[client.DomainResource]
+	fakeIP              bool
 }
 
 func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
+}
+
+func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[client.DomainResource]) {
+	s.ipPool = ipPool
 }
 
 func (s *Stack) Run() {
@@ -129,6 +137,25 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 		protocol = "icmp"
 	default:
 		return fmt.Errorf("protocol %d not supported, skip", packet.Protocol())
+	}
+
+	domain, resource, ok := s.ipPool.GetDomain(packet.DestinationIP())
+	if ok {
+		log.DebugPrintf("IP to domain %s", domain)
+
+		if resource.Protocol == protocol || resource.Protocol == "all" {
+			if protocol == "icmp" {
+				return s.processIPV4ICMP(packet, packet.Payload())
+			}
+
+			if resource.PortMin <= port && port <= resource.PortMax {
+				if protocol == "tcp" {
+					return s.processIPV4TCP(packet, packet.Payload())
+				} else {
+					return s.processIPV4UDP(packet, packet.Payload())
+				}
+			}
+		}
 	}
 
 	for _, resource := range s.ipResources {
@@ -229,7 +256,11 @@ func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UD
 		log.Printf("unpack dns msg error: %v", err)
 		return
 	}
-	resMsg, err := s.resolve.HandleDnsMsg(context.Background(), &msg)
+	ctx := context.Background()
+	if s.fakeIP {
+		ctx = context.WithValue(ctx, resolve.ContextKeyFakeIP, true)
+	}
+	resMsg, err := s.resolve.HandleDnsMsg(ctx, &msg)
 	if err != nil {
 		log.Printf("hijack dns %s:%d -> %s:%d error: %v", ipHeader.SourceIP(), udpHeader.SourcePort(), ipHeader.DestinationIP(), udpHeader.DestinationPort(), err)
 		return

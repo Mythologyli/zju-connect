@@ -64,6 +64,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
+	conf.FakeIP = getTOMLVal(confTOML.FakeIP, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "auth/psw")
 	conf.Phone = getTOMLVal(confTOML.Phone, "")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
@@ -158,7 +159,8 @@ func init() {
 	flag.StringVar(&conf.RemoteDNSServer, "zju-dns-server", "auto", "Remote DNS server address. Set to 'auto' to use remote DNS server provided by server") // TODO: rename to remote-dns-server
 	flag.StringVar(&conf.SecondaryDNSServer, "secondary-dns-server", "114.114.114.114", "Secondary DNS server address. Leave empty to use system default DNS server")
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
-	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect")
+	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect. False by default.")
+	flag.BoolVar(&conf.FakeIP, "fake-ip", false, "Enable Fake IP for DNS hijack")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "auth/psw", "aTrust authentication type (auth/psw, auth/cas, auth/smsCheckCode)")
 	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
