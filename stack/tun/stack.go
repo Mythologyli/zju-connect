@@ -257,7 +257,7 @@ func (s *Stack) doHijackUDPDns(ipHeader zctcpip.IPv4Packet, udpHeader zctcpip.UD
 		return
 	}
 	ctx := context.Background()
-	if s.fakeIP {
+	if s.fakeIP && s.endpoint.client.CanUseTCPTunnel() {
 		ctx = context.WithValue(ctx, resolve.ContextKeyFakeIP, true)
 	}
 	resMsg, err := s.resolve.HandleDnsMsg(ctx, &msg)

@@ -80,9 +80,9 @@
 
 2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
 
-3. 为保证域名解析正确，建议配置 `dns-hijack` 劫持系统 DNS
+3. EasyConnect 协议下的推荐配置为 `-tun-mode -add-route -dns-hijack`
 
-4. 在使用 aTrust 协议时，如果不使用 Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错。建议配置 `dns-hijack` 和 `fake-ip`
+4. aTrust 协议下的推荐配置为 `-tun-mode -add-route -dns-hijack -fake-ip`。在使用 aTrust 协议时，如果不使用 DNS劫持/Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错
 
 ### 参数说明
 
@@ -132,7 +132,7 @@
 
 + `dns-hijack`: 启用 TUN 模式时劫持 DNS 请求，建议在启用 TUN 模式时添加此参数
 
-+ `fake-ip`: 启用 Fake IP 功能，与 dns-hijack 配合使用，建议在启用 TUN 模式时添加此参数
++ `fake-ip`: 启用 Fake IP 功能，与 dns-hijack 配合使用，建议在使用 aTrust 协议并启用 TUN 模式时添加此参数。此参数在 EasyConnect 协议下无效
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 

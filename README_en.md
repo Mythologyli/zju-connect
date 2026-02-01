@@ -77,9 +77,9 @@
 
 2. Windows system needs to go to [Wintun official website](https://www.wintun.net) to download `wintun.dll` and place it in the same directory as the executable file
 
-3. To ensure that domains are resolved correctly, it's recommended to configure `dns-hijack` to hijack the system DNS
+3. EasyConnect Protocol: The recommended configuration is: `-tun-mode -add-route -dns-hijack`
 
-4. When using the aTrust protocol, direct TCP traffic involving domain names via the TUN interface may encounter errors if Fake IP is not enabled. It is highly recommended to configure both `dns-hijack` and `fake-ip` to ensure proper traffic routing and resolution.
+4. aTrust Protocol: The recommended configuration is: `-tun-mode -add-route -dns-hijack -fake-ip`. Note: When using the aTrust protocol, direct TCP traffic involving domain names via the TUN interface may fail if DNS Hijacking or Fake IP is not enabled
 
 ### Arguments
 
@@ -129,7 +129,7 @@
 
 + `dns-hijack`: Hijack DNS requests when TUN mode is enabled, it's recommended to add this argument when using TUN mode
 
-+ `fake-ip`: Enable Fake IP mode. Works with dns-hijack
++ `fake-ip`: Enable Fake IP mode. Works with dns-hijack. Don't enable it if you are using EasyConnect protocol
 
 + `debug-dump`: Whether to enable debugging, generally no need to add this argument
 
