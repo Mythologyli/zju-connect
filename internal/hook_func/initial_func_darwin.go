@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"os/user"
 	"strings"
 
 	"github.com/mythologyli/zju-connect/configs"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 // get all services and skip element contains "*"
@@ -64,12 +64,6 @@ func SetDNSServerWithHook(service, dns string) error {
 }
 
 func init() {
-	RegisterInitialFunc("clean resolver file", func(ctx context.Context, config configs.Config) error {
-		// discard error
-		_ = os.Remove("/etc/resolver/zju.edu.cn")
-		_ = os.Remove("/etc/resolver/cc98.org")
-		return nil
-	})
 	RegisterInitialFunc("check tun mode cap", func(ctx context.Context, config configs.Config) error {
 		// discard error
 		if config.TUNMode {
@@ -80,8 +74,11 @@ func init() {
 		}
 		return nil
 	})
-	//RegisterInitialFunc("check bind port", checkBindPortLegal) // TODO: figure out whether to check port or not
+	RegisterInitialFunc("check bind port", checkBindPortLegal)
 	RegisterInitialFunc("set dns server", func(ctx context.Context, config configs.Config) error {
+		if !config.TUNMode || !config.DNSHijack {
+			return nil
+		}
 		services, err := ListNetworkServices()
 		if err != nil {
 			return err
@@ -89,7 +86,7 @@ func init() {
 
 		for _, service := range services {
 			if err := SetDNSServer(service, "Empty"); err != nil {
-				return err
+				log.Println("DNS setup failed on service:", service, "error:", err)
 			}
 		}
 		return nil
