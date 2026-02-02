@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"os/user"
 	"strings"
@@ -64,6 +65,12 @@ func SetDNSServerWithHook(service, dns string) error {
 }
 
 func init() {
+	RegisterInitialFunc("clean resolver file", func(ctx context.Context, config configs.Config) error {
+		// discard error
+		_ = os.Remove("/etc/resolver/zju.edu.cn")
+		_ = os.Remove("/etc/resolver/cc98.org")
+		return nil
+	})
 	RegisterInitialFunc("check tun mode cap", func(ctx context.Context, config configs.Config) error {
 		// discard error
 		if config.TUNMode {
@@ -74,7 +81,7 @@ func init() {
 		}
 		return nil
 	})
-	RegisterInitialFunc("check bind port", checkBindPortLegal)
+	//RegisterInitialFunc("check bind port", checkBindPortLegal) // TODO: figure out whether to check port or not
 	RegisterInitialFunc("set dns server", func(ctx context.Context, config configs.Config) error {
 		if !config.TUNMode || !config.DNSHijack {
 			return nil
