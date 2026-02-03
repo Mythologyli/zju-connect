@@ -83,7 +83,14 @@ jobs:
       - name: Build
         run: |
           mkdir -p build_assets
-          go build -v -o build_assets/zju-connect -trimpath -ldflags "-s -w -buildid=" .
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION_FLAGS=""
+          else
+            VERSION_FLAGS="-X 'main.CommitID=${SHORT_SHA}'"
+          fi
+          go build -v -o build_assets/zju-connect -trimpath \
+            -ldflags "-s -w -buildid= ${VERSION_FLAGS}" .
 
       - name: Rename Windows zju-connect
         if: matrix.goos == 'windows'

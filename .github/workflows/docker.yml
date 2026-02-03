@@ -51,6 +51,16 @@ jobs:
             type=sha
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
+      - name: Prepare version info
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "commit_flag=" >> $GITHUB_OUTPUT
+          else
+            echo "commit_flag=-X 'main.CommitID=$(git rev-parse --short HEAD)'" >> $GITHUB_OUTPUT
+          fi
+
       # https://github.com/docker/build-push-action
       - name: Build and push
         uses: docker/build-push-action@v3
@@ -60,3 +70,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COMMIT_FLAG=${{ steps.vars.outputs.commit_flag }}
