@@ -94,6 +94,11 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 		if ep.l3Conn != nil {
 			n, err := ep.l3Conn.Write(buf)
 			if err != nil {
+				if errors.Is(err, client.ErrResourceNotFound) {
+					log.Printf("%v", err)
+					continue
+				}
+
 				if hook_func.IsTerminal() {
 					return list.Len(), nil
 				} else {

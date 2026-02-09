@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -21,7 +22,7 @@ func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 	case zctcpip.ICMP:
 		protocol = "icmp"
 	default:
-		return fmt.Errorf("protocol %d not supported, skip", packet.Protocol())
+		return fmt.Errorf("protocol %d: %w", packet.Protocol(), client.ErrResourceNotFound)
 	}
 
 	for _, resource := range t.ipResources {
@@ -39,9 +40,9 @@ func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 	}
 
 	if port != -1 {
-		return fmt.Errorf("no VPN resources found for %s:%d, [%s], skip", packet.DestinationIP(), port, protocol)
+		return fmt.Errorf("%s:%d, [%s]: %w", packet.DestinationIP(), port, protocol, client.ErrResourceNotFound)
 	}
-	return fmt.Errorf("no VPN resources found for %s, [%s], skip", packet.DestinationIP(), protocol)
+	return fmt.Errorf("%s, [%s]: %w", packet.DestinationIP(), protocol, client.ErrResourceNotFound)
 }
 
 func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID string) error {

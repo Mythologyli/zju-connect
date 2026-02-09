@@ -2,11 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 
 	"inet.af/netaddr"
 )
+
+var ErrResourceNotFound = errors.New("resource not found")
 
 type IPResource struct {
 	IPMin       net.IP

@@ -5,6 +5,7 @@ package tun
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -200,6 +201,9 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 
 	n, err := s.l3Conn.Write(packet)
 	if err != nil {
+		if errors.Is(err, client.ErrResourceNotFound) {
+			return err
+		}
 		panic(err)
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
@@ -217,6 +221,9 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 
 	n, err := s.l3Conn.Write(packet)
 	if err != nil {
+		if errors.Is(err, client.ErrResourceNotFound) {
+			return err
+		}
 		panic(err)
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
@@ -233,6 +240,9 @@ func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.IC
 
 	n, err := s.l3Conn.Write(packet)
 	if err != nil {
+		if errors.Is(err, client.ErrResourceNotFound) {
+			return err
+		}
 		panic(err)
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
