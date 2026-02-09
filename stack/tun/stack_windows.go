@@ -26,6 +26,7 @@ type Endpoint struct {
 	readLock  sync.Mutex
 	writeLock sync.Mutex
 	ip        net.IP
+	mtu       int
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
@@ -78,7 +79,7 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource, mtu int) (*Stack, error) {
 	s := &Stack{}
 	s.ipResources = ipResources
 	s.fakeIP = fakeIP
@@ -88,13 +89,14 @@ func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client
 		return nil, err
 	}
 
-	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, int(MTU))
+	dev, err := tun.CreateTUNWithRequestedGUID(interfaceName, &guid, mtu)
 	if err != nil {
 		return nil, err
 	}
 
 	s.endpoint = &Endpoint{
 		client: client,
+		mtu:    mtu,
 	}
 
 	s.endpoint.dev = dev
@@ -119,7 +121,7 @@ func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client
 	}
 
 	// Set MTU to 1400 otherwise error may occur when packets are large
-	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, fmt.Sprintf("mtu=%d", MTU), "store=persistent")
+	command := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", interfaceName, fmt.Sprintf("mtu=%d", mtu), "store=persistent")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)

@@ -24,6 +24,7 @@ type Endpoint struct {
 	readLock  sync.Mutex
 	writeLock sync.Mutex
 	ip        net.IP
+	mtu       int
 
 	tcpDialer *net.Dialer
 	udpDialer *net.Dialer
@@ -55,13 +56,14 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource, mtu int) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
 	s.fakeIP = fakeIP
 	s.endpoint = &Endpoint{
 		client: client,
+		mtu:    mtu,
 	}
 
 	s.endpoint.ip, err = client.IP()
@@ -74,7 +76,7 @@ func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client
 
 	tunOptions := tun.Options{
 		Name: tunName,
-		MTU:  MTU,
+		MTU:  uint32(mtu),
 		Inet4Address: []netip.Prefix{
 			ipPrefix,
 		},

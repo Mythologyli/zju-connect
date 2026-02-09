@@ -29,6 +29,7 @@ type (
 		DNSHijack          bool
 		FakeIP             bool
 		DebugDump          bool
+		MTU                int
 
 		// EasyConnect fields
 		TOTPSecret          string
@@ -114,6 +115,7 @@ type (
 		SignKey                 *string                    `toml:"sign_key"`
 		ResourceFile            *string                    `toml:"resource_file"`
 		UpdateBestNodesInterval *int                       `toml:"update_best_nodes_interval"`
+		MTU                     *int                       `toml:"mtu"`
 	}
 
 	SinglePortForwardingTOML struct {

@@ -27,10 +27,10 @@ type Stack struct {
 }
 
 const NICID tcpip.NICID = 1
-const MTU uint32 = 1400
 
 type Endpoint struct {
 	client client.Client
+	mtu    int
 
 	l3Conn io.ReadWriteCloser
 
@@ -42,11 +42,11 @@ func (ep *Endpoint) ParseHeader(*stack.PacketBuffer) bool {
 }
 
 func (ep *Endpoint) MTU() uint32 {
-	return MTU
+	return uint32(ep.mtu)
 }
 
 func (ep *Endpoint) SetMTU(mtu uint32) {
-	log.Println("don't support change MTU from %d to %d", MTU, mtu)
+	log.Println("don't support change MTU from %d to %d", uint32(ep.mtu), mtu)
 }
 
 func (ep *Endpoint) MaxHeaderLength() uint16 {
@@ -113,7 +113,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 	return list.Len(), nil
 }
 
-func NewStack(client client.Client) (*Stack, error) {
+func NewStack(client client.Client, mtu int) (*Stack, error) {
 	s := &Stack{}
 
 	s.gvisorStack = stack.New(stack.Options{
@@ -124,6 +124,7 @@ func NewStack(client client.Client) (*Stack, error) {
 
 	s.endpoint = &Endpoint{
 		client: client,
+		mtu:    mtu,
 	}
 
 	tcpipErr := s.gvisorStack.CreateNIC(NICID, s.endpoint)
@@ -175,7 +176,7 @@ func (s *Stack) Run() {
 	}
 	// Read from VPN server and send to gVisor stack
 	for {
-		buf := make([]byte, MTU)
+		buf := make([]byte, s.endpoint.mtu)
 		n, err := s.endpoint.l3Conn.Read(buf)
 		if err != nil {
 			if hook_func.IsTerminal() {

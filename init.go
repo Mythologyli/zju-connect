@@ -78,6 +78,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
 	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 	conf.UpdateBestNodesInterval = getTOMLVal(confTOML.UpdateBestNodesInterval, 300)
+	conf.MTU = getTOMLVal(confTOML.MTU, 1400)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -179,6 +180,7 @@ func init() {
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
 	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
+	flag.IntVar(&conf.MTU, "mtu", 1400, "MTU (experimental)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.BoolVar(&atrustAuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")

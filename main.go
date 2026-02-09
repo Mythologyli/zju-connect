@@ -223,7 +223,7 @@ func main() {
 			log.Fatalf("TCP Tunnel stack setup error: %s", err)
 		}
 	} else if conf.TUNMode {
-		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, conf.FakeIP, ipResources)
+		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, conf.FakeIP, ipResources, conf.MTU)
 		if err != nil {
 			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
@@ -244,7 +244,7 @@ func main() {
 
 		vpnStack = vpnTUNStack
 	} else {
-		vpnStack, err = gvisor.NewStack(vpnClient)
+		vpnStack, err = gvisor.NewStack(vpnClient, conf.MTU)
 		if err != nil {
 			log.Fatalf("gVisor stack setup error: %s", err)
 		}

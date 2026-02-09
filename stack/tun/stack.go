@@ -23,8 +23,6 @@ import (
 	gvisorstack "gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-const MTU uint32 = 1400
-
 type Stack struct {
 	endpoint            *Endpoint
 	tcpListenerEndpoint *TCPListenerEndpoint
@@ -61,7 +59,7 @@ func (s *Stack) Run() {
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
-			buf := make([]byte, MTU+tun.PacketOffset)
+			buf := make([]byte, s.endpoint.mtu+tun.PacketOffset)
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
 				panic(err)
@@ -83,7 +81,7 @@ func (s *Stack) Run() {
 
 	// Read from TUN stack and send to VPN server
 	for {
-		buf := make([]byte, MTU+tun.PacketOffset)
+		buf := make([]byte, s.endpoint.mtu+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
 			if hook_func.IsTerminal() {

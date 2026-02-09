@@ -31,10 +31,10 @@ func (ep *TCPListenerEndpoint) ParseHeader(*stack.PacketBuffer) bool {
 	return true
 }
 
-func (ep *TCPListenerEndpoint) MTU() uint32 { return MTU }
+func (ep *TCPListenerEndpoint) MTU() uint32 { return uint32(ep.tunEndpoint.mtu) }
 
 func (ep *TCPListenerEndpoint) SetMTU(mtu uint32) {
-	log.Println("don't support change MTU from %d to %d", MTU, mtu)
+	log.Println("don't support change MTU from %d to %d", uint32(ep.tunEndpoint.mtu), mtu)
 }
 
 func (ep *TCPListenerEndpoint) MaxHeaderLength() uint16 {
