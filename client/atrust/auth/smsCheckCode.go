@@ -74,10 +74,8 @@ func (s *Session) sendSms(phone, loginDomain, graphCheckCode string) (int, error
 		return 0, err
 	}
 	log.DebugPrintf("Parsed sendSms: %+v", re)
-	if re.Code != 0 {
-		log.Printf("sendSms failed with code %d: %s", re.Code, re.Message)
-	} else {
-		log.Printf("sendSms success: %s, interval: %s", re.Data.Tips, re.Data.Interval)
+	if re.Code != 0 || re.Message != "" {
+		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
 	}
 
 	return re.Data.GraphCheckCodeEnable, nil
@@ -115,7 +113,9 @@ func (s *Session) smsCheckCodeImpl(code, phone, loginDomain, graphCheckCode stri
 	log.DebugPrintf("Received smsCheckCode: %s", string(body))
 
 	var re struct {
-		Data struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
 			Ticket               string `json:"ticket"`
 			GraphCheckCodeEnable int    `json:"graphCheckCodeEnable"`
 		} `json:"data"`
@@ -123,6 +123,9 @@ func (s *Session) smsCheckCodeImpl(code, phone, loginDomain, graphCheckCode stri
 	err = json.Unmarshal(body, &re)
 	if err != nil {
 		return 0, err
+	}
+	if re.Code != 0 || re.Message != "" {
+		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
 	}
 	log.DebugPrintf("Parsed smsCheckCode: %+v", re)
 

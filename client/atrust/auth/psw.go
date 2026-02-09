@@ -66,7 +66,9 @@ func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string
 	log.DebugPrintf("Received psw: %s", string(body))
 
 	var re struct {
-		Data struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
 			Ticket               string `json:"ticket"`
 			GraphCheckCodeEnable int    `json:"graphCheckCodeEnable"`
 		} `json:"data"`
@@ -74,6 +76,9 @@ func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string
 	err = json.Unmarshal(body, &re)
 	if err != nil {
 		return 0, err
+	}
+	if re.Code != 0 || re.Message != "" {
+		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
 	}
 	log.DebugPrintf("Parsed psw: %+v", re)
 
