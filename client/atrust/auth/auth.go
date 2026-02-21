@@ -109,26 +109,21 @@ func (s *Session) randSdpId(n ...int) string {
 }
 
 func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCodeFile string) error {
+	const maxAttempts = 5
+
 	graphCheckCodeEnable, err := process("")
 	if err != nil {
 		return err
 	}
 
-	if graphCheckCodeEnable == 1 {
+	for attempt := 1; graphCheckCodeEnable == 1 && attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			log.Printf("Captcha attempt %d/%d", attempt, maxAttempts)
+		}
+
 		imgData, err := s.checkCode()
 		if err != nil {
 			return err
-		}
-
-		if graphCodeFile != "" {
-			err = os.WriteFile(graphCodeFile, imgData, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to write graph code image: %w", err)
-			}
-			log.Printf("Graph check code saved to %s", graphCodeFile)
-		} else {
-			log.Println("Graph check code required, but no file specified to save the image")
-			return fmt.Errorf("graph check code required, but no file specified to save the image")
 		}
 
 		_, _, err = s.authConfigInit()
@@ -136,22 +131,34 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 			return err
 		}
 
-		graphCheckCode := ""
-		log.Print("Please enter the graph check code JSON: ")
-		_, err = fmt.Scanln(&graphCheckCode)
-		if err != nil {
-			return err
+		if graphCodeFile != "" {
+			if writeErr := os.WriteFile(graphCodeFile, imgData, 0644); writeErr != nil {
+				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
+			} else {
+				log.Printf("Graph check code saved to %s", graphCodeFile)
+			}
 		}
+
+		graphCheckCode, err := serveCaptchaInBrowser(imgData, 5*time.Minute)
+		if err != nil {
+			return fmt.Errorf("failed to get captcha input: %w", err)
+		}
+		log.DebugPrintf("graphCheckCode submitted: %s", graphCheckCode)
 
 		graphCheckCodeEnable, err = process(graphCheckCode)
 		if err != nil {
 			return err
 		}
 
-		if graphCheckCodeEnable != 0 {
-			log.Println("Graph check code still required after second login attempt")
-			return fmt.Errorf("graph check code still required after second login attempt")
+		if graphCheckCodeEnable == 0 {
+			return nil
 		}
+
+		log.Printf("Captcha verification failed (attempt %d/%d), retrying with new captcha...", attempt, maxAttempts)
+	}
+
+	if graphCheckCodeEnable != 0 {
+		return fmt.Errorf("captcha verification failed after %d attempts", maxAttempts)
 	}
 	return nil
 }
