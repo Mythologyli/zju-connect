@@ -131,18 +131,26 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 			return err
 		}
 
+		var graphCheckCode string
 		if graphCodeFile != "" {
 			if writeErr := os.WriteFile(graphCodeFile, imgData, 0644); writeErr != nil {
 				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
 			} else {
 				log.Printf("Graph check code saved to %s", graphCodeFile)
 			}
+
+			log.Print("Please enter the graph check code JSON: ")
+			_, err = fmt.Scanln(&graphCheckCode)
+			if err != nil {
+				return err
+			}
+		} else {
+			graphCheckCode, err = serveCaptchaInBrowser(imgData, 5*time.Minute)
+			if err != nil {
+				return fmt.Errorf("failed to get captcha input: %w", err)
+			}
 		}
 
-		graphCheckCode, err := serveCaptchaInBrowser(imgData, 5*time.Minute)
-		if err != nil {
-			return fmt.Errorf("failed to get captcha input: %w", err)
-		}
 		log.DebugPrintf("graphCheckCode submitted: %s", graphCheckCode)
 
 		graphCheckCodeEnable, err = process(graphCheckCode)
