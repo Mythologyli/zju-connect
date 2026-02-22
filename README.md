@@ -54,9 +54,9 @@
 
   其他步骤与 EasyConnect 相同，运行参数请设置为：
 
-  `./zju-connect -protocol atrust -username <上网账户> -password <密码> -graph-code-file graph_code.jpg`
+  `./zju-connect -protocol atrust -username <上网账户> -password <密码> -client-data-file client_data.json`
 
-  之后按照提示操作。在过程中，你可能发现完成图形验证码较为困难。你可以使用 GUI 客户端完成登录后，保存 `client_data.json` 文件，之后运行 `./zju-connect -protocol atrust -username <上网账户> -password <密码> -client-data-file client_data.json`。
+  之后按照提示操作。如果你不希望保存登录状态，可以不填 `-client-data-file` 参数。
 
 + 如果你是非 ZJU 的用户：
 
@@ -172,7 +172,7 @@
 
 + `client-data-file`: 客户端数据文件路径，可用于保存登录状态，避免重复验证
 
-+ `graph-code-file`: 图形验证码文件路径，登录时会将图形验证码保存至该文件
++ `graph-code-file`: 图形验证码文件路径。默认为空。留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
 + `cas-ticket`: CAS 验证票据，默认为空，此时进入交互式验证
 

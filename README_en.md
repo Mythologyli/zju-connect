@@ -51,10 +51,8 @@
 
 + If you are a ZJU user:
   Other steps are the same as the EasyConnect method, but set the running parameters to:
-  `./zju-connect -protocol atrust -username <Account> -password <Password> -graph-code-file graph_code.jpg`
-  Then follow the on-screen prompts.
-
-  During this process, you may find it difficult to complete the graphical CAPTCHA. You can instead use the GUI client to complete the login, save the `client_data.json` file, and then run: `./zju-connect -protocol atrust -username <Account> -password <Password> -client-data-file client_data.json`
+  `./zju-connect -protocol atrust -username <Account> -password <Password> -client-data-file client_data.json`
+  Then follow the on-screen prompts. If you do not want to save the login status, you can omit the `-client-data-file` parameter.
 
 + If you are a non-ZJU user:
   The steps are the same as for ZJU users; please specify the login protocol according to your situation. See the parameter descriptions for details.
@@ -166,7 +164,7 @@
 + `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is `auth/psw`.
 + `login-domain`: Login domain, default is `Radius`.
 + `client-data-file`: Client data file path, used to save login status to avoid repeated verification.
-+ `graph-code-file`: Graphic captcha file path, the captcha will be saved to this file during login.
++ `graph-code-file`: Graphic captcha file path, default is empty. If this left empty. If set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
 + `phone`: Phone number used for SMS verification code login.
 + `update-best-nodes-interval`: Interval for updating the optimal line automatically, in seconds, default is `300`. Set to `0` to disable automatic optimal line selection.
