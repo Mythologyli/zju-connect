@@ -87,23 +87,32 @@ const captchaPageHTML = `<!DOCTYPE html>
   #submitBtn:hover { background: #40a9ff; }
   #submitBtn:disabled { background: #d9d9d9; cursor: not-allowed; }
   .status { margin-top: 12px; font-size: 14px; color: #888; }
-  .debug { margin-top: 8px; font-size: 12px; color: #aaa; font-family: monospace; text-align: left; max-height: 100px; overflow-y: auto; }
+  details.debug-panel { margin-top: 8px; text-align: left; }
+  details.debug-panel > summary { cursor: pointer; color: #999; font-size: 12px; }
+  .debug {
+    margin-top: 6px; height: 100px; overflow-y: auto;
+    font-size: 12px; color: #aaa; white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
   .success { color: #52c41a; font-size: 18px; margin-top: 20px; display: none; }
 </style>
 </head>
 <body>
 <div class="card">
-  <h2>请按顺序点击图中指定的文字</h2>
-  <p class="hint">在验证码图片上依次点击对应文字的位置</p>
+  <h2 id="headline">请按顺序点击图中指定的文字</h2>
+  <p class="hint" id="hint">在验证码图片上依次点击对应文字的位置</p>
   <div class="img-wrap" id="imgWrap">
     <img id="captchaImg" src="/captcha.img" alt="验证码" draggable="false">
   </div>
   <div class="actions">
-    <button type="button" onclick="undoClick()">撤销上一个</button>
-    <button type="button" onclick="clearClicks()">全部清除</button>
+    <button id="undoBtn" type="button" onclick="undoClick()">撤销上一个</button>
+    <button id="clearBtn" type="button" onclick="clearClicks()">全部清除</button>
   </div>
   <p class="status" id="status">已选择 0 个点</p>
-  <div class="debug" id="debug"></div>
+  <details class="debug-panel" id="debugPanel">
+    <summary id="debugSummary">Debug</summary>
+    <pre class="debug" id="debug"></pre>
+  </details>
   <button id="submitBtn" onclick="submitClicks()" disabled>提 交</button>
   <div class="success" id="success">提交成功，可以关闭此页面</div>
 </div>
@@ -111,29 +120,89 @@ const captchaPageHTML = `<!DOCTYPE html>
 var clicks = [];
 var imgWrap = document.getElementById('imgWrap');
 var captchaImg = document.getElementById('captchaImg');
+var statusEl = document.getElementById('status');
+var submitBtn = document.getElementById('submitBtn');
+var debugPanelEl = document.getElementById('debugPanel');
+var debugSummaryEl = document.getElementById('debugSummary');
 var debugEl = document.getElementById('debug');
+var headlineEl = document.getElementById('headline');
+var hintEl = document.getElementById('hint');
+var undoBtnEl = document.getElementById('undoBtn');
+var clearBtnEl = document.getElementById('clearBtn');
+var successEl = document.getElementById('success');
+var isSubmitting = false;
 
-captchaImg.onload = function() {
-  var rect = captchaImg.getBoundingClientRect();
-  debugEl.textContent = 'natural: ' + captchaImg.naturalWidth + 'x' + captchaImg.naturalHeight
-    + ', display: ' + Math.round(rect.width) + 'x' + Math.round(rect.height)
-    + ', dpr: ' + window.devicePixelRatio;
+var I18N = {
+  zh: {
+    title: 'zju-connect 验证码',
+    heading: '请按顺序点击图中指定的文字',
+    hint: '在验证码图片上依次点击对应文字的位置',
+    undo: '撤销上一个', clear: '全部清除',
+    status: function(n) { return '已选择 ' + n + ' 个点'; },
+    submit: '提 交', submitting: '提交中...',
+    success: '提交成功，可以关闭此页面',
+    submitFailed: '提交失败，请重试',
+    networkError: '网络错误，请重试',
+    imgAlt: '验证码',
+    debugSummary: '调试信息'
+  },
+  en: {
+    title: 'zju-connect Captcha',
+    heading: 'Click the specified characters in order',
+    hint: 'Click the matching characters on the captcha image in sequence.',
+    undo: 'Undo', clear: 'Clear',
+    status: function(n) { return 'Selected ' + n + ' point' + (n !== 1 ? 's' : ''); },
+    submit: 'Submit', submitting: 'Submitting...',
+    success: 'Submitted. You may close this page.',
+    submitFailed: 'Submission failed. Please retry.',
+    networkError: 'Network error. Please retry.',
+    imgAlt: 'Captcha',
+    debugSummary: 'Debug'
+  }
 };
 
-captchaImg.addEventListener('click', function(e) {
-  var rect = captchaImg.getBoundingClientRect();
-  var naturalWidth = captchaImg.naturalWidth || Math.round(rect.width);
-  var naturalHeight = captchaImg.naturalHeight || Math.round(rect.height);
-  var displayWidth = rect.width || naturalWidth;
-  var displayHeight = rect.height || naturalHeight;
+var lang = (function() {
+  var l = ((navigator.languages && navigator.languages[0]) || navigator.language || '').toLowerCase();
+  return l.indexOf('zh') === 0 ? 'zh' : 'en';
+})();
 
-  var x = Math.round((e.clientX - rect.left) * naturalWidth / displayWidth);
-  var y = Math.round((e.clientY - rect.top) * naturalHeight / displayHeight);
-  x = Math.max(0, Math.min(naturalWidth - 1, x));
-  y = Math.max(0, Math.min(naturalHeight - 1, y));
+function tr(key) { return (I18N[lang] || I18N.en)[key]; }
+
+function applyLang() {
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.title = tr('title');
+  headlineEl.textContent = tr('heading');
+  hintEl.textContent = tr('hint');
+  undoBtnEl.textContent = tr('undo');
+  clearBtnEl.textContent = tr('clear');
+  captchaImg.alt = tr('imgAlt');
+  debugSummaryEl.textContent = tr('debugSummary');
+  successEl.textContent = tr('success');
+  renderStatus();
+}
+
+function renderStatus() {
+  statusEl.textContent = tr('status')(clicks.length);
+  submitBtn.textContent = isSubmitting ? tr('submitting') : tr('submit');
+  submitBtn.disabled = clicks.length === 0 || isSubmitting;
+}
+
+captchaImg.onload = function() { updateDebug(); };
+
+captchaImg.addEventListener('click', function(e) {
+  if (isSubmitting) return;
+  var rect = captchaImg.getBoundingClientRect();
+  var nw = captchaImg.naturalWidth || Math.round(rect.width);
+  var nh = captchaImg.naturalHeight || Math.round(rect.height);
+  var dw = rect.width || nw;
+  var dh = rect.height || nh;
+
+  var x = Math.max(0, Math.min(nw - 1, Math.round((e.clientX - rect.left) * nw / dw)));
+  var y = Math.max(0, Math.min(nh - 1, Math.round((e.clientY - rect.top) * nh / dh)));
 
   clicks.push({x: x, y: y});
   renderMarkers();
+  renderStatus();
   updateDebug();
 });
 
@@ -145,7 +214,7 @@ function updateDebug() {
   for (var i = 0; i < clicks.length; i++) {
     lines.push((i+1) + ': (' + clicks[i].x + ', ' + clicks[i].y + ')');
   }
-  debugEl.innerHTML = lines.join('<br>');
+  debugEl.textContent = lines.join('\n');
 }
 
 function renderMarkers() {
@@ -153,75 +222,77 @@ function renderMarkers() {
   for (var i = 0; i < old.length; i++) old[i].remove();
 
   var rect = captchaImg.getBoundingClientRect();
-  var naturalWidth = captchaImg.naturalWidth || Math.round(rect.width);
-  var naturalHeight = captchaImg.naturalHeight || Math.round(rect.height);
-  var displayWidth = rect.width || naturalWidth;
-  var displayHeight = rect.height || naturalHeight;
+  var nw = captchaImg.naturalWidth || Math.round(rect.width);
+  var nh = captchaImg.naturalHeight || Math.round(rect.height);
+  var dw = rect.width || nw;
+  var dh = rect.height || nh;
 
   for (var i = 0; i < clicks.length; i++) {
     var m = document.createElement('div');
     m.className = 'marker';
     m.textContent = i + 1;
-    m.style.left = (clicks[i].x * displayWidth / naturalWidth) + 'px';
-    m.style.top = (clicks[i].y * displayHeight / naturalHeight) + 'px';
+    m.style.left = (clicks[i].x * dw / nw) + 'px';
+    m.style.top = (clicks[i].y * dh / nh) + 'px';
     imgWrap.appendChild(m);
   }
-  document.getElementById('status').textContent = '已选择 ' + clicks.length + ' 个点';
-  document.getElementById('submitBtn').disabled = clicks.length === 0;
 }
 
 function undoClick() {
+  if (isSubmitting) return;
   clicks.pop();
   renderMarkers();
+  renderStatus();
   updateDebug();
 }
 
 function clearClicks() {
+  if (isSubmitting) return;
   clicks = [];
   renderMarkers();
+  renderStatus();
   updateDebug();
 }
 
 function submitClicks() {
-  if (clicks.length === 0) return;
+  if (clicks.length === 0 || isSubmitting) return;
   var rect = captchaImg.getBoundingClientRect();
   var width = captchaImg.naturalWidth || Math.round(rect.width);
   var height = captchaImg.naturalHeight || Math.round(rect.height);
   var payload = JSON.stringify({
     coordinates: clicks.map(function(p) { return [p.x, p.y]; }),
-    width: width,
-    height: height
+    width: width, height: height
   });
 
-  var btn = document.getElementById('submitBtn');
-  btn.disabled = true;
-  btn.textContent = '提交中...';
+  isSubmitting = true;
+  renderStatus();
 
   var xhr = new XMLHttpRequest();
   xhr.open('POST', '/submit', true);
   xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
   xhr.onload = function() {
     if (xhr.status === 200) {
-      document.getElementById('imgWrap').style.display = 'none';
+      imgWrap.style.display = 'none';
       document.querySelector('.actions').style.display = 'none';
-      document.getElementById('status').style.display = 'none';
-      btn.style.display = 'none';
-      debugEl.style.display = 'none';
-      document.getElementById('success').style.display = 'block';
+      statusEl.style.display = 'none';
+      submitBtn.style.display = 'none';
+      debugPanelEl.style.display = 'none';
+      successEl.style.display = 'block';
     } else {
-      btn.disabled = false;
-      btn.textContent = '提 交';
-      alert('提交失败，请重试');
+      isSubmitting = false;
+      renderStatus();
+      alert(tr('submitFailed'));
     }
   };
   xhr.onerror = function() {
-    btn.disabled = false;
-    btn.textContent = '提 交';
-    alert('网络错误，请重试');
+    isSubmitting = false;
+    renderStatus();
+    alert(tr('networkError'));
   };
   xhr.send('code=' + encodeURIComponent(payload));
   return false;
 }
+
+applyLang();
 </script>
 </body>
 </html>`
