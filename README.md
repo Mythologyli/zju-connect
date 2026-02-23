@@ -46,6 +46,12 @@
 
   `./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto`
 
+  如果你的服务器需要输入图形验证码，运行参数请尝试设置为：
+
+  `./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto -disable-multi-line -graph-code-file graph_code.jpg`
+
+  登录时会将图片保存至 `graph_code.jpg` 文件，请查看并手动输入验证码。
+
   *详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
 
 ##### 使用 aTrust 协议
@@ -97,6 +103,8 @@
 + `username`: 网络账户。例如：学号
 
 + `password`: 网络账户密码
+
++ `graph-code-file`: 图形验证码文件路径。默认为空。在 aTrust 模式下，留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，非 ZJU 用户可能需要添加此参数
 
@@ -171,8 +179,6 @@
 + `login-domain`: 登录域，默认为 `Radius`
 
 + `client-data-file`: 客户端数据文件路径，可用于保存登录状态，避免重复验证
-
-+ `graph-code-file`: 图形验证码文件路径。默认为空。留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
 + `cas-ticket`: CAS 验证票据，默认为空，此时进入交互式验证
 

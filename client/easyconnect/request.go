@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -30,8 +31,8 @@ var errSMSRequired = errors.New("SMS code required")
 var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
 
-func (c *Client) requestTwfID() error {
-	err := c.loginAuthAndPsw()
+func (c *Client) requestTwfID(graphCodeFile string) error {
+	err := c.loginAuthAndPsw(graphCodeFile)
 	if err != nil {
 		if errors.Is(err, errSMSRequired) {
 			err = c.loginSMS()
@@ -56,7 +57,7 @@ func (c *Client) requestTwfID() error {
 	return nil
 }
 
-func (c *Client) loginAuthAndPsw() error {
+func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	// First we request the TwfID from server
 	addr := "https://" + c.server + "/por/login_auth.csp?apiversion=1"
 	log.Printf("Request: %s", addr)
@@ -123,11 +124,56 @@ func (c *Client) loginAuthAndPsw() error {
 	}
 	encryptedPasswordHex := hex.EncodeToString(encryptedPassword)
 
+	rndImgMatch := regexp.MustCompile(`<RndImg>(.*)</RndImg>`).FindSubmatch(buf.Bytes())[1]
+	rndImg := "0"
+	if rndImgMatch != nil {
+		rndImg = string(rndImgMatch)
+	}
+
+	randCode := ""
+	if rndImg == "1" {
+		addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
+		log.Printf("Request: %s", addr)
+		req, err := http.NewRequest("GET", addr, nil)
+		req.Header.Set("Cookie", "TWFID="+c.twfID)
+		req.Header.Set("User-Agent", "EasyConnect_windows")
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		buf.Reset()
+		_, err = io.Copy(&buf, resp.Body)
+		if err != nil {
+			return err
+		}
+		defer func(Body io.ReadCloser) {
+			_ = Body.Close()
+		}(resp.Body)
+
+		if graphCodeFile != "" {
+			if writeErr := os.WriteFile(graphCodeFile, buf.Bytes(), 0644); writeErr != nil {
+				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
+			} else {
+				log.Printf("Graph check code saved to %s", graphCodeFile)
+			}
+		} else {
+			return errors.New("rand code required, but no graph code file provided")
+		}
+
+		fmt.Print("Please enter rand code: ")
+		_, err = fmt.Scan(&randCode)
+		if err != nil {
+			return err
+		}
+	}
+
 	addr = "https://" + c.server + "/por/login_psw.csp?anti_replay=1&encrypt=1&type=cs"
 	log.Printf("Request: %s", addr)
 
 	form := url.Values{
-		"svpn_rand_code":    {""},
+		"svpn_rand_code":    {randCode},
 		"mitm":              {""},
 		"svpn_req_randcode": {csrfCode},
 		"svpn_name":         {c.username},
@@ -213,13 +259,15 @@ func (c *Client) loginSMS() error {
 		_ = Body.Close()
 	}(resp.Body)
 
-	if !strings.Contains(buf.String(), "验证码已发送到您的手机") && !strings.Contains(buf.String(), "<USER_PHONE>") {
+	log.DebugPrintf("SMS request response: %s", buf.String())
+
+	if !strings.Contains(buf.String(), "验证码已发送到您的手机") && !strings.Contains(buf.String(), "请输入验证码：") && !strings.Contains(buf.String(), "<USER_PHONE>") {
 		return errors.New("unexpected SMS response: " + buf.String())
 	}
 
 	log.Printf("SMS code is sent or still valid")
 
-	fmt.Print("Please enter your SMS code:")
+	fmt.Print("Please enter your SMS code: ")
 	smsCode := ""
 	_, err = fmt.Scan(&smsCode)
 	if err != nil {
@@ -241,6 +289,7 @@ func (c *Client) loginSMS() error {
 		return err
 	}
 
+	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
@@ -249,12 +298,18 @@ func (c *Client) loginSMS() error {
 		_ = Body.Close()
 	}(resp.Body)
 
-	if !strings.Contains(buf.String(), "Auth sms suc") {
+	log.DebugPrintf("SMS verification response: %s", buf.String())
+
+	if !strings.Contains(buf.String(), "Auth sms suc") && !strings.Contains(buf.String(), "欢迎访问") {
 		debug.PrintStack()
 		return errors.New("SMS code verification failed: " + buf.String())
 	}
 
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
+	if twfIDMatch != nil {
+		c.twfID = string(twfIDMatch[1])
+		log.Printf("Update TWFID: %s", c.twfID)
+	}
 	log.Print("SMS code verification success")
 
 	return nil

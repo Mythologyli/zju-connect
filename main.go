@@ -87,7 +87,7 @@ func main() {
 		)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		err := vpnClient.(*easyconnectclient.Client).Setup()
+		err := vpnClient.(*easyconnectclient.Client).Setup(conf.GraphCodeFile)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)
 		}

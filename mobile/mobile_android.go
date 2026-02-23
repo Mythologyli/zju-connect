@@ -24,7 +24,7 @@ func Login(server string, username string, password string) string {
 		false,
 		false,
 	)
-	err := vpnClient.Setup()
+	err := vpnClient.Setup("")
 	if err != nil {
 		return ""
 	}
@@ -54,7 +54,7 @@ func DebugLogin(server string, username string, password string) string {
 		false,
 		false,
 	)
-	err := vpnClient.Setup()
+	err := vpnClient.Setup("")
 	if err != nil {
 		return ""
 	}

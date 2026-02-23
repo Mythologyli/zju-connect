@@ -28,6 +28,7 @@ type (
 		AddRoute           bool
 		DNSHijack          bool
 		FakeIP             bool
+		GraphCodeFile      string
 		DebugDump          bool
 
 		// EasyConnect fields
@@ -46,7 +47,6 @@ type (
 		Phone                   string
 		LoginDomain             string
 		ClientDataFile          string
-		GraphCodeFile           string
 		CasTicket               string
 		SID                     string
 		DeviceID                string
@@ -99,6 +99,7 @@ type (
 		DNSServerBind           *string                    `toml:"dns_server_bind"`
 		DNSHijack               *bool                      `toml:"dns_hijack"`
 		FakeIP                  *bool                      `toml:"fake_ip"`
+		GraphCodeFile           *string                    `toml:"graph_code_file"`
 		DebugDump               *bool                      `toml:"debug_dump"`
 		PortForwarding          []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS               []SingleCustomDNSTOML      `toml:"custom_dns"`
@@ -107,7 +108,6 @@ type (
 		Phone                   *string                    `toml:"phone"`
 		LoginDomain             *string                    `toml:"login_domain"`
 		ClientDataFile          *string                    `toml:"client_data_file"`
-		GraphCodeFile           *string                    `toml:"graph_code_file"`
 		CasTicket               *string                    `toml:"cas_ticket"`
 		SID                     *string                    `toml:"sid"`
 		DeviceID                *string                    `toml:"device_id"`

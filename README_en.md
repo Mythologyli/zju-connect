@@ -47,6 +47,12 @@
 
   *For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322).*
 
+  If your server requires a graphic captcha, try setting the running parameters as follows:
+
+  `./zju-connect -server <Server Address> -port <Server Port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto -disable-multi-line -graph-code-file graph_code.jpg`
+
+  When logging in, the captcha image will be saved to the `graph_code.jpg` file. Please check it and manually enter the captcha code.
+
 ##### Using aTrust Protocol
 
 + If you are a ZJU user:
@@ -92,6 +98,8 @@
 + `username`: Network account. For example: student ID
 
 + `password`: Network account password
+
++ `graph-code-file`: Graphic captcha file path, default is empty. In aTrust mode, if set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 
 + `disable-zju-config`: Disable ZJU related configuration, non-ZJU users may need to add this argument
 
@@ -164,7 +172,6 @@
 + `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is `auth/psw`.
 + `login-domain`: Login domain, default is `Radius`.
 + `client-data-file`: Client data file path, used to save login status to avoid repeated verification.
-+ `graph-code-file`: Graphic captcha file path, default is empty. If this left empty. If set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
 + `phone`: Phone number used for SMS verification code login.
 + `update-best-nodes-interval`: Interval for updating the optimal line automatically, in seconds, default is `300`. Set to `0` to disable automatic optimal line selection.

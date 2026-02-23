@@ -114,10 +114,10 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	return nil, errors.New("not supported")
 }
 
-func (c *Client) Setup() error {
+func (c *Client) Setup(graphCodeFile string) error {
 	// Use username/password/(SMS code) to get the TwfID
 	if c.twfID == "" {
-		err := c.requestTwfID()
+		err := c.requestTwfID(graphCodeFile)
 		if err != nil {
 			return err
 		}
@@ -147,7 +147,7 @@ func (c *Client) Setup() error {
 						c.testMultiLine = false
 						c.twfID = ""
 
-						return c.Setup()
+						return c.Setup(graphCodeFile)
 					}
 				}
 			}
