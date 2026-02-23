@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	UserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
+	UserAgent   = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
+	maxAttempts = 5
 )
 
 var sharedParams = url.Values{
@@ -114,21 +115,14 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 		return err
 	}
 
-	if graphCheckCodeEnable == 1 {
+	for attempt := 1; graphCheckCodeEnable == 1 && attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			log.Printf("Captcha attempt %d/%d", attempt, maxAttempts)
+		}
+
 		imgData, err := s.checkCode()
 		if err != nil {
 			return err
-		}
-
-		if graphCodeFile != "" {
-			err = os.WriteFile(graphCodeFile, imgData, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to write graph code image: %w", err)
-			}
-			log.Printf("Graph check code saved to %s", graphCodeFile)
-		} else {
-			log.Println("Graph check code required, but no file specified to save the image")
-			return fmt.Errorf("graph check code required, but no file specified to save the image")
 		}
 
 		_, _, err = s.authConfigInit()
@@ -136,22 +130,42 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 			return err
 		}
 
-		graphCheckCode := ""
-		log.Print("Please enter the graph check code JSON: ")
-		_, err = fmt.Scanln(&graphCheckCode)
-		if err != nil {
-			return err
+		var graphCheckCode string
+		if graphCodeFile != "" {
+			if writeErr := os.WriteFile(graphCodeFile, imgData, 0644); writeErr != nil {
+				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
+			} else {
+				log.Printf("Graph check code saved to %s", graphCodeFile)
+			}
+
+			log.Print("Please enter the graph check code JSON: ")
+			_, err = fmt.Scanln(&graphCheckCode)
+			if err != nil {
+				return err
+			}
+		} else {
+			graphCheckCode, err = serveCaptchaInBrowser(imgData, 5*time.Minute)
+			if err != nil {
+				return fmt.Errorf("failed to get captcha input: %w", err)
+			}
 		}
+
+		log.DebugPrintf("graphCheckCode submitted: %s", graphCheckCode)
 
 		graphCheckCodeEnable, err = process(graphCheckCode)
 		if err != nil {
 			return err
 		}
 
-		if graphCheckCodeEnable != 0 {
-			log.Println("Graph check code still required after second login attempt")
-			return fmt.Errorf("graph check code still required after second login attempt")
+		if graphCheckCodeEnable == 0 {
+			return nil
 		}
+
+		log.Printf("Captcha verification failed (attempt %d/%d), retrying with new captcha...", attempt, maxAttempts)
+	}
+
+	if graphCheckCodeEnable != 0 {
+		return fmt.Errorf("captcha verification failed after %d attempts", maxAttempts)
 	}
 	return nil
 }
