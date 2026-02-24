@@ -18,7 +18,7 @@ import (
 
 var CommitID string
 
-const zjuConnectVersion = "1.0.0-beta.4"
+const zjuConnectVersion = "1.0.0-beta.5"
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 	if valPointer == nil {
