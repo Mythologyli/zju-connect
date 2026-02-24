@@ -246,6 +246,9 @@ func (c *Client) parseResources(resources string) error {
 
 	if c.dnsServer == "0.0.0.0" {
 		c.dnsServer = ""
+	}
+
+	if c.dnsServer == "" {
 		return errors.New("DNS server invalid")
 	}
 
