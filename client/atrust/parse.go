@@ -117,8 +117,31 @@ func (c *Client) parseResource(resource []byte) error {
 					// First, try to parse the host as an IP address
 					ip := net.ParseIP(hostStr)
 					if ip == nil {
-						ipParts := strings.Split(hostStr, "-")
-						if len(ipParts) == 2 {
+						// Try to parse as CIDR notation (e.g. 10.13.0.0/16)
+						if _, ipNet, cidrErr := net.ParseCIDR(hostStr); cidrErr == nil {
+							ipMin := ipNet.IP.To4()
+							if ipMin != nil {
+								ipMax := make(net.IP, len(ipMin))
+								for i := range ipMin {
+									ipMax[i] = ipMin[i] | ^ipNet.Mask[i]
+								}
+								ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(hostStr))
+
+								c.ipResources = append(c.ipResources, client.IPResource{
+									IPMin:       ipMin,
+									IPMax:       ipMax,
+									PortMin:     portMin,
+									PortMax:     portMax,
+									Protocol:    address.Protocol,
+									AppID:       appItem.ID,
+									NodeGroupID: appItem.NodeGroupID,
+								})
+
+								log.DebugPrintf("Add CIDR: %s (%s ~ %s), Port range: %d ~ %d, [%s]", hostStr, ipMin, ipMax, portMin, portMax, address.Protocol)
+							} else {
+								log.DebugPrintf("IPv6 CIDR found: %s, skipping", hostStr)
+							}
+						} else if ipParts := strings.Split(hostStr, "-"); len(ipParts) == 2 {
 							ipMin := net.ParseIP(ipParts[0])
 							ipMax := net.ParseIP(ipParts[1])
 							if ipMin != nil && ipMax != nil {
