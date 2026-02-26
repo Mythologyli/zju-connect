@@ -94,6 +94,11 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 			if !strings.Contains(string(data), "OK") {
 				log.Printf("Failed to connect to the server: %s", string(data))
 				_ = c.tlsConn.Close()
+
+				if strings.Contains(string(data), "invalid SID") {
+					panic(err)
+				}
+
 				return 0, fmt.Errorf("failed to connect to the server")
 			}
 		}
