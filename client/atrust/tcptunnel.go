@@ -186,10 +186,17 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	}
 
 	c.BestNodesRWMutex.RLock()
-	conn, err := tls.Dial("tcp", c.BestNodes[nodeGroupID], &tls.Config{
+	nodeAddr := c.BestNodes[nodeGroupID]
+	if nodeAddr == "" {
+		nodeAddr = c.BestNodes[c.MajorNodeGroup]
+	}
+	c.BestNodesRWMutex.RUnlock()
+	if nodeAddr == "" {
+		return nil, fmt.Errorf("no available aTrust node for group %q", nodeGroupID)
+	}
+	conn, err := tls.Dial("tcp", nodeAddr, &tls.Config{
 		InsecureSkipVerify: true,
 	})
-	c.BestNodesRWMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
