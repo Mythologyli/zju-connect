@@ -4,19 +4,20 @@ package tun
 
 import (
 	"context"
-	tun "github.com/cxz66666/sing-tun"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
 	"net"
 	"net/netip"
 	"os/exec"
 	"sync"
 	"syscall"
+
+	tun "github.com/mythologyli/sing-tun"
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	client client.Client
 
 	ifce      tun.Tun
 	ifceName  string
@@ -54,15 +55,16 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
+	s.fakeIP = fakeIP
 	s.endpoint = &Endpoint{
-		easyConnectClient: easyConnectClient,
+		client: client,
 	}
 
-	s.endpoint.ip, err = easyConnectClient.IP()
+	s.endpoint.ip, err = client.IP()
 	if err != nil {
 		return nil, err
 	}

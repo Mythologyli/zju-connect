@@ -1,0 +1,278 @@
+package atrust
+
+import (
+	"encoding/json"
+	"net"
+	"strconv"
+	"strings"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
+)
+
+type ClientResource struct {
+	Data struct {
+		AppList struct {
+			Data struct {
+				AppInfo []struct {
+					Apps []struct {
+						ID          string
+						NodeGroupID string
+						AddressList []struct {
+							Protocol string
+							Port     string
+							Host     string
+							IP       []string
+						}
+					}
+				}
+
+				Config struct {
+					NodeGroupConf struct {
+						MajorNodeGroup struct {
+							ID string
+						}
+						NodeGroupList []struct {
+							AddressInfo []struct {
+								Address string
+								Type    string
+							}
+							ID string
+						}
+					}
+				}
+			}
+		}
+
+		SDPPolicy struct {
+			Data struct {
+				ClientOption struct {
+					DNSOption struct {
+						FirstDNS  string
+						SecondDNS string
+					}
+
+					DNSOptionV2 struct {
+						FirstDNS  string
+						SecondDNS string
+					}
+				}
+			}
+		}
+	}
+}
+
+func (c *Client) parseResource(resource []byte) error {
+	log.Println("Parsing resource...")
+
+	var clientResource ClientResource
+	err := json.Unmarshal(resource, &clientResource)
+	if err != nil {
+		return err
+	}
+
+	ipSetBuilder := netaddr.IPSetBuilder{}
+	c.ipResources = make([]client.IPResource, 0)
+	c.domainResources = make(map[string]client.DomainResource)
+	c.dnsResource = make(map[string]net.IP)
+
+	for _, app := range clientResource.Data.AppList.Data.AppInfo {
+		for _, appItem := range app.Apps {
+			for _, address := range appItem.AddressList {
+				if address.Protocol == "tcp" || address.Protocol == "udp" || address.Protocol == "all" {
+					// Handle port
+					portStr := address.Port
+					var portMin, portMax int
+					if strings.Contains(portStr, "-") {
+						// Handle port range
+						ports := strings.Split(portStr, "-")
+						if len(ports) != 2 {
+							log.DebugPrintf("invalid port range: %s", portStr)
+							continue
+						}
+						portMin, err = strconv.Atoi(ports[0])
+						if err != nil {
+							log.DebugPrintf("invalid port range: %s", portStr)
+							continue
+						}
+						portMax, err = strconv.Atoi(ports[1])
+						if err != nil {
+							log.DebugPrintf("invalid port range: %s", portStr)
+							continue
+						}
+					} else {
+						// Handle single port
+						portMin, err = strconv.Atoi(portStr)
+						if err != nil {
+							log.DebugPrintf("invalid port: %s", portStr)
+							continue
+						}
+						portMax = portMin // Single port means min and max are the same
+					}
+
+					// Handle host
+					hostStr := address.Host
+					isDomain := false
+					// First, try to parse the host as an IP address
+					ip := net.ParseIP(hostStr)
+					if ip == nil {
+						// Try to parse as CIDR notation (e.g. 10.13.0.0/16)
+						if _, ipNet, cidrErr := net.ParseCIDR(hostStr); cidrErr == nil {
+							ip4 := ipNet.IP.To4()
+							if ip4 != nil {
+								ipMax4 := make(net.IP, len(ip4))
+								for i := range ip4 {
+									ipMax4[i] = ip4[i] | ^ipNet.Mask[i]
+								}
+								ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(hostStr))
+
+								c.ipResources = append(c.ipResources, client.IPResource{
+									IPMin:       ip4.To16(),
+									IPMax:       ipMax4.To16(),
+									PortMin:     portMin,
+									PortMax:     portMax,
+									Protocol:    address.Protocol,
+									AppID:       appItem.ID,
+									NodeGroupID: appItem.NodeGroupID,
+								})
+
+								log.DebugPrintf("Add CIDR: %s (%s ~ %s), Port range: %d ~ %d, [%s]", hostStr, ip4, ipMax4, portMin, portMax, address.Protocol)
+							} else {
+								log.DebugPrintf("IPv6 CIDR found: %s, skipping", hostStr)
+							}
+						} else if ipParts := strings.Split(hostStr, "-"); len(ipParts) == 2 {
+							ipMin := net.ParseIP(ipParts[0])
+							ipMax := net.ParseIP(ipParts[1])
+							if ipMin != nil && ipMax != nil {
+								// It's a range of IP addresses
+								if ipMin.To4() != nil {
+									ipSetBuilder.AddRange(netaddr.IPRangeFrom(netaddr.MustParseIP(ipMin.String()), netaddr.MustParseIP(ipMax.String())))
+
+									c.ipResources = append(c.ipResources, client.IPResource{
+										IPMin:       ipMin,
+										IPMax:       ipMax,
+										PortMin:     portMin,
+										PortMax:     portMax,
+										Protocol:    address.Protocol,
+										AppID:       appItem.ID,
+										NodeGroupID: appItem.NodeGroupID,
+									})
+
+									log.DebugPrintf("Add IP range: %s ~ %s, Port range: %d ~ %d, [%s]", ipMin, ipMax, portMin, portMax, address.Protocol)
+								} else {
+									log.DebugPrintf("IPv6 address range found: %s ~ %s, skipping", ipMin, ipMax)
+								}
+							} else {
+								isDomain = true
+							}
+						} else {
+							isDomain = true
+						}
+					} else {
+						// It's an IP address
+						if ip.To4() != nil {
+							ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
+
+							c.ipResources = append(c.ipResources, client.IPResource{
+								IPMin:       ip,
+								IPMax:       ip,
+								PortMin:     portMin,
+								PortMax:     portMax,
+								Protocol:    address.Protocol,
+								AppID:       appItem.ID,
+								NodeGroupID: appItem.NodeGroupID,
+							})
+
+							log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", ip, portMin, portMax, address.Protocol)
+						} else {
+							log.DebugPrintf("IPv6 address found: %s, skipping", ip)
+						}
+					}
+
+					if isDomain {
+						c.domainResources[strings.ReplaceAll(hostStr, "*", "")] = client.DomainResource{
+							PortMin:     portMin,
+							PortMax:     portMax,
+							Protocol:    address.Protocol,
+							AppID:       appItem.ID,
+							NodeGroupID: appItem.NodeGroupID,
+						}
+
+						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", hostStr, portMin, portMax, address.Protocol)
+					}
+
+					// Handle DNS rules
+					if address.IP != nil {
+						if !isDomain {
+							log.DebugPrintln("IP address found, but no domain name, skipping")
+							continue
+						}
+
+						for _, ipStr := range address.IP {
+							ip := net.ParseIP(ipStr)
+							if ip != nil {
+								if ip.To4() != nil {
+									ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
+									c.dnsResource[hostStr] = ip
+									log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
+
+									break // TODO: handle multiple IPs for the same domain
+								} else {
+									log.DebugPrintf("IPv6 address found: %s, skipping", ip)
+								}
+							} else {
+								log.DebugPrintf("Invalid IP: %s", ipStr)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS != "" {
+		c.dnsServer = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS
+		log.DebugPrintf("Set DNS server: %s", c.dnsServer)
+	} else if clientResource.Data.SDPPolicy.Data.ClientOption.DNSOptionV2.FirstDNS != "" {
+		c.dnsServer = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOptionV2.FirstDNS
+		log.DebugPrintf("Set DNS server: %s", c.dnsServer)
+	} else {
+		log.DebugPrintf("No DNS server found")
+	}
+
+	c.MajorNodeGroup = clientResource.Data.AppList.Data.Config.NodeGroupConf.MajorNodeGroup.ID
+	c.NodeGroups = make(map[string][]string)
+	for _, nodeGroup := range clientResource.Data.AppList.Data.Config.NodeGroupConf.NodeGroupList {
+		addressList := make([]string, 0)
+		for _, addressInfo := range nodeGroup.AddressInfo {
+			if addressInfo.Type == "wan" {
+				address := addressInfo.Address
+				if address == "{{sdpcHost}}" {
+					address = c.serverAddress
+				}
+				if !strings.Contains(address, ":") {
+					address += ":441"
+				}
+				addressList = append(addressList, address)
+
+				// Remove ip from ipSetBuilder to prevent circular routing
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					continue
+				}
+				ip := net.ParseIP(host)
+				if ip != nil && ip.To4() != nil {
+					ipSetBuilder.Remove(netaddr.MustParseIP(ip.String()))
+					log.DebugPrintf("Remove IP from IP set to prevent circular routing: %s", ip)
+				}
+			}
+		}
+		c.NodeGroups[nodeGroup.ID] = addressList
+		log.DebugPrintf("Node Group ID: %s, Addresses: %v", nodeGroup.ID, addressList)
+	}
+
+	c.ipSet, _ = ipSetBuilder.IPSet()
+
+	return nil
+}

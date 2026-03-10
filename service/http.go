@@ -2,11 +2,16 @@ package service
 
 import (
 	"context"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/log"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"time"
+
+	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 // The MIT License (MIT)
@@ -99,7 +104,23 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 
 	log.Printf("HTTP server listening on " + bindAddr)
 
-	if err := http.ListenAndServe(bindAddr, handlerFunc); err != nil {
-		panic("HTTP listen failed: " + err.Error())
+	server := &http.Server{Addr: bindAddr, Handler: handlerFunc}
+
+	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(ctx context.Context) error {
+		log.Println("Closing HTTP listener...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("close HTTP listener failed: %w", err)
+		}
+		return nil
+	})
+
+	if err := server.ListenAndServe(); err != nil {
+		if errors.Is(err, http.ErrServerClosed) {
+			log.Println("HTTP server closed")
+		} else {
+			log.Println("HTTP listen failed: " + err.Error())
+		}
 	}
 }

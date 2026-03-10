@@ -1,25 +1,26 @@
 package tun
 
 import (
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
-	"golang.org/x/net/ipv4"
 	"io"
 	"net"
 	"os"
 	"syscall"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
+	"golang.org/x/net/ipv4"
 )
 
 const MTU uint32 = 1400
 
 type Stack struct {
 	endpoint *Endpoint
-	rvpnConn io.ReadWriteCloser
+	l3Conn   io.ReadWriteCloser
 }
 
 func (s *Stack) Run() {
 	var connErr error
-	s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.l3Conn, connErr = s.endpoint.client.NewL3Conn()
 	if connErr != nil {
 		return
 	}
@@ -27,7 +28,7 @@ func (s *Stack) Run() {
 	go func() {
 		for {
 			buf := make([]byte, MTU)
-			n, err := s.rvpnConn.Read(buf)
+			n, err := s.l3Conn.Read(buf)
 			if err != nil {
 				log.Printf("Error occurred while reading from VPN server: %v", err)
 				return
@@ -62,7 +63,7 @@ func (s *Stack) Run() {
 			continue
 		}
 
-		n, err = s.rvpnConn.Write(buf[:n])
+		n, err = s.l3Conn.Write(buf[:n])
 		if err != nil {
 			log.Printf("Error occurred while writing to VPN server: %v", err)
 			return
@@ -73,7 +74,7 @@ func (s *Stack) Run() {
 }
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	client client.Client
 
 	readWriteCloser io.ReadWriteCloser
 	ip              net.IP
@@ -98,15 +99,15 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
+func NewStack(client client.Client) (*Stack, error) {
 	s := &Stack{}
 
 	s.endpoint = &Endpoint{
-		easyConnectClient: easyConnectClient,
+		client: client,
 	}
 
 	var err error
-	s.endpoint.ip, err = easyConnectClient.IP()
+	s.endpoint.ip, err = client.IP()
 	if err != nil {
 		return nil, err
 	}

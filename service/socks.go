@@ -1,7 +1,13 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+
 	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/things-go/go-socks5"
@@ -29,7 +35,24 @@ func ServeSocks5(bindAddr string, dialer *dial.Dialer, resolver *resolve.Resolve
 
 	log.Printf("SOCKS5 server listening on " + bindAddr)
 
-	if err := server.ListenAndServe("tcp", bindAddr); err != nil {
+	listener, err := net.Listen("tcp", bindAddr)
+	if err != nil {
 		panic("SOCKS5 listen failed: " + err.Error())
+	}
+
+	hook_func.RegisterTerminalFunc("CloseSocks5Listener", func(ctx context.Context) error {
+		log.Println("Closing SOCKS5 listener...")
+		if err := listener.Close(); err != nil {
+			return fmt.Errorf("close SOCKS5 listener failed: %w", err)
+		}
+		return nil
+	})
+
+	if err = server.Serve(listener); err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			log.Println("SOCKS5 server closed")
+		} else {
+			log.Println("SOCKS5 listen failed: " + err.Error())
+		}
 	}
 }

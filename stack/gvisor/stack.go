@@ -2,8 +2,11 @@ package gvisor
 
 import (
 	"errors"
+	"io"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -13,12 +16,12 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
-	"io"
 )
 
 type Stack struct {
 	gvisorStack *stack.Stack
 	resolve     zcdns.LocalServer
+	ipPool      *ippool.IPPool[client.DomainResource]
 
 	endpoint *Endpoint
 }
@@ -27,9 +30,9 @@ const NICID tcpip.NICID = 1
 const MTU uint32 = 1400
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	client client.Client
 
-	rvpnConn io.ReadWriteCloser
+	l3Conn io.ReadWriteCloser
 
 	dispatcher stack.NetworkDispatcher
 }
@@ -88,9 +91,14 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 			buf = append(buf, t...)
 		}
 
-		if ep.rvpnConn != nil {
-			n, err := ep.rvpnConn.Write(buf)
+		if ep.l3Conn != nil {
+			n, err := ep.l3Conn.Write(buf)
 			if err != nil {
+				if errors.Is(err, client.ErrResourceNotFound) {
+					log.Printf("%v", err)
+					continue
+				}
+
 				if hook_func.IsTerminal() {
 					return list.Len(), nil
 				} else {
@@ -105,7 +113,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 	return list.Len(), nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
+func NewStack(client client.Client) (*Stack, error) {
 	s := &Stack{}
 
 	s.gvisorStack = stack.New(stack.Options{
@@ -115,7 +123,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
 	})
 
 	s.endpoint = &Endpoint{
-		easyConnectClient: easyConnectClient,
+		client: client,
 	}
 
 	tcpipErr := s.gvisorStack.CreateNIC(NICID, s.endpoint)
@@ -123,7 +131,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient) (*Stack, error) {
 		return nil, errors.New(tcpipErr.String())
 	}
 
-	ip, err := easyConnectClient.IP()
+	ip, err := client.IP()
 	if err != nil {
 		return nil, err
 	}
@@ -155,16 +163,20 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
 }
 
+func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[client.DomainResource]) {
+	s.ipPool = ipPool
+}
+
 func (s *Stack) Run() {
 	var connErr error
-	s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+	s.endpoint.l3Conn, connErr = s.endpoint.client.NewL3Conn()
 	if connErr != nil {
 		panic(connErr)
 	}
 	// Read from VPN server and send to gVisor stack
 	for {
 		buf := make([]byte, MTU)
-		n, err := s.endpoint.rvpnConn.Read(buf)
+		n, err := s.endpoint.l3Conn.Read(buf)
 		if err != nil {
 			if hook_func.IsTerminal() {
 				return

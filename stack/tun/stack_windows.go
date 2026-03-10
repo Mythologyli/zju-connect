@@ -3,23 +3,24 @@ package tun
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
+	"os/exec"
+	"sync"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
-	"net"
-	"net/netip"
-	"os/exec"
-	"sync"
 )
 
 const guid = "{4F5CDE94-D2A3-4AA5-A4A3-0FE6CB909E83}"
 const interfaceName = "ZJU Connect"
 
 type Endpoint struct {
-	easyConnectClient *client.EasyConnectClient
+	client client.Client
 
 	dev       tun.Device
 	readLock  sync.Mutex
@@ -77,9 +78,10 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
 	s := &Stack{}
 	s.ipResources = ipResources
+	s.fakeIP = fakeIP
 
 	guid, err := windows.GUIDFromString(guid)
 	if err != nil {
@@ -92,7 +94,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipRes
 	}
 
 	s.endpoint = &Endpoint{
-		easyConnectClient: easyConnectClient,
+		client: client,
 	}
 
 	s.endpoint.dev = dev
@@ -101,7 +103,7 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipRes
 
 	link := winipcfg.LUID(nativeTunDevice.LUID())
 
-	s.endpoint.ip, err = easyConnectClient.IP()
+	s.endpoint.ip, err = client.IP()
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +133,21 @@ func NewStack(easyConnectClient *client.EasyConnectClient, dnsHijack bool, ipRes
 		log.Printf("Run %s failed: %v", command.String(), err)
 	}
 
-	if dnsHijack {
-		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", s.endpoint.ip.String())
-	} else {
-		command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
-	}
+	command = exec.Command("netsh", "interface", "ipv4", "delete", "dnsservers", "ZJU Connect", "all")
 	err = command.Run()
 	if err != nil {
 		log.Printf("Run %s failed: %v", command.String(), err)
+	}
+	if dnsHijack {
+		dnsServerIP := s.endpoint.ip.String()
+		if fakeIP {
+			dnsServerIP = "198.18.0.1"
+		}
+		command = exec.Command("netsh", "interface", "ipv4", "add", "dnsservers", "ZJU Connect", dnsServerIP)
+		err = command.Run()
+		if err != nil {
+			log.Printf("Run %s failed: %v", command.String(), err)
+		}
 	}
 
 	hook_func.RegisterTerminalFunc("Close Tun Device", func(ctx context.Context) error {

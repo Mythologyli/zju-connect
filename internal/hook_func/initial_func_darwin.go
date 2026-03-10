@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/mythologyli/zju-connect/configs"
 	"os"
 	"os/exec"
 	"os/user"
 	"strings"
+
+	"github.com/mythologyli/zju-connect/configs"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 // get all services and skip element contains "*"
@@ -21,7 +23,7 @@ func ListNetworkServices() ([]string, error) {
 
 	lines := strings.Split(string(output), "\n")
 	var services []string
-	for _, line := range lines[1:] { // 跳过第一行标题
+	for _, line := range lines[1:] { // Skip the first header line
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "*") {
 			services = append(services, line)
@@ -74,13 +76,16 @@ func init() {
 		if config.TUNMode {
 			current, _ := user.Current()
 			if current.Uid != "0" {
-				return errors.New("请使用sudo运行TUN模式")
+				return errors.New("run TUN mode using sudo to grant necessary permissions")
 			}
 		}
 		return nil
 	})
-	RegisterInitialFunc("check bind port", checkBindPortLegal)
+	//RegisterInitialFunc("check bind port", checkBindPortLegal) // TODO: figure out whether to check port or not
 	RegisterInitialFunc("set dns server", func(ctx context.Context, config configs.Config) error {
+		if !config.TUNMode || !config.DNSHijack {
+			return nil
+		}
 		services, err := ListNetworkServices()
 		if err != nil {
 			return err
@@ -88,7 +93,7 @@ func init() {
 
 		for _, service := range services {
 			if err := SetDNSServer(service, "Empty"); err != nil {
-				return err
+				log.Println("DNS setup failed on service:", service, "error:", err)
 			}
 		}
 		return nil

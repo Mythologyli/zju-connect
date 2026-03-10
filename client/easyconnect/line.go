@@ -1,11 +1,12 @@
-package client
+package easyconnect
 
 import (
 	"errors"
-	"github.com/cloverstd/tcping/ping"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mythologyli/zju-connect/internal/ping"
 )
 
 const pingNum = 3

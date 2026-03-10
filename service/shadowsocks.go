@@ -7,16 +7,19 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/shadowsocks/go-shadowsocks2/core"
-	"github.com/shadowsocks/go-shadowsocks2/socks"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/mythologyli/zju-connect/dial"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/shadowsocks/go-shadowsocks2/core"
+	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
 const udpBufSize = 64 * 1024
@@ -49,19 +52,39 @@ func ServeShadowsocks(dialer *dial.Dialer, url string) {
 
 	log.Printf("Shadowsocks server listening on %s", addr)
 
-	go tcpRemote(addr, ciph.StreamConn, dialer)
-	udpRemote(addr, ciph.PacketConn, dialer)
-}
-
-func tcpRemote(addr string, shadow func(net.Conn) net.Conn, dialer *dial.Dialer) {
-	l, err := net.Listen("tcp", addr)
+	tcpListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	udpPacketConn, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	hook_func.RegisterTerminalFunc("CloseShadowsocksListener", func(ctx context.Context) error {
+		log.Println("Closing Shadowsocks listener...")
+		if err := tcpListener.Close(); err != nil {
+			return fmt.Errorf("close Shadowsocks TCP listener failed: %w", err)
+		}
+		if err := udpPacketConn.Close(); err != nil {
+			return fmt.Errorf("close Shadowsocks UDP listener failed: %w", err)
+		}
+		return nil
+	})
+
+	go tcpRemote(tcpListener, ciph.StreamConn, dialer)
+	udpRemote(udpPacketConn, ciph.PacketConn, dialer)
+}
+
+func tcpRemote(l net.Listener, shadow func(net.Conn) net.Conn, dialer *dial.Dialer) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Println("Shadowsocks TCP server closed")
+				return
+			}
+
 			log.Printf("failed to accept: %v", err)
 			continue
 		}
@@ -121,11 +144,7 @@ func relay(left, right net.Conn) error {
 }
 
 // Listen on addr for encrypted packets and basically do UDP NAT.
-func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dialer *dial.Dialer) {
-	c, err := net.ListenPacket("udp", addr)
-	if err != nil {
-		log.Fatal(err)
-	}
+func udpRemote(c net.PacketConn, shadow func(net.PacketConn) net.PacketConn, dialer *dial.Dialer) {
 	defer func(c net.PacketConn) {
 		_ = c.Close()
 	}(c)
@@ -137,6 +156,11 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dialer *
 	for {
 		n, raddr, err := c.ReadFrom(buf)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Println("Shadowsocks UDP server closed")
+				return
+			}
+
 			log.Printf("UDP remote read error: %v", err)
 			continue
 		}

@@ -26,42 +26,29 @@ jobs:
         # Include amd64 on all platforms.
         goos: [ windows, linux, darwin ]
         goarch: [ amd64, 386 ]
-        build_tag: [ full, tun ]
         exclude:
           # Exclude i386 on darwin.
           - goarch: 386
             goos: darwin
         include:
           # BEGIN Linux ARM 5 6 7
-          - { goos: linux, goarch: arm, goarm: 7, build_tag: full }
-          - { goos: linux, goarch: arm, goarm: 7, build_tag: tun }
-          - { goos: linux, goarch: arm, goarm: 6, build_tag: full }
-          - { goos: linux, goarch: arm, goarm: 6, build_tag: tun }
-          - { goos: linux, goarch: arm, goarm: 5, build_tag: full }
-          - { goos: linux, goarch: arm, goarm: 5, build_tag: tun }
+          - { goos: linux, goarch: arm, goarm: 7 }
+          - { goos: linux, goarch: arm, goarm: 6 }
+          - { goos: linux, goarch: arm, goarm: 5 }
           # END Linux ARM 5 6 7
           # BEGIN Windows ARM 7
-          - { goos: windows, goarch: arm, goarm: 7, build_tag: full }
-          - { goos: windows, goarch: arm, goarm: 7, build_tag: tun }
+          - { goos: windows, goarch: arm, goarm: 7 }
           # END Windows ARM 7
           # BEGIN Other architectures
-          - { goos: darwin, goarch: arm64, build_tag: full }
-          - { goos: darwin, goarch: arm64, build_tag: tun }
-          - { goos: linux, goarch: arm64, build_tag: full }
-          - { goos: linux, goarch: arm64, build_tag: tun }
-          - { goos: linux, goarch: riscv64, build_tag: full }
-          - { goos: linux, goarch: riscv64, build_tag: tun }
-          - { goos: windows, goarch: arm64, build_tag: full }
-          - { goos: windows, goarch: arm64, build_tag: tun }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: riscv64 }
+          - { goos: windows, goarch: arm64 }
           # BEGIN MIPS
-          - { goos: linux, goarch: mips64, build_tag: full }
-          - { goos: linux, goarch: mips64, build_tag: tun }
-          - { goos: linux, goarch: mips64le, build_tag: full }
-          - { goos: linux, goarch: mips64le, build_tag: tun }
-          - { goos: linux, goarch: mipsle, build_tag: full }
-          - { goos: linux, goarch: mipsle, build_tag: tun }
-          - { goos: linux, goarch: mips, build_tag: full }
-          - { goos: linux, goarch: mips, build_tag: tun }
+          - { goos: linux, goarch: mips64 }
+          - { goos: linux, goarch: mips64le }
+          - { goos: linux, goarch: mipsle }
+          - { goos: linux, goarch: mips }
           # END MIPS
           # END Other architectures
       fail-fast: false
@@ -80,7 +67,7 @@ jobs:
       - name: Show workflow information
         id: get_filename
         run: |
-          [[ "${{ matrix.build_tag }}" = "full" ]] && export _NAME=$GOOS-$GOARCH$GOARM || export _NAME=$GOOS-$GOARCH$GOARM-tun-only
+          export _NAME=$GOOS-$GOARCH$GOARM
           echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $_NAME"
           echo "ASSET_NAME=$_NAME" >> $GITHUB_OUTPUT
           echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
@@ -88,7 +75,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: ^1.24
+          go-version: ^1.25
 
       - name: Get project dependencies
         run: go mod download
@@ -96,7 +83,14 @@ jobs:
       - name: Build
         run: |
           mkdir -p build_assets
-          go build -tags ${{ matrix.build_tag }} -v -o build_assets/zju-connect -trimpath -ldflags "-s -w -buildid=" .
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION_FLAGS=""
+          else
+            VERSION_FLAGS="-X 'main.CommitID=${SHORT_SHA}'"
+          fi
+          go build -v -o build_assets/zju-connect -trimpath \
+            -ldflags "-s -w -buildid= ${VERSION_FLAGS}" .
 
       - name: Rename Windows zju-connect
         if: matrix.goos == 'windows'
@@ -112,15 +106,29 @@ jobs:
           path: build_assets/*
 
       - name: Create ZIP archive
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         run: |
           pushd build_assets || exit 1
           zip -9vr ../zju-connect-$ASSET_NAME.zip .
           popd || exit 1
 
       - name: Upload release binary
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ github.event.release.tag_name }} zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || 'nightly' }} zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+
+  nightly:
+    if: github.event_name != 'release' && github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v3
+
+      - name: Move nightly tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly
+          git push origin nightly --force

@@ -1,13 +1,16 @@
 package service
 
 import (
+	"context"
 	"fmt"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/stack"
 )
 
 const BufferSize = 40960
@@ -137,7 +140,7 @@ func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 		var udpConn net.Conn
 		var err error
 
-		udpConn, err = u.stack.DialUDP(&net.UDPAddr{
+		udpConn, err = u.stack.DialUDP(context.Background(), &net.UDPAddr{
 			IP:   u.dest.IP,
 			Port: u.dest.Port,
 		})
@@ -214,5 +217,17 @@ func ServeUDPForwarding(stack stack.Stack, bindAddress string, remoteAddress str
 	log.Printf("UDP port forwarding: %s -> %s", bindAddress, remoteAddress)
 
 	udpForward := newUDPForward(stack, bindAddress, remoteAddress)
+
+	hook_func.RegisterTerminalFunc("CloseUDPForwardingPort", func(ctx context.Context) error {
+		log.Println("Closing UDP forwarding port...")
+
+		udpForward.closed = true
+		if err := udpForward.listenerConn.Close(); err != nil {
+			return fmt.Errorf("close UDP forwarding listener failed: %w", err)
+		}
+
+		return nil
+	})
+
 	udpForward.startUDPForward()
 }
