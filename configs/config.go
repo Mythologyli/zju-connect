@@ -23,6 +23,7 @@ type (
 		DNSServerBind      string
 		CustomDNSList      []SingleCustomDNS
 		DisableKeepAlive   bool
+		KeepAliveURL       string
 		TCPTunnelMode      bool
 		TUNMode            bool
 		AddRoute           bool
@@ -94,6 +95,7 @@ type (
 		AddRoute                *bool                      `toml:"add_route"`
 		DNSTTL                  *uint64                    `toml:"dns_ttl"`
 		DisableKeepAlive        *bool                      `toml:"disable_keep_alive"`
+		KeepAliveURL            *string                    `toml:"keep_alive_url"`
 		RemoteDNSServer         *string                    `toml:"zju_dns_server"` // TODO: rename to remote_dns_server
 		SecondaryDNSServer      *string                    `toml:"secondary_dns_server"`
 		DNSServerBind           *string                    `toml:"dns_server_bind"`

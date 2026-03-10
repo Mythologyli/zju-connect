@@ -127,6 +127,8 @@
 
 + `disable-keep-alive`: Disable periodic keep-alive, generally no need to add this argument
 
++ `keep-alive-url`: Uses HTTP keep-alive, suitable for situations where the server does not provide DNS. Set the URL to visit, for example, `https://www.cnki.net/favicon.ico`. The default is empty, in which case the server-provided DNS is used for keep-alive.
+
 + `zju-dns-server`: Remote DNS server address, default is `auto`. Set to `auto` to use the DNS server obtained from the server; disable remote DNS if it fails to obtain
 
 + `secondary-dns-server`: Standby DNS server used when the remote DNS server cannot resolve, default is `114.114.114.114`. Leave blank to use system default DNS, but must be set when `dns-hijack` is enabled

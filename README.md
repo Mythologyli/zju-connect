@@ -132,6 +132,8 @@
 
 + `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
 
++ `keep-alive-url`: 使用 HTTP 保活，适用于服务端不下发 DNS 的情况。填写要访问的 URL，例如 `https://www.cnki.net/favicon.ico` 。默认为空，此时使用服务端下发的 DNS 保活
+
 + `zju-dns-server`: 远端 DNS 服务器地址，默认为 `auto`。设置为 auto 时使用从服务端获取的 DNS 服务器，如果未能获取则禁用远端 DNS
 
 + `secondary-dns-server`: 当使用远端 DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置

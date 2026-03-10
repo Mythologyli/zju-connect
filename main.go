@@ -323,10 +323,10 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if !useRemoteDNS {
-			log.Println("Keep alive is disabled because remote DNS is disabled")
+		if conf.KeepAliveURL == "" && !useRemoteDNS {
+			log.Println("Keep alive is disabled because remote DNS is disabled, and no KeepAliveURL is provided")
 		} else {
-			go service.KeepAlive(vpnResolver)
+			go service.KeepAlive(vpnResolver, vpnDialer, conf.KeepAliveURL)
 		}
 	}
 
