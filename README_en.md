@@ -224,3 +224,7 @@
 + [![image](docs/yxvm.png)](https://yxvm.com/)
 
   [NodeSupport](https://github.com/NodeSeekDev/NodeSupport) sponsored this project
+
+### Star History
+
+[![Star History Chart](https://api.star-history.com/image?repos=mythologyli/zju-connect&type=date&legend=top-left)](https://www.star-history.com/?repos=mythologyli%2Fzju-connect&type=date&legend=bottom-right)
