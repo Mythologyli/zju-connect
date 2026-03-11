@@ -66,7 +66,17 @@
 
 + 如果你是非 ZJU 的用户：
 
-  其他步骤与 ZJU 用户相同，请根据情况指定登录协议。详见参数说明。
+  其他步骤与 ZJU 用户相同，请根据情况指定登录域及协议。
+
+  **如何确定登录域及协议？**
+
+  1. 运行 `./zju-connect -protocol atrust -server <服务器地址> -port <服务器端口> -auth-info`。
+  2. 该命令会获取可用的认证方式，例如
+     ```json
+     [{"loginDomain":"Radius","authType":"auth/psw","authName":"上网账号","loginUrl":""},{"loginDomain":"local","authType":"auth/psw","authName":"IDC运维账号","loginUrl":""},{"loginDomain":"radius93482","authType":"auth/psw","authName":"INTL ID","loginUrl":""}]
+     ```
+     包含三个登录方式。方式一的登录域为 `Radius`，认证类型为 `auth/psw`。如果要使用方式一登录，则需要在运行参数中添加 `-login-domain Radius -auth-type "auth/psw"`。
+  3. 目前支持的认证类型包括 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证）。
 
 #### 作为服务运行
 

@@ -61,7 +61,17 @@
   Then follow the on-screen prompts. If you do not want to save the login status, you can omit the `-client-data-file` parameter.
 
 + If you are a non-ZJU user:
-  The steps are the same as for ZJU users; please specify the login protocol according to your situation. See the parameter descriptions for details.
+  The steps are the same as for ZJU users; please specify the login protocol according to your situation.
+  **How to determine the Login Domain and Protocol?**
+
+  1. Fetch available authentication methods: `./zju-connect -protocol atrust -server <Server Address> -port <Server Port> -auth-info`.
+  2. Identify your parameters:
+     The command will return a JSON array of available authentication methods. For example:
+     ```json
+     [{"loginDomain":"Radius","authType":"auth/psw","authName":"上网账号","loginUrl":""},{"loginDomain":"local","authType":"auth/psw","authName":"IDC运维账号","loginUrl":""},{"loginDomain":"radius93482","authType":"auth/psw","authName":"INTL ID","loginUrl":""}]
+     ```
+     In this example, there are three methods. To use the first method (Radius), you must append -login-domain Radius -auth-type "auth/psw" to your execution command.
+  3. Supported Authentication Types: `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code).
 
 #### Run as a service
 
