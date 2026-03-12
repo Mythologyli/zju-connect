@@ -132,40 +132,40 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 
 	randCode := ""
 	if rndImg == "1" {
-		addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
-		log.Printf("Request: %s", addr)
-		req, err := http.NewRequest("GET", addr, nil)
-		req.Header.Set("Cookie", "TWFID="+c.twfID)
-		req.Header.Set("User-Agent", "EasyConnect_windows")
-
-		resp, err = c.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		buf.Reset()
-		_, err = io.Copy(&buf, resp.Body)
-		if err != nil {
-			return err
-		}
-		defer func(Body io.ReadCloser) {
-			_ = Body.Close()
-		}(resp.Body)
-
 		if graphCodeFile != "" {
+			addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
+			log.Printf("Request: %s", addr)
+			req, err := http.NewRequest("GET", addr, nil)
+			req.Header.Set("Cookie", "TWFID="+c.twfID)
+			req.Header.Set("User-Agent", "EasyConnect_windows")
+
+			resp, err = c.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			buf.Reset()
+			_, err = io.Copy(&buf, resp.Body)
+			if err != nil {
+				return err
+			}
+			defer func(Body io.ReadCloser) {
+				_ = Body.Close()
+			}(resp.Body)
+
 			if writeErr := os.WriteFile(graphCodeFile, buf.Bytes(), 0644); writeErr != nil {
 				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
 			} else {
 				log.Printf("Graph check code saved to %s", graphCodeFile)
 			}
-		} else {
-			return errors.New("rand code required, but no graph code file provided")
-		}
 
-		fmt.Print("Please enter rand code: ")
-		_, err = fmt.Scan(&randCode)
-		if err != nil {
-			return err
+			fmt.Print("Please enter rand code: ")
+			_, err = fmt.Scan(&randCode)
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Print("Warning: rand code required, but no graph code file provided.")
 		}
 	}
 
