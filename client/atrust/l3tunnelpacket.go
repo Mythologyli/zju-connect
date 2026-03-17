@@ -2,7 +2,10 @@ package atrust
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
@@ -58,7 +61,29 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 	}
 	log.DebugPrintf("l3-tunnel send packet appID=%s group=%s len=%d", appID, nodeGroupID, len(packet))
 	logPacket("send", packet)
-	return conn.WritePacket(meta, appID, nodeGroupID, packet)
+	err = conn.WritePacket(meta, appID, nodeGroupID, packet)
+	for retry := 0; retry < 5 && isClosedConnErr(err); retry++ {
+		// If the cached tunnel conn was closed by network flaps, evict it and retry.
+		log.Println("Write packet failed with closed connection, evicting conn and retrying...")
+		t.evictConn(nodeGroupID, conn)
+		retryConn, retryErr := t.getConn(nodeGroupID)
+		if retryErr != nil {
+			return retryErr
+		}
+		conn = retryConn
+		err = conn.WritePacket(meta, appID, nodeGroupID, packet)
+	}
+	return err
+}
+
+func isClosedConnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {

@@ -85,15 +85,24 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 	t.conns[nodeGroupID] = conn
 	t.connsMu.Unlock()
 
-	go t.forwardFromConn(conn)
+	go t.forwardFromConn(nodeGroupID, conn)
 
 	return conn, nil
 }
 
-func (t *L3Tunnel) forwardFromConn(conn *l3TunnelConn) {
+func (t *L3Tunnel) evictConn(nodeGroupID string, conn *l3TunnelConn) {
+	t.connsMu.Lock()
+	defer t.connsMu.Unlock()
+	if existing := t.conns[nodeGroupID]; existing == conn {
+		delete(t.conns, nodeGroupID)
+	}
+}
+
+func (t *L3Tunnel) forwardFromConn(nodeGroupID string, conn *l3TunnelConn) {
 	for {
 		pkt, err := conn.ReadPacket()
 		if err != nil {
+			t.evictConn(nodeGroupID, conn)
 			return
 		}
 		logPacket("recv", pkt)
