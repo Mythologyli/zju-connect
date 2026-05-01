@@ -464,6 +464,43 @@ func (c *Client) requestConfig() (string, error) {
 	return buf.String(), nil
 }
 
+// requestUpdateSession pings /por/update_session.csp to keep the server-side
+// session alive. The official EasyConnect client calls this periodically;
+// without it, sangfor servers with strict idle policies (e.g. HUST) close
+// the session, which the tunnel layer surfaces as a "broken pipe" →
+// "unexpected handshake reply" kick cascade.
+func (c *Client) requestUpdateSession() error {
+	addr := "https://" + c.server + "/por/update_session.csp?twfid=" + c.twfID + "&apiversion=1"
+
+	req, err := http.NewRequest("GET", addr, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_Linux_Ubuntu")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Successful body looks like:
+	//   <Auth><Message>success</Message><ErrorCode>1</ErrorCode><TwfID>...</TwfID></Auth>
+	if !bytes.Contains(buf.Bytes(), []byte("success")) {
+		return errors.New("update_session: unexpected reply: " + buf.String())
+	}
+	return nil
+}
+
 func (c *Client) requestResources() (string, error) {
 	addr := "https://" + c.server + "/por/rclist.csp"
 	log.Printf("Request: %s", addr)
