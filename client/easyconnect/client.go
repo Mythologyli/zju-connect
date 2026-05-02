@@ -187,5 +187,22 @@ func (c *Client) Setup(graphCodeFile string) error {
 		return err
 	}
 
+	// Periodic session keepalive. Without this, sangfor servers with strict
+	// idle policies (observed at HUST) close the session as idle, which
+	// surfaces as "broken pipe" + "unexpected handshake reply" panics in
+	// the L3 tunnel layer. The official EasyConnect client calls
+	// /por/update_session.csp; we mirror that.
+	go c.sessionKeepAliveLoop()
+
 	return nil
+}
+
+func (c *Client) sessionKeepAliveLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := c.requestUpdateSession(); err != nil {
+			log.Printf("update_session keepalive failed: %v", err)
+		}
+	}
 }
