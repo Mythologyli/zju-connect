@@ -17,6 +17,14 @@ import (
 	"errors"
 )
 
+// ErrACLDenied is returned by DialIPPort when the caller forced VPN routing
+// (via alwaysUseVPN / proxy_all) for a destination that the sangfor server
+// would not accept. Sending it through the L3 tunnel would cause the server
+// to terminate the entire session with cmd 0x08 SHUTDOWN, killing all other
+// in-flight connections. Refusing here mirrors what the official EasyConnect
+// client does and keeps the tunnel alive.
+var ErrACLDenied = errors.New("destination not in sangfor IPResources whitelist (would trigger tunnel SHUTDOWN)")
+
 type Dialer struct {
 	stack                stack.Stack
 	resolver             *resolve.Resolver
@@ -100,28 +108,45 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 		useVPN = true
 	}
 
-	if !useVPN {
-		if res := ctx.Value(resolve.ContextKeyDomainResource); res != nil {
-			resource := res.(client.DomainResource)
-			if resource.PortMin <= port && port <= resource.PortMax {
-				if resource.Protocol == network || resource.Protocol == "all" {
-					useVPN = true
-				}
+	// Track whether dst:port matches any sangfor-issued resource. We always
+	// run both resource lookups (even if useVPN was already forced true by
+	// alwaysUseVPN) so we can enforce the server-side ACL client-side.
+	matchedResource := false
+
+	if res := ctx.Value(resolve.ContextKeyDomainResource); res != nil {
+		resource := res.(client.DomainResource)
+		if resource.PortMin <= port && port <= resource.PortMax {
+			if resource.Protocol == network || resource.Protocol == "all" {
+				useVPN = true
+				matchedResource = true
 			}
 		}
 	}
 
-	if !useVPN && d.ipResources != nil {
+	if !matchedResource && d.ipResources != nil {
 		for _, resource := range d.ipResources {
 			if bytes.Compare(target.IP, resource.IPMin) >= 0 && bytes.Compare(target.IP, resource.IPMax) <= 0 {
 				if resource.PortMin <= port && port <= resource.PortMax {
 					if resource.Protocol == network || resource.Protocol == "all" {
 						useVPN = true
+						matchedResource = true
 						break
 					}
 				}
 			}
 		}
+	}
+
+	// Client-side ACL enforcement: if alwaysUseVPN forced VPN routing for a
+	// dst:port that isn't in the server-issued resource list, sending it
+	// upstream causes sangfor to terminate the L3 tunnel (cmd 0x08 SHUTDOWN
+	// on the next handshake). The official EasyConnect client filters here
+	// via CSClient before traffic ever reaches the tunnel; we do the same.
+	// Skipped when no IPResources are parsed (parse_resource=false), since
+	// we have no whitelist to enforce.
+	if useVPN && !matchedResource && len(d.ipResources) > 0 {
+		log.Printf("ACL: refusing %s/%s — not in sangfor IPResources whitelist (would trigger tunnel SHUTDOWN)", ipAddr, network)
+		return nil, ErrACLDenied
 	}
 
 	if useVPN {
