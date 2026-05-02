@@ -3,8 +3,10 @@ package gvisor
 import (
 	"errors"
 	"io"
+	"os"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
@@ -97,6 +99,16 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 				if errors.Is(err, client.ErrResourceNotFound) {
 					log.Printf("%v", err)
 					continue
+				}
+
+				// Server-initiated SHUTDOWN: known terminal state from
+				// sangfor (cmd 0x08). No point retrying; exit cleanly so
+				// systemd / a wrapper can do a fresh login. This is
+				// strictly better than panicking with a gvisor stack
+				// trace, which obscures the actual cause.
+				if errors.Is(err, easyconnect.ErrSangforShutdown) {
+					log.Printf("WritePackets: server SHUTDOWN; exiting for clean restart")
+					os.Exit(2)
 				}
 
 				if hook_func.IsTerminal() {
