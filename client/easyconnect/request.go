@@ -112,17 +112,20 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		log.Printf("Warning: No CSRF rand code")
 	}
 
-	pubKey := rsa.PublicKey{}
-	pubKey.E, _ = strconv.Atoi(rsaExp)
-	modulus := big.Int{}
-	modulus.SetString(rsaKey, 16)
-	pubKey.N = &modulus
+	encryptedPasswordHex := password
+	if rsaKey != "" {
+		pubKey := rsa.PublicKey{}
+		pubKey.E, _ = strconv.Atoi(rsaExp)
+		modulus := big.Int{}
+		modulus.SetString(rsaKey, 16)
+		pubKey.N = &modulus
 
-	encryptedPassword, err := rsa.EncryptPKCS1v15(rand.Reader, &pubKey, []byte(password))
-	if err != nil {
-		return err
+		encryptedPassword, err := rsa.EncryptPKCS1v15(rand.Reader, &pubKey, []byte(password))
+		if err != nil {
+			return err
+		}
+		encryptedPasswordHex = hex.EncodeToString(encryptedPassword)
 	}
-	encryptedPasswordHex := hex.EncodeToString(encryptedPassword)
 
 	rndImgMatch := regexp.MustCompile(`<RndImg>(.*)</RndImg>`).FindSubmatch(buf.Bytes())[1]
 	rndImg := "0"
