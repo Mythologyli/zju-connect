@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,28 +26,33 @@ func (m CASLogin) login(s *Session, authInfo AuthInfo) error {
 	return s.loginAuthCas(authInfo.LoginURL, m.Domain, m.Ticket)
 }
 
-func (s *Session) loginAuthCas(loginUrl, loginDomain, ticket string) error {
-	var callback string
-	var err error
+func (s *Session) loginAuthCas(loginURL, loginDomain, ticket string) error {
+	callback := s.casCallbackFromTicket(loginDomain, ticket)
 	if ticket == "" {
-		callback, err = s.interactiveCas(loginUrl, loginDomain)
-	} else {
-		callback = s.baseURL + "/passport/v1/auth/cas?sfDomain=" + loginDomain + "&ticket=" + ticket
-	}
-	if err != nil {
-		return err
+		var err error
+		callback, err = s.interactiveCas(loginURL, loginDomain)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = s.cas(callback)
-	if err != nil {
+	if err := s.cas(callback); err != nil {
 		return err
 	}
-	_, _, err = s.authConfigMod()
+	_, _, err := s.authConfigMod()
 	return err
 }
 
-func (s *Session) interactiveCas(loginUrl, loginDomain string) (string, error) {
-	log.Printf("Visit %s to login, and catch the callback url", s.baseURL+loginUrl)
+func (s *Session) casCallbackFromTicket(loginDomain, ticket string) string {
+	params := url.Values{
+		"sfDomain": {loginDomain},
+		"ticket":   {ticket},
+	}
+	return s.baseURL + "/passport/v1/auth/cas?" + params.Encode()
+}
+
+func (s *Session) interactiveCas(loginURL, loginDomain string) (string, error) {
+	log.Printf("Visit %s to login, and catch the callback url", loginURL)
 	log.Println("Please enter the callback url:")
 	var callback string
 	_, err := fmt.Scanln(&callback)
@@ -60,23 +64,30 @@ func (s *Session) interactiveCas(loginUrl, loginDomain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if callbackURL.Scheme != "https" {
-		return "", fmt.Errorf("invalid callback url: scheme not https")
+	if err := validateCASCallbackURL(callbackURL, s.baseHost, loginDomain); err != nil {
+		return "", err
 	}
-	if callbackURL.Host != s.baseHost {
-		return "", fmt.Errorf("invalid callback url: host not match")
+	return callback, nil
+}
+
+func validateCASCallbackURL(callbackURL *url.URL, baseHost, loginDomain string) error {
+	if callbackURL.Scheme != "https" {
+		return fmt.Errorf("invalid callback url: scheme not https")
+	}
+	if callbackURL.Host != baseHost {
+		return fmt.Errorf("invalid callback url: host not match")
 	}
 	if callbackURL.Path != "/passport/v1/auth/cas" {
-		return "", fmt.Errorf("invalid callback url: path not match")
+		return fmt.Errorf("invalid callback url: path not match")
 	}
 	queries := callbackURL.Query()
 	if queries.Get("sfDomain") != loginDomain {
-		return "", fmt.Errorf("invalid callback url: login domain not match")
+		return fmt.Errorf("invalid callback url: login domain not match")
 	}
 	if queries.Get("ticket") == "" {
-		return "", fmt.Errorf("invalid callback url: ticket not found")
+		return fmt.Errorf("invalid callback url: ticket not found")
 	}
-	return callback, nil
+	return nil
 }
 
 func (s *Session) cas(callback string) error {
@@ -94,49 +105,22 @@ func (s *Session) cas(callback string) error {
 	defer func() { s.client.CheckRedirect = prevCheckRedirect }()
 
 	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
-	if err != nil {
-		return err
-	}
 	if resp.StatusCode != 302 {
 		return fmt.Errorf("invalid status code: %d", resp.StatusCode)
 	}
-	redirectURL, err := url.Parse(resp.Header.Get("Location"))
+	ticket, err := parsePortalTicketFromRedirect(resp.Header.Get("Location"), s.baseHost)
 	if err != nil {
 		return err
-	}
-	log.DebugPrintf("Received redirect: %s", redirectURL.String())
-	if redirectURL.Scheme != "https" {
-		return fmt.Errorf("invalid redirect url: scheme not https")
-	}
-	if redirectURL.Host != s.baseHost {
-		return fmt.Errorf("invalid redirect url: host not match")
-	}
-	if redirectURL.Path != "/portal/shortcut.html" {
-		return fmt.Errorf("invalid redirect url: path not match")
-	}
-	queries := redirectURL.Query()
-	if queries.Get("data") == "" {
-		return fmt.Errorf("invalid redirect url: data not found")
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	log.DebugPrintf("Received cas data: %s", string(body))
-
-	var tk struct {
-		Ticket string `json:"ticket"`
-	}
-	err = json.Unmarshal([]byte(queries.Get("data")), &tk)
-	if err != nil {
-		return err
-	}
-	log.DebugPrintf("Parsed portal data: %+v", tk)
-
-	if tk.Ticket == "" {
-		return fmt.Errorf("invalid portal data: ticket not found")
-	}
-	s.ticket = tk.Ticket
+	s.ticket = ticket
 	return nil
 }
