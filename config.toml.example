@@ -57,6 +57,7 @@ login_domain = "Radius"
 client_data_file = "client_data.json"
 graph_code_file = "" # Optional: captcha image will open in browser if this left empty. If set, the program will save the captcha image to this file and ask user to input the code in terminal.
 cas_ticket = ""
+oauth2_code = ""
 phone = ""
 update_best_nodes_interval = 300
 sid = ""
