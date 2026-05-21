@@ -49,6 +49,7 @@ type (
 		LoginDomain             string
 		ClientDataFile          string
 		CasTicket               string
+		OAuth2Code              string
 		SID                     string
 		DeviceID                string
 		SignKey                 string
@@ -111,6 +112,7 @@ type (
 		LoginDomain             *string                    `toml:"login_domain"`
 		ClientDataFile          *string                    `toml:"client_data_file"`
 		CasTicket               *string                    `toml:"cas_ticket"`
+		OAuth2Code              *string                    `toml:"oauth2_code"`
 		SID                     *string                    `toml:"sid"`
 		DeviceID                *string                    `toml:"device_id"`
 		SignKey                 *string                    `toml:"sign_key"`

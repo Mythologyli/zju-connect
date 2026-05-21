@@ -124,6 +124,7 @@ func main() {
 			conf.AuthType,
 			conf.GraphCodeFile,
 			conf.CasTicket,
+			conf.OAuth2Code,
 			clientData,
 			resourceData,
 			conf.UpdateBestNodesInterval,

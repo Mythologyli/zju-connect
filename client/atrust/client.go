@@ -128,7 +128,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return c.l3Tunnel.NewL3Conn()
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
 	c.serverAddress = serverAddress
 
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
@@ -178,6 +178,11 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			loginMethod = auth.CASLogin{
 				Domain: loginDomain,
 				Ticket: casTicket,
+			}
+		case "auth/httpsOauth2":
+			loginMethod = auth.HTTPSOauth2Login{
+				Domain: loginDomain,
+				Code:   oauth2Code,
 			}
 		case "auth/smsCheckCode":
 			loginMethod = auth.SMSLogin{
