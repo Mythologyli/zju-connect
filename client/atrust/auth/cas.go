@@ -10,6 +10,23 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+type CASLogin struct {
+	Domain string
+	Ticket string
+}
+
+func (m CASLogin) AuthType() string {
+	return "auth/cas"
+}
+
+func (m CASLogin) LoginDomain() string {
+	return m.Domain
+}
+
+func (m CASLogin) login(s *Session, authInfo AuthInfo) error {
+	return s.loginAuthCas(authInfo.LoginURL, m.Domain, m.Ticket)
+}
+
 func (s *Session) loginAuthCas(loginUrl, loginDomain, ticket string) error {
 	var callback string
 	var err error

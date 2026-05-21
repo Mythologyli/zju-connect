@@ -97,6 +97,23 @@ type AuthInfo struct {
 	LoginURL    string `json:"loginUrl"`
 }
 
+type LoginOptions struct {
+	DeviceID string
+	Cookies  []Cookie
+}
+
+type LoginResult struct {
+	Username string
+	SID      string
+	Cookies  []Cookie
+}
+
+type LoginMethod interface {
+	AuthType() string
+	LoginDomain() string
+	login(*Session, AuthInfo) error
+}
+
 func (s *Session) randSdpId(n ...int) string {
 	length := 8
 	if len(n) > 0 {
@@ -175,10 +192,10 @@ func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
 	return list, err
 }
 
-func (s *Session) Login(username, password, phone, loginDomain, authType, deviceId, graphCodeFile, casTicket string, cookies []Cookie) (string, string, []Cookie, error) {
+func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, error) {
 	sid := ""
-	if len(cookies) > 0 {
-		for _, cookie := range cookies {
+	if len(opts.Cookies) > 0 {
+		for _, cookie := range opts.Cookies {
 			if cookie.Host == s.baseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
 				sid = cookie.Value
 			}
@@ -191,73 +208,68 @@ func (s *Session) Login(username, password, phone, loginDomain, authType, device
 		}
 	}
 
-	s.deviceID = deviceId
-	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + deviceId + `"}`))
+	s.deviceID = opts.DeviceID
+	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + opts.DeviceID + `"}`))
 
 	isLogin, authInfoList, err := s.authConfigInit()
 	if err != nil {
-		return "", "", nil, err
+		return LoginResult{}, err
 	}
 	if isLogin == 1 {
 		log.Println("Already logged in")
 		username, err := s.onlineInfo()
-		return username, sid, cookies, err
+		return LoginResult{
+			Username: username,
+			SID:      sid,
+			Cookies:  opts.Cookies,
+		}, err
 	}
 
 	var foundAuthInfo *AuthInfo
 	for _, authInfo := range authInfoList {
-		if authInfo.AuthType == authType && authInfo.LoginDomain == loginDomain {
+		if authInfo.AuthType == method.AuthType() && authInfo.LoginDomain == method.LoginDomain() {
 			foundAuthInfo = &authInfo
 			break
 		}
 	}
 	if foundAuthInfo == nil {
 		log.Printf("Available authentication methods: %+v", authInfoList)
-		return "", "", nil, fmt.Errorf("auth type/login domain combination not found: auth type: %s, login domain: %s", authType, loginDomain)
+		return LoginResult{}, fmt.Errorf("auth type/login domain combination not found: auth type: %s, login domain: %s", method.AuthType(), method.LoginDomain())
 	}
 
-	log.Printf("Starting login with auth type: %s, login domain: %s", authType, loginDomain)
-	switch authType {
-	case "auth/psw":
-		err = s.loginAuthPsw(username, password, loginDomain, graphCodeFile)
-	case "auth/cas":
-		err = s.loginAuthCas(foundAuthInfo.LoginURL, loginDomain, casTicket)
-	case "auth/smsCheckCode":
-		err = s.loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile)
-	default:
-		err = fmt.Errorf("unsupported auth type: %s", authType)
-	}
+	log.Printf("Starting login with auth type: %s, login domain: %s", method.AuthType(), method.LoginDomain())
+	err = method.login(s, *foundAuthInfo)
 	if err != nil {
-		return "", "", nil, err
+		return LoginResult{}, err
 	}
 
 	err = s.reportEnv()
 	if err != nil {
-		return "", "", nil, err
+		return LoginResult{}, err
 	}
 
 	authID, err := s.authCheck()
 	if err != nil {
-		return "", "", nil, err
+		return LoginResult{}, err
 	}
 
 	if authID != "" {
 		err = s.authSms(authID)
 		if err != nil {
-			return "", "", nil, err
+			return LoginResult{}, err
 		}
 		err = s.smsCheckCode(authID)
 		if err != nil {
-			return "", "", nil, err
+			return LoginResult{}, err
 		}
 	}
 
-	username, err = s.onlineInfo()
+	username, err := s.onlineInfo()
 	if err != nil {
-		return "", "", nil, err
+		return LoginResult{}, err
 	}
 
-	cookies = make([]Cookie, 0)
+	cookies := make([]Cookie, 0)
 	for _, cookie := range s.client.Jar.Cookies(&url.URL{Host: s.baseHost, Scheme: "https"}) {
 		if cookie.Name == "sid" {
 			sid = cookie.Value
@@ -271,5 +283,9 @@ func (s *Session) Login(username, password, phone, loginDomain, authType, device
 		})
 	}
 
-	return username, sid, cookies, nil
+	return LoginResult{
+		Username: username,
+		SID:      sid,
+		Cookies:  cookies,
+	}, nil
 }
