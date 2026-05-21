@@ -10,6 +10,24 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+type SMSLogin struct {
+	Phone         string
+	Domain        string
+	GraphCodeFile string
+}
+
+func (m SMSLogin) AuthType() string {
+	return "auth/smsCheckCode"
+}
+
+func (m SMSLogin) LoginDomain() string {
+	return m.Domain
+}
+
+func (m SMSLogin) login(s *Session, _ AuthInfo) error {
+	return s.loginAuthSmsCheckCode(m.Phone, m.Domain, m.GraphCodeFile)
+}
+
 func (s *Session) loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile string) error {
 	sendSmsProcess := func(graphCheckCode string) (int, error) {
 		return s.sendSms(phone, loginDomain, graphCheckCode)

@@ -165,11 +165,41 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		sess := auth.NewSession(serverHost)
 
 		var err error
-		c.Username, c.SID, clientAuthData.Cookies, err = sess.Login(username, password, phone, loginDomain, authType, c.DeviceID, graphCodeFile, casTicket, clientAuthData.Cookies)
+		var loginMethod auth.LoginMethod
+		switch authType {
+		case "auth/psw":
+			loginMethod = auth.PasswordLogin{
+				Username:      username,
+				Password:      password,
+				Domain:        loginDomain,
+				GraphCodeFile: graphCodeFile,
+			}
+		case "auth/cas":
+			loginMethod = auth.CASLogin{
+				Domain: loginDomain,
+				Ticket: casTicket,
+			}
+		case "auth/smsCheckCode":
+			loginMethod = auth.SMSLogin{
+				Phone:         phone,
+				Domain:        loginDomain,
+				GraphCodeFile: graphCodeFile,
+			}
+		default:
+			return nil, fmt.Errorf("unsupported auth type: %s", authType)
+		}
+
+		loginResult, err := sess.Login(loginMethod, auth.LoginOptions{
+			DeviceID: c.DeviceID,
+			Cookies:  clientAuthData.Cookies,
+		})
 		if err != nil {
 			log.Println("Login error:", err)
 			return nil, err
 		}
+		c.Username = loginResult.Username
+		c.SID = loginResult.SID
+		clientAuthData.Cookies = loginResult.Cookies
 
 		resourceData, err = sess.ClientResource()
 		if err != nil {

@@ -14,6 +14,25 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+type PasswordLogin struct {
+	Username      string
+	Password      string
+	Domain        string
+	GraphCodeFile string
+}
+
+func (m PasswordLogin) AuthType() string {
+	return "auth/psw"
+}
+
+func (m PasswordLogin) LoginDomain() string {
+	return m.Domain
+}
+
+func (m PasswordLogin) login(s *Session, _ AuthInfo) error {
+	return s.loginAuthPsw(m.Username, m.Password, m.Domain, m.GraphCodeFile)
+}
+
 func (s *Session) loginAuthPsw(username, password, loginDomain, graphCodeFile string) error {
 	process := func(graphCheckCode string) (int, error) {
 		return s.pswImpl(username, password, loginDomain, graphCheckCode)
