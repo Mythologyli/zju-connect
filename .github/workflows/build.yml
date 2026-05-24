@@ -119,6 +119,67 @@ jobs:
         run: |
           gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || 'nightly' }} zju-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
 
+  update-aur:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Update AUR package
+        run: |
+          set -euo pipefail
+
+          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
+            echo "::error::AUR_SSH_PRIVATE_KEY is not set"
+            exit 1
+          fi
+
+          TAG="${{ github.event.release.tag_name }}"
+          PKGVER="${TAG#v}"
+          PKGVER="${PKGVER//-/_}"
+
+          eval "$(ssh-agent -s)"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" | tr -d '\r' | ssh-add -
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+
+          git clone ssh://aur@aur.archlinux.org/zju-connect-bin.git aur-package
+          cd aur-package
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          OLD_PKGVER="$(grep -E '^pkgver=' PKGBUILD | cut -d= -f2-)"
+          OLD_PKGREL="$(grep -E '^pkgrel=' PKGBUILD | cut -d= -f2-)"
+          if [ "${OLD_PKGVER}" = "${PKGVER}" ]; then
+            PKGREL="$((OLD_PKGREL + 1))"
+          else
+            PKGREL=1
+          fi
+
+          sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=${PKGREL}/" PKGBUILD
+
+          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash <<'EOF'
+          set -euo pipefail
+          pacman -Sy --noconfirm pacman-contrib
+          useradd -m builder
+          chown -R builder:builder /pkg
+          su builder -c 'cd /pkg && updpkgsums && makepkg --printsrcinfo > .SRCINFO'
+          EOF
+
+          git diff --check
+          if git diff --quiet; then
+            echo "AUR package is already up to date."
+            exit 0
+          fi
+
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${TAG}"
+          git push
+
   nightly:
     if: github.event_name != 'release' && github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name)
     runs-on: ubuntu-latest
