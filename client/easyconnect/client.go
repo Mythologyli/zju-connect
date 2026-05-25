@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -38,6 +40,10 @@ type Client struct {
 
 	ip        net.IP // Client IP
 	ipReverse []byte
+
+	stopKeepAlive    chan struct{}
+	keepAliveStarted sync.Once
+	closeOnce        sync.Once
 }
 
 func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *Client {
@@ -54,8 +60,18 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}},
-		twfID: twfID,
+		twfID:         twfID,
+		stopKeepAlive: make(chan struct{}),
 	}
+}
+
+// Close releases background resources held by the client. Currently this
+// stops the /por/update_session.csp keepalive goroutine started by Setup.
+// Safe to call multiple times.
+func (c *Client) Close() {
+	c.closeOnce.Do(func() {
+		close(c.stopKeepAlive)
+	})
 }
 
 func (c *Client) IP() (net.IP, error) {
@@ -191,8 +207,15 @@ func (c *Client) Setup(graphCodeFile string) error {
 	// idle policies (observed at HUST) close the session as idle, which
 	// surfaces as "broken pipe" + "unexpected handshake reply" panics in
 	// the L3 tunnel layer. The official EasyConnect client calls
-	// /por/update_session.csp; we mirror that.
-	go c.sessionKeepAliveLoop()
+	// /por/update_session.csp; we mirror that. Guarded by sync.Once so the
+	// recursive Setup() path (testMultiLine) doesn't double-start.
+	c.keepAliveStarted.Do(func() {
+		hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error {
+			c.Close()
+			return nil
+		})
+		go c.sessionKeepAliveLoop()
+	})
 
 	return nil
 }
@@ -200,9 +223,14 @@ func (c *Client) Setup(graphCodeFile string) error {
 func (c *Client) sessionKeepAliveLoop() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		if err := c.requestUpdateSession(); err != nil {
-			log.Printf("update_session keepalive failed: %v", err)
+	for {
+		select {
+		case <-c.stopKeepAlive:
+			return
+		case <-ticker.C:
+			if err := c.requestUpdateSession(); err != nil {
+				log.Printf("update_session keepalive failed: %v", err)
+			}
 		}
 	}
 }
