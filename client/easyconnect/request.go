@@ -484,9 +484,17 @@ func (c *Client) requestConfig() (string, error) {
 // the session, which the tunnel layer surfaces as a "broken pipe" →
 // "unexpected handshake reply" kick cascade.
 func (c *Client) requestUpdateSession() error {
-	addr := "https://" + c.server + "/por/update_session.csp?twfid=" + c.twfID + "&apiversion=1"
+	u := url.URL{
+		Scheme: "https",
+		Host:   c.server,
+		Path:   "/por/update_session.csp",
+	}
+	q := url.Values{}
+	q.Set("twfid", c.twfID)
+	q.Set("apiversion", "1")
+	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest("GET", addr, nil)
+	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -500,6 +508,10 @@ func (c *Client) requestUpdateSession() error {
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("update_session: unexpected status %d", resp.StatusCode)
+	}
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)
