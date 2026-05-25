@@ -1,6 +1,7 @@
 package gvisor
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -102,12 +103,16 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 				}
 
 				// Server-initiated SHUTDOWN: known terminal state from
-				// sangfor (cmd 0x08). No point retrying; exit cleanly so
-				// systemd / a wrapper can do a fresh login. This is
-				// strictly better than panicking with a gvisor stack
+				// sangfor (cmd 0x08). No point retrying; run the registered
+				// cleanup hooks (DNS revert, tun device close, etc.) and
+				// exit so systemd / a wrapper can do a fresh login. This
+				// is strictly better than panicking with a gvisor stack
 				// trace, which obscures the actual cause.
 				if errors.Is(err, easyconnect.ErrSangforShutdown) {
-					log.Printf("WritePackets: server SHUTDOWN; exiting for clean restart")
+					log.Printf("WritePackets: server SHUTDOWN; running cleanup hooks and exiting for clean restart")
+					if !hook_func.IsTerminal() {
+						hook_func.ExecTerminalFunc(context.Background())
+					}
 					os.Exit(2)
 				}
 
