@@ -123,10 +123,11 @@ jobs:
     if: github.event_name == 'release'
     needs: build
     runs-on: ubuntu-latest
-    env:
-      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    permissions: {}
     steps:
       - name: Update AUR package
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
