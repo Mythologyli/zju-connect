@@ -142,9 +142,10 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	// upstream causes sangfor to terminate the L3 tunnel (cmd 0x08 SHUTDOWN
 	// on the next handshake). The official EasyConnect client filters here
 	// via CSClient before traffic ever reaches the tunnel; we do the same.
-	// Skipped when no IPResources are parsed (parse_resource=false), since
-	// we have no whitelist to enforce.
-	if useVPN && !matchedResource && len(d.ipResources) > 0 {
+	// Skipped when IPResources are unavailable (parse_resource=false), since
+	// we have no whitelist to enforce. An empty but non-nil slice still means
+	// resources were parsed and no IP destinations are allowed.
+	if useVPN && !matchedResource && d.ipResources != nil {
 		log.Printf("ACL: refusing %s/%s — not in sangfor IPResources whitelist (would trigger tunnel SHUTDOWN)", ipAddr, network)
 		return nil, ErrACLDenied
 	}

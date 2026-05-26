@@ -2,11 +2,13 @@ package easyconnect
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -469,7 +471,7 @@ func (c *Client) requestConfig() (string, error) {
 // without it, sangfor servers with strict idle policies (e.g. HUST) close
 // the session, which the tunnel layer surfaces as a "broken pipe" →
 // "unexpected handshake reply" kick cascade.
-func (c *Client) requestUpdateSession() error {
+func (c *Client) requestUpdateSession(ctx context.Context) error {
 	u := url.URL{
 		Scheme: "https",
 		Host:   c.server,
@@ -480,7 +482,7 @@ func (c *Client) requestUpdateSession() error {
 	q.Set("apiversion", "1")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -499,16 +501,22 @@ func (c *Client) requestUpdateSession() error {
 		return fmt.Errorf("update_session: unexpected status %d", resp.StatusCode)
 	}
 
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
 	// Successful body looks like:
 	//   <Auth><Message>success</Message><ErrorCode>1</ErrorCode><TwfID>...</TwfID></Auth>
-	if !bytes.Contains(buf.Bytes(), []byte("success")) {
-		return errors.New("update_session: unexpected reply: " + buf.String())
+	var reply struct {
+		Message   string `xml:"Message"`
+		ErrorCode string `xml:"ErrorCode"`
+	}
+	if err := xml.Unmarshal(body, &reply); err != nil {
+		return fmt.Errorf("update_session: parse reply: %w", err)
+	}
+	if reply.Message != "success" || reply.ErrorCode != "1" {
+		return fmt.Errorf("update_session: unexpected reply message=%q error_code=%q", reply.Message, reply.ErrorCode)
 	}
 	return nil
 }
