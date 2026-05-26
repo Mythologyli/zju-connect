@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -38,9 +40,16 @@ type Client struct {
 
 	ip        net.IP // Client IP
 	ipReverse []byte
+
+	keepAliveCtx     context.Context
+	keepAliveCancel  context.CancelFunc
+	stopKeepAlive    chan struct{}
+	keepAliveStarted sync.Once
+	closeOnce        sync.Once
 }
 
 func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *Client {
+	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
 	return &Client{
 		server:            server,
 		username:          username,
@@ -54,8 +63,21 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}},
-		twfID: twfID,
+		twfID:           twfID,
+		keepAliveCtx:    keepAliveCtx,
+		keepAliveCancel: keepAliveCancel,
+		stopKeepAlive:   make(chan struct{}),
 	}
+}
+
+// Close releases background resources held by the client. Currently this
+// stops the /por/update_session.csp keepalive goroutine started by Setup.
+// Safe to call multiple times.
+func (c *Client) Close() {
+	c.closeOnce.Do(func() {
+		c.keepAliveCancel()
+		close(c.stopKeepAlive)
+	})
 }
 
 func (c *Client) IP() (net.IP, error) {
@@ -187,5 +209,36 @@ func (c *Client) Setup(graphCodeFile string) error {
 		return err
 	}
 
+	// Periodic session keepalive. Without this, sangfor servers with strict
+	// idle policies (observed at HUST) close the session as idle, which
+	// surfaces as "broken pipe" + "unexpected handshake reply" panics in
+	// the L3 tunnel layer. The official EasyConnect client calls
+	// /por/update_session.csp; we mirror that. Guarded by sync.Once so the
+	// recursive Setup() path (testMultiLine) doesn't double-start.
+	c.keepAliveStarted.Do(func() {
+		hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error {
+			c.Close()
+			return nil
+		})
+		go c.sessionKeepAliveLoop()
+	})
+
 	return nil
+}
+
+func (c *Client) sessionKeepAliveLoop() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.stopKeepAlive:
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(c.keepAliveCtx, 10*time.Second)
+			if err := c.requestUpdateSession(ctx); err != nil {
+				log.Printf("update_session keepalive failed: %v", err)
+			}
+			cancel()
+		}
+	}
 }

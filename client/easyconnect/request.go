@@ -2,11 +2,13 @@ package easyconnect
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -462,6 +464,61 @@ func (c *Client) requestConfig() (string, error) {
 	}(resp.Body)
 
 	return buf.String(), nil
+}
+
+// requestUpdateSession pings /por/update_session.csp to keep the server-side
+// session alive. The official EasyConnect client calls this periodically;
+// without it, sangfor servers with strict idle policies (e.g. HUST) close
+// the session, which the tunnel layer surfaces as a "broken pipe" →
+// "unexpected handshake reply" kick cascade.
+func (c *Client) requestUpdateSession(ctx context.Context) error {
+	u := url.URL{
+		Scheme: "https",
+		Host:   c.server,
+		Path:   "/por/update_session.csp",
+	}
+	q := url.Values{}
+	q.Set("twfid", c.twfID)
+	q.Set("apiversion", "1")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_Linux_Ubuntu")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("update_session: unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Successful body looks like:
+	//   <Auth><Message>success</Message><ErrorCode>1</ErrorCode><TwfID>...</TwfID></Auth>
+	var reply struct {
+		Message   string `xml:"Message"`
+		ErrorCode string `xml:"ErrorCode"`
+	}
+	if err := xml.Unmarshal(body, &reply); err != nil {
+		return fmt.Errorf("update_session: parse reply: %w", err)
+	}
+	if reply.Message != "success" || reply.ErrorCode != "1" {
+		return fmt.Errorf("update_session: unexpected reply message=%q error_code=%q", reply.Message, reply.ErrorCode)
+	}
+	return nil
 }
 
 func (c *Client) requestResources() (string, error) {
