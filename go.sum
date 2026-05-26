@@ -62,6 +62,8 @@ github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b/go.mod h1:xLnfdiJ
 github.com/sagernet/sing v0.0.0-20220817130738-ce854cda8522/go.mod h1:QVsS5L/ZA2Q5UhQwLrn0Trw+msNd/NPGEhBKR/ioWiY=
 github.com/sagernet/sing v0.7.16 h1:6ZnmpWJEZCWwAPj+GL7/FKEIlRaSupjtxhbpN2RjPgA=
 github.com/sagernet/sing v0.7.16/go.mod h1:ARkL0gM13/Iv5VCZmci/NuoOlePoIsW0m7BWfln/Hak=
+github.com/sagernet/sing v0.7.18 h1:iZHkaru1/MoHugx3G+9S3WG4owMewKO/KvieE2Pzk4E=
+github.com/sagernet/sing v0.7.18/go.mod h1:ARkL0gM13/Iv5VCZmci/NuoOlePoIsW0m7BWfln/Hak=
 github.com/sagernet/sing v0.8.10 h1:V5VZffy8rm4dtBVKIpKa8vibRR2SiJprtu/10DFUalU=
 github.com/sagernet/sing v0.8.10/go.mod h1:olXxWQNqRW/l2Q6JI3b2Qmz8iQnIFlOeeH8bx6JhgUA=
 github.com/scjalliance/comshim v0.0.0-20251021001035-b69f3cdad6f3 h1:F5fIdiov1myOAWn1RsSRAs1Si7YSbijcRuchu6OWS7I=
@@ -168,7 +170,17 @@ golang.zx2c4.com/wireguard/windows v1.0.1 h1:eOxiDVbywPC+ZQqvdCK7x+ZwWXKbYv50TtH
 golang.zx2c4.com/wireguard/windows v1.0.1/go.mod h1:+fbT3FFdX4zzYDLwJh5+HPEcNN/3HyNdzhNSVsQM+zs=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+gvisor.dev/gvisor v0.0.0-20251213073046-e79ac3734065 h1:FUD7Ka0nOPrJpI/q9yrwaAmimR5D8Av4NKQnhKirMA0=
+gvisor.dev/gvisor v0.0.0-20251213073046-e79ac3734065/go.mod h1:W1ZgZ/Dh85TgSZWH67l2jKVpDE5bjIaut7rjwwOiHzQ=
 gvisor.dev/gvisor v0.0.0-20260129214308-cb856800aa1c h1:bGlf1xYxmMtrHdekAk8YIkzIbpDTUTU7uDE0M48a0gA=
 gvisor.dev/gvisor v0.0.0-20260129214308-cb856800aa1c/go.mod h1:QkHjoMIBaYtpVufgwv3keYAbln78mBoCuShZrPrer1Q=
+gvisor.dev/gvisor v0.0.0-20260318162128-15f3bdc57d9d h1:JPQbzNHQ4HzjPBBJHlvHUGuGQbmhYkH0mislkmf/7VM=
+gvisor.dev/gvisor v0.0.0-20260318162128-15f3bdc57d9d/go.mod h1:xQ2PWgHmWJA/Ph4i1q1jBm39BKhc3W0DXqWoDSyuBOY=
+gvisor.dev/gvisor v0.0.0-20260507013813-85a2d11d65a1 h1:ErRZ0NPnNO6PvfCuHygtp45OJ5sEsGHIrcwMLg3CkrQ=
+gvisor.dev/gvisor v0.0.0-20260507013813-85a2d11d65a1/go.mod h1:xQ2PWgHmWJA/Ph4i1q1jBm39BKhc3W0DXqWoDSyuBOY=
+gvisor.dev/gvisor v0.0.0-20260509025911-8c9871efe45a h1:MBY5Aw9pLvTVgCBUfAbmSGPtZYFGtSc+madyKRWrvQ4=
+gvisor.dev/gvisor v0.0.0-20260509025911-8c9871efe45a/go.mod h1:H7Z1+pIiWtrfrUgn5jL84HRosNjKmBFugGDriorlDFQ=
+gvisor.dev/gvisor v0.0.0-20260519220106-d8751e5ab677 h1:tN5YMRF0gDPMJ5N6w3iqaslyNmVM0xAeU8RlnH4yglU=
+gvisor.dev/gvisor v0.0.0-20260519220106-d8751e5ab677/go.mod h1:AvHpIjYJRAT4DkcvHISQQfXxbzrwDeD1sidfe/0B5pI=
 gvisor.dev/gvisor v0.0.0-20260523100227-85b606a040c1 h1:uxqloHKRLcPYgotKO3OndBwb/rIiZqiukBydZtyYItU=
 gvisor.dev/gvisor v0.0.0-20260523100227-85b606a040c1/go.mod h1:AvHpIjYJRAT4DkcvHISQQfXxbzrwDeD1sidfe/0B5pI=

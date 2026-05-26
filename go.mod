@@ -21,7 +21,7 @@ require (
 	golang.org/x/sys v0.45.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 	golang.zx2c4.com/wireguard/windows v1.0.1
-	gvisor.dev/gvisor v0.0.0-20260523100227-85b606a040c1
+	gvisor.dev/gvisor v0.0.0-20260129214308-cb856800aa1c
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 )
 
@@ -38,7 +38,7 @@ require (
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/sagernet/go-tun2socks v1.16.12-0.20220818015926-16cb67876a61 // indirect
 	github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b // indirect
-	github.com/sagernet/sing v0.8.10 // indirect
+	github.com/sagernet/sing v0.7.18 // indirect
 	github.com/scjalliance/comshim v0.0.0-20251021001035-b69f3cdad6f3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
