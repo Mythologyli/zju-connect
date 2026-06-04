@@ -64,7 +64,7 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 	err = conn.WritePacket(meta, appID, nodeGroupID, packet)
 	for retry := 0; retry < 5 && isClosedConnErr(err); retry++ {
 		// If the cached tunnel conn was closed by network flaps, evict it and retry.
-		log.Println("Write packet failed with closed connection, evicting conn and retrying...")
+		log.Printf("Write packet failed with closed connection, evicting conn and retrying: %v", err)
 		t.evictConn(nodeGroupID, conn)
 		retryConn, retryErr := t.getConn(nodeGroupID)
 		if retryErr != nil {
@@ -72,6 +72,23 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 		}
 		conn = retryConn
 		err = conn.WritePacket(meta, appID, nodeGroupID, packet)
+	}
+	if isAuthTimeoutErr(err) {
+		// Auth timeout can leave the conntrack entry stuck without a token.
+		// Rebuild the tunnel once; if it still fails, let the stack drop this packet.
+		log.Printf("Write packet failed with auth timeout, evicting conn and retrying once: %v", err)
+		t.evictConn(nodeGroupID, conn)
+		retryConn, retryErr := t.getConn(nodeGroupID)
+		if retryErr != nil {
+			return retryErr
+		}
+		conn = retryConn
+		err = conn.WritePacket(meta, appID, nodeGroupID, packet)
+	}
+	if isAuthTimeoutErr(err) {
+		log.Printf("Drop packet after l3-tunnel auth timeout retry failed: %v", err)
+		t.evictConn(nodeGroupID, conn)
+		return nil
 	}
 	return err
 }
@@ -84,6 +101,10 @@ func isClosedConnErr(err error) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+func isAuthTimeoutErr(err error) bool {
+	return errors.Is(err, errL3TunnelAuthTimeout)
 }
 
 func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {

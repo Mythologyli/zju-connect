@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -32,6 +33,8 @@ const (
 	cmdSecondVipReq  = 0x16
 	cmdSecondVipResp = 0x96
 )
+
+var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
 
 type clientInfo struct {
 	sid          string
@@ -365,7 +368,7 @@ func (c *l3TunnelConn) ensureAuth(ct *conntrack, meta packetMeta) error {
 	case <-ct.authCh:
 		return ct.authErr
 	case <-time.After(8 * time.Second):
-		return fmt.Errorf("l3-tunnel auth timeout for %s", ct.key)
+		return fmt.Errorf("%w for %s", errL3TunnelAuthTimeout, ct.key)
 	}
 }
 
