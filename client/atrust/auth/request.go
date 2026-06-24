@@ -366,3 +366,36 @@ func (s *Session) checkCode() ([]byte, error) {
 
 	return body, nil
 }
+
+func parsePortalTicketFromRedirect(redirectLocation, baseHost string) (string, error) {
+	redirectURL, err := url.Parse(redirectLocation)
+	if err != nil {
+		return "", err
+	}
+	log.DebugPrintf("Received redirect: %s", redirectURL.String())
+	if redirectURL.Scheme != "https" {
+		return "", fmt.Errorf("invalid redirect url: scheme not https")
+	}
+	if redirectURL.Host != baseHost {
+		return "", fmt.Errorf("invalid redirect url: host not match")
+	}
+	if redirectURL.Path != "/portal/shortcut.html" {
+		return "", fmt.Errorf("invalid redirect url: path not match")
+	}
+	queries := redirectURL.Query()
+	if queries.Get("data") == "" {
+		return "", fmt.Errorf("invalid redirect url: data not found")
+	}
+
+	var tk struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.Unmarshal([]byte(queries.Get("data")), &tk); err != nil {
+		return "", err
+	}
+	log.DebugPrintf("Parsed portal data: %+v", tk)
+	if tk.Ticket == "" {
+		return "", fmt.Errorf("invalid portal data: ticket not found")
+	}
+	return tk.Ticket, nil
+}
