@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,7 +33,7 @@ func (s *Session) loginAuthHttpsOauth2(loginURL, loginDomain, code, callback str
 	}
 	if callback == "" {
 		var err error
-		callback, err = s.interactiveHttpsOauth2(loginURL, loginDomain)
+		callback, err = s.interactiveHttpsOauth2(loginURL)
 		if err != nil {
 			return err
 		}
@@ -57,7 +56,7 @@ func (s *Session) httpsOauth2CallbackFromCode(loginDomain, code string) string {
 	return s.baseURL + "/passport/v1/auth/httpsOauth2?" + params.Encode()
 }
 
-func (s *Session) interactiveHttpsOauth2(loginURL, loginDomain string) (string, error) {
+func (s *Session) interactiveHttpsOauth2(loginURL string) (string, error) {
 	log.Printf("Visit %s to login, and catch the callback url", loginURL)
 	log.Println("Please enter the callback url:")
 	var callback string
@@ -70,14 +69,14 @@ func (s *Session) interactiveHttpsOauth2(loginURL, loginDomain string) (string, 
 	if err != nil {
 		return "", err
 	}
-	if err := validateHTTPSOauth2CallbackURL(callbackURL, s.baseHost, loginDomain); err != nil {
+	if err := validateHTTPSOauth2CallbackURL(callbackURL, s.baseHost); err != nil {
 		return "", err
 	}
 
 	return callback, nil
 }
 
-func validateHTTPSOauth2CallbackURL(callbackURL *url.URL, baseHost, loginDomain string) error {
+func validateHTTPSOauth2CallbackURL(callbackURL *url.URL, baseHost string) error {
 	if callbackURL.Scheme != "https" {
 		return fmt.Errorf("invalid callback url: scheme not https")
 	}
@@ -88,9 +87,6 @@ func validateHTTPSOauth2CallbackURL(callbackURL *url.URL, baseHost, loginDomain 
 		return fmt.Errorf("invalid callback url: path not match")
 	}
 	queries := callbackURL.Query()
-	if queries.Get("sfDomain") != loginDomain {
-		return fmt.Errorf("invalid callback url: login domain not match")
-	}
 	if queries.Get("code") == "" {
 		return fmt.Errorf("invalid callback url: code not found")
 	}

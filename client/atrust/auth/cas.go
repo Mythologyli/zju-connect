@@ -30,7 +30,7 @@ func (s *Session) loginAuthCas(loginURL, loginDomain, ticket string) error {
 	callback := s.casCallbackFromTicket(loginDomain, ticket)
 	if ticket == "" {
 		var err error
-		callback, err = s.interactiveCas(loginURL, loginDomain)
+		callback, err = s.interactiveCas(loginURL)
 		if err != nil {
 			return err
 		}
@@ -51,7 +51,7 @@ func (s *Session) casCallbackFromTicket(loginDomain, ticket string) string {
 	return s.baseURL + "/passport/v1/auth/cas?" + params.Encode()
 }
 
-func (s *Session) interactiveCas(loginURL, loginDomain string) (string, error) {
+func (s *Session) interactiveCas(loginURL string) (string, error) {
 	log.Printf("Visit %s to login, and catch the callback url", loginURL)
 	log.Println("Please enter the callback url:")
 	var callback string
@@ -64,13 +64,13 @@ func (s *Session) interactiveCas(loginURL, loginDomain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateCASCallbackURL(callbackURL, s.baseHost, loginDomain); err != nil {
+	if err := validateCASCallbackURL(callbackURL, s.baseHost); err != nil {
 		return "", err
 	}
 	return callback, nil
 }
 
-func validateCASCallbackURL(callbackURL *url.URL, baseHost, loginDomain string) error {
+func validateCASCallbackURL(callbackURL *url.URL, baseHost string) error {
 	if callbackURL.Scheme != "https" {
 		return fmt.Errorf("invalid callback url: scheme not https")
 	}
@@ -81,9 +81,6 @@ func validateCASCallbackURL(callbackURL *url.URL, baseHost, loginDomain string) 
 		return fmt.Errorf("invalid callback url: path not match")
 	}
 	queries := callbackURL.Query()
-	if queries.Get("sfDomain") != loginDomain {
-		return fmt.Errorf("invalid callback url: login domain not match")
-	}
 	if queries.Get("ticket") == "" {
 		return fmt.Errorf("invalid callback url: ticket not found")
 	}
