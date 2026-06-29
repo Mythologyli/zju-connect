@@ -430,12 +430,26 @@ func (c *Client) loginCert() error {
 		_ = Body.Close()
 	}(resp.Body)
 
-	if !strings.Contains(buf.String(), "<Result>1</Result>") {
+	response := buf.String()
+	certSuccess := strings.Contains(response, "<Result>1</Result>") ||
+		strings.Contains(response, "Login successfully") ||
+		strings.Contains(response, "Auth cert suc")
+	if !certSuccess {
 		debug.PrintStack()
-		return errors.New("Cert verification failed: " + buf.String())
+		return errors.New("Cert verification failed: " + response)
 	}
 
-	log.Print("Cert verification success")
+	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
+	if twfIDMatch != nil {
+		c.twfID = string(twfIDMatch[1])
+		log.Printf("Update TWFID: %s", c.twfID)
+	}
+
+	if strings.Contains(response, "<pwpErrorCode>16</pwpErrorCode>") {
+		log.Print("Cert verification success (server returned pwpErrorCode=16, profile redirect ignored)")
+	} else {
+		log.Print("Cert verification success")
+	}
 
 	return nil
 }
