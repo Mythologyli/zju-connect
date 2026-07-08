@@ -1,6 +1,7 @@
 package atrust
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
@@ -40,16 +41,36 @@ type Client struct {
 
 	ip net.IP // Client IP
 
-	l3Tunnel *L3Tunnel
+	l3Tunnel   *L3Tunnel
+	l3TunnelMu sync.Mutex
+
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+	closeOnce       sync.Once
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
-		Username: username,
-		SID:      sid,
-		DeviceID: deviceID,
-		SignKey:  signKey,
+		Username:        username,
+		SID:             sid,
+		DeviceID:        deviceID,
+		SignKey:         signKey,
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
 	}
+}
+
+func (c *Client) Close() {
+	c.closeOnce.Do(func() {
+		c.lifecycleCancel()
+		c.l3TunnelMu.Lock()
+		tunnel := c.l3Tunnel
+		c.l3TunnelMu.Unlock()
+		if tunnel != nil {
+			tunnel.Close()
+		}
+	})
 }
 
 func (c *Client) IP() (net.IP, error) {
@@ -125,7 +146,13 @@ func (c *Client) CanUseTCPTunnel() bool {
 }
 
 func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
-	return c.l3Tunnel.NewL3Conn()
+	c.l3TunnelMu.Lock()
+	tunnel := c.l3Tunnel
+	c.l3TunnelMu.Unlock()
+	if tunnel == nil {
+		return nil, errors.New("L3 tunnel not initialized")
+	}
+	return tunnel.NewL3Conn()
 }
 
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
@@ -232,13 +259,16 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		return nil, err
 	}
 
-	c.l3Tunnel, err = NewL3Tunnel(c)
+	l3Tunnel, err := NewL3Tunnel(c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L3 tunnel: %v", err)
 	}
+	c.l3TunnelMu.Lock()
+	c.l3Tunnel = l3Tunnel
+	c.l3TunnelMu.Unlock()
 
 	if updateBestNodesInterval > 0 {
-		go c.updateBestNodes(updateBestNodesInterval)
+		go c.updateBestNodes(c.lifecycleCtx, updateBestNodesInterval)
 	}
 
 	return authData, nil

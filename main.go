@@ -145,6 +145,12 @@ func main() {
 	}
 
 	log.Printf("VPN client started")
+	if closer, ok := vpnClient.(interface{ Close() }); ok {
+		hook_func.RegisterTerminalFunc("CloseVPNClient", func(ctx context.Context) error {
+			closer.Close()
+			return nil
+		})
+	}
 
 	ipResources, err := vpnClient.IPResources()
 	if err != nil && !conf.DisableServerConfig {
@@ -273,6 +279,10 @@ func main() {
 		dnsResource,
 		useRemoteDNS,
 	)
+	hook_func.RegisterTerminalFunc("CloseResolver", func(ctx context.Context) error {
+		vpnResolver.Close()
+		return nil
+	})
 
 	for _, customDns := range conf.CustomDNSList {
 		ipAddr := net.ParseIP(customDns.IP)
@@ -327,7 +337,12 @@ func main() {
 		if conf.KeepAliveURL == "" && !useRemoteDNS {
 			log.Println("Keep alive is disabled because remote DNS is disabled, and no KeepAliveURL is provided")
 		} else {
-			go service.KeepAlive(vpnResolver, vpnDialer, conf.KeepAliveURL)
+			keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
+			hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
+				keepAliveCancel()
+				return nil
+			})
+			go service.KeepAlive(keepAliveCtx, vpnResolver, vpnDialer, conf.KeepAliveURL)
 		}
 	}
 

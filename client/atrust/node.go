@@ -1,6 +1,7 @@
 package atrust
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -75,9 +76,16 @@ func getBestNodes(nodeGroups map[string][]string) map[string]string {
 	return bestNodes
 }
 
-func (c *Client) updateBestNodes(updateBestNodesInterval int) {
+func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval int) {
+	ticker := time.NewTicker(time.Duration(updateBestNodesInterval) * time.Second)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(time.Duration(updateBestNodesInterval) * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 
 		bestNodes := getBestNodes(c.NodeGroups)
 		c.BestNodesRWMutex.Lock()

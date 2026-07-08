@@ -52,6 +52,20 @@ func (t *L3Tunnel) updateVIP(ips []net.IP) {
 	t.vipList = ips
 }
 
+func (t *L3Tunnel) Close() {
+	t.connsMu.Lock()
+	conns := make([]*l3TunnelConn, 0, len(t.conns))
+	for _, conn := range t.conns {
+		conns = append(conns, conn)
+	}
+	t.conns = make(map[string]*l3TunnelConn)
+	t.connsMu.Unlock()
+
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
+}
+
 func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 	t.connsMu.Lock()
 	if conn := t.conns[nodeGroupID]; conn != nil {

@@ -36,6 +36,8 @@ type Resolver struct {
 	// only the goroutine which get the lock can use remoteResolver
 	// MUST handler lock/unlock carefully!
 	concurResolveLock sync.Map
+
+	closeOnce sync.Once
 }
 
 type contextKey string
@@ -188,18 +190,17 @@ func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (co
 	}
 }
 
-func (r *Resolver) CleanCache(duration time.Duration) {
-	for {
-		time.Sleep(duration)
-		// dnsCache already cleaned
-		// r.dnsCache.DeleteExpired()
-		r.concurResolveLock.Range(func(key, value any) bool {
-			r.concurResolveLock.Delete(key)
-			return true
-		})
-		log.Printf("Clean DNS Cache: OK")
-	}
+func (r *Resolver) Close() {
+	r.closeOnce.Do(func() {
+		r.tcpLock.Lock()
+		if r.timer != nil {
+			r.timer.Stop()
+			r.timer = nil
+		}
+		r.tcpLock.Unlock()
+	})
 }
+
 
 func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
 	//domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
@@ -226,11 +227,11 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 				})
 			},
 		},
-		ttl:             ttl,
-		domainResources: domainResources,
-		dnsResource:     dnsResource,
-		dnsCache:        cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
-		useRemoteDNS:    useRemoteDNS,
+		ttl:              ttl,
+		domainResources:  domainResources,
+		dnsResource:      dnsResource,
+		dnsCache:         cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
+		useRemoteDNS: useRemoteDNS,
 	}
 
 	if secondaryDNSServer != "" {
@@ -248,9 +249,6 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 			PreferGo: true,
 		}
 	}
-	// sleep 10 times ttl
-	go resolver.CleanCache(time.Duration(ttl) * time.Second * 10)
-
 	var err error
 	resolver.IPPool, err = ippool.NewIPPool[client.DomainResource]("198.18.0.0/16")
 	if err != nil {

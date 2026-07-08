@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"github.com/mythologyli/zju-connect/resolve"
 )
 
-func KeepAlive(resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL string) {
+func KeepAlive(ctx context.Context, resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL string) {
 	if keepAliveURL != "" {
 		client := &http.Client{
 			Transport: &http.Transport{
@@ -21,16 +22,30 @@ func KeepAlive(resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL str
 			},
 		}
 
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+
 		for {
-			resp, err := client.Get(keepAliveURL)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, keepAliveURL, nil)
 			if err != nil {
 				log.Printf("KeepAlive: %s", err)
 			} else {
-				log.Printf("KeepAlive: OK, status code %d", resp.StatusCode)
-				_ = resp.Body.Close()
+				resp, err := client.Do(req)
+				if err != nil {
+					if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+						log.Printf("KeepAlive: %s", err)
+					}
+				} else {
+					log.Printf("KeepAlive: OK, status code %d", resp.StatusCode)
+					_ = resp.Body.Close()
+				}
 			}
 
-			time.Sleep(60 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	} else {
 		remoteUDPResolver, err := resolver.RemoteUDPResolver()
@@ -48,13 +63,18 @@ func KeepAlive(resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL str
 			return
 		}
 
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+
 		for {
 			useTCP := false
 
 			if remoteUDPResolver != nil {
-				_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", "www.baidu.com")
+				_, err := remoteUDPResolver.LookupIP(ctx, "ip4", "www.baidu.com")
 				if err != nil {
-					log.DebugPrintf("KeepAlive using UDP error: %s", err)
+					if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+						log.DebugPrintf("KeepAlive using UDP error: %s", err)
+					}
 					useTCP = true
 				} else {
 					log.Printf("KeepAlive using UDP: OK")
@@ -62,15 +82,21 @@ func KeepAlive(resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL str
 			}
 
 			if useTCP && remoteTCPResolver != nil {
-				_, err := remoteTCPResolver.LookupIP(context.Background(), "ip4", "www.baidu.com")
+				_, err := remoteTCPResolver.LookupIP(ctx, "ip4", "www.baidu.com")
 				if err != nil {
-					log.Printf("KeepAlive using TCP error: %s", err)
+					if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+						log.Printf("KeepAlive using TCP error: %s", err)
+					}
 				} else {
 					log.Printf("KeepAlive using TCP: OK")
 				}
 			}
 
-			time.Sleep(60 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	}
 }

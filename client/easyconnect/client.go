@@ -41,15 +41,17 @@ type Client struct {
 	ip        net.IP // Client IP
 	ipReverse []byte
 
-	keepAliveCtx     context.Context
-	keepAliveCancel  context.CancelFunc
-	stopKeepAlive    chan struct{}
-	keepAliveStarted sync.Once
-	closeOnce        sync.Once
+	lifecycleCtx       context.Context
+	lifecycleCancel    context.CancelFunc
+	requestIPConn      net.Conn
+	requestIPConnMu    sync.Mutex
+	requestIPKeepAlive sync.Once
+	keepAliveStarted   sync.Once
+	closeOnce          sync.Once
 }
 
 func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *Client {
-	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
 		server:            server,
 		username:          username,
@@ -64,19 +66,22 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}},
 		twfID:           twfID,
-		keepAliveCtx:    keepAliveCtx,
-		keepAliveCancel: keepAliveCancel,
-		stopKeepAlive:   make(chan struct{}),
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
 	}
 }
 
-// Close releases background resources held by the client. Currently this
-// stops the /por/update_session.csp keepalive goroutine started by Setup.
-// Safe to call multiple times.
+// Close releases background resources held by the client. Safe to call
+// multiple times.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
-		c.keepAliveCancel()
-		close(c.stopKeepAlive)
+		c.lifecycleCancel()
+		c.requestIPConnMu.Lock()
+		if c.requestIPConn != nil {
+			_ = c.requestIPConn.Close()
+			c.requestIPConn = nil
+		}
+		c.requestIPConnMu.Unlock()
 	})
 }
 
@@ -231,10 +236,10 @@ func (c *Client) sessionKeepAliveLoop() {
 	defer ticker.Stop()
 	for {
 		select {
-		case <-c.stopKeepAlive:
+		case <-c.lifecycleCtx.Done():
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(c.keepAliveCtx, 10*time.Second)
+			ctx, cancel := context.WithTimeout(c.lifecycleCtx, 10*time.Second)
 			if err := c.requestUpdateSession(ctx); err != nil {
 				log.Printf("update_session keepalive failed: %v", err)
 			}

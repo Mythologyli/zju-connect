@@ -637,12 +637,37 @@ func (c *Client) requestIP() error {
 	log.Printf("Client IP: %s", c.ip.String())
 
 	// Request IP conn CAN NOT be closed, otherwise tx/rx handshake will fail
-	go func() {
-		for {
-			time.Sleep(time.Second * 10)
-			runtime.KeepAlive(conn)
-		}
-	}()
+	c.setRequestIPConn(conn)
 
 	return nil
+}
+
+func (c *Client) setRequestIPConn(conn net.Conn) {
+	c.requestIPConnMu.Lock()
+	if c.requestIPConn != nil {
+		_ = c.requestIPConn.Close()
+	}
+	c.requestIPConn = conn
+	c.requestIPConnMu.Unlock()
+
+	c.requestIPKeepAlive.Do(func() {
+		go c.requestIPKeepAliveLoop()
+	})
+}
+
+func (c *Client) requestIPKeepAliveLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.lifecycleCtx.Done():
+			return
+		case <-ticker.C:
+			c.requestIPConnMu.Lock()
+			conn := c.requestIPConn
+			c.requestIPConnMu.Unlock()
+			runtime.KeepAlive(conn)
+		}
+	}
 }
