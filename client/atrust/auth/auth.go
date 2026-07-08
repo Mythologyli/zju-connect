@@ -225,6 +225,9 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 		}, err
 	}
 
+	if method == nil {
+		return LoginResult{}, fmt.Errorf("login method is nil, but user is not logged in")
+	}
 	var foundAuthInfo *AuthInfo
 	for _, authInfo := range authInfoList {
 		if authInfo.AuthType == method.AuthType() && authInfo.LoginDomain == method.LoginDomain() {

@@ -181,7 +181,7 @@
 
 #### aTrust Related Arguments
 
-+ `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is `auth/psw`.
++ `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is empty (try to skip auth).
 + `login-domain`: Login domain, default is `Radius`.
 + `client-data-file`: Client data file path, used to save login status to avoid repeated verification.
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.

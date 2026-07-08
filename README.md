@@ -186,7 +186,7 @@
 
 #### aTrust 相关参数
 
-+ `auth-type`: aTrust 登录验证类型，支持 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证），默认为 `auth/psw`
++ `auth-type`: aTrust 登录验证类型，支持 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证），默认为空（尝试不验证）
 
 + `login-domain`: 登录域，默认为 `Radius`
 

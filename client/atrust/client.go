@@ -217,6 +217,8 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 				Domain:        loginDomain,
 				GraphCodeFile: graphCodeFile,
 			}
+		case "":
+			log.Println("No auth type specified, trying to skip auth")
 		default:
 			return nil, fmt.Errorf("unsupported auth type: %s", authType)
 		}
