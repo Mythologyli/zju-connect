@@ -2,7 +2,7 @@ name: Build
 
 on:
   release:
-    types: [ published ]
+    types: [published]
   push:
     paths:
       - "**/*.go"
@@ -24,8 +24,8 @@ jobs:
     strategy:
       matrix:
         # Include amd64 on all platforms.
-        goos: [ windows, linux, darwin ]
-        goarch: [ amd64, 386 ]
+        goos: [windows, linux, darwin]
+        goarch: [amd64, 386]
         exclude:
           # Exclude i386 on darwin.
           - goarch: 386
@@ -36,9 +36,6 @@ jobs:
           - { goos: linux, goarch: arm, goarm: 6 }
           - { goos: linux, goarch: arm, goarm: 5 }
           # END Linux ARM 5 6 7
-          # BEGIN Windows ARM 7
-          - { goos: windows, goarch: arm, goarm: 7 }
-          # END Windows ARM 7
           # BEGIN Other architectures
           - { goos: darwin, goarch: arm64 }
           - { goos: linux, goarch: arm64 }
