@@ -324,11 +324,12 @@ func main() {
 	}
 
 	for _, portForwarding := range conf.PortForwardingList {
-		if portForwarding.NetworkType == "tcp" {
+		switch portForwarding.NetworkType {
+		case "tcp":
 			go service.ServeTCPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
-		} else if portForwarding.NetworkType == "udp" {
+		case "udp":
 			go service.ServeUDPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
-		} else {
+		default:
 			log.Printf("Port forwarding: unknown network type %s. Aborting", portForwarding.NetworkType)
 		}
 	}
@@ -352,7 +353,7 @@ func main() {
 		winquit.SimulateSigTermOnQuit(done)
 		<-done
 	} else {
-		quit := make(chan os.Signal)
+		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		<-quit
 	}

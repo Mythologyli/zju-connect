@@ -121,7 +121,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 		var domainRegex = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
 		if !domainRegex.MatchString(singleCustomProxyDomain) {
 			fmt.Printf("ZJU Connect: %s is not a valid domain\n", singleCustomProxyDomain)
-			return errors.New(fmt.Sprintf("ZJU Connect: %s is not a valid domain", singleCustomProxyDomain))
+			return fmt.Errorf("ZJU Connect: %s is not a valid domain", singleCustomProxyDomain)
 		}
 		conf.CustomProxyDomain = append(conf.CustomProxyDomain, singleCustomProxyDomain)
 	}
