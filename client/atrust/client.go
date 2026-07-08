@@ -155,6 +155,53 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return tunnel.NewL3Conn()
 }
 
+func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool) error {
+	var clientAuthData auth.ClientAuthData
+	if authData != nil {
+		err := json.Unmarshal(authData, &clientAuthData)
+		if err != nil {
+			log.Println("Error parsing client data:", err)
+			return err
+		}
+	}
+	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+
+	if clientAuthData.DeviceID == "" {
+		clientAuthData.DeviceID = strings.ToLower(randHex(32))
+	}
+
+	var serverHost string
+	if serverPort == 443 {
+		serverHost = serverAddress
+	} else {
+		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+	}
+	sess := auth.NewSession(serverHost)
+
+	sess.Login(nil, auth.LoginOptions{
+		DeviceID: clientAuthData.DeviceID,
+		Cookies:  clientAuthData.Cookies,
+	})
+	result, err := sess.QueryDevice()
+	if err != nil {
+		return err
+	}
+
+	if trusted {
+		if result.DeviceTrusted {
+			log.Println("Device already trusted, skipping")
+			return nil
+		}
+		return sess.TrustDevice([]string{result.SelfID})
+	} else {
+		if !result.DeviceTrusted {
+			log.Println("Device already untrusted, skipping")
+			return nil
+		}
+		return sess.UntrustDevice([]string{result.SelfID})
+	}
+}
+
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
 	c.serverAddress = serverAddress
 

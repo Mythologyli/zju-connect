@@ -133,6 +133,8 @@ func init() {
 	configFile, tcpPortForwarding, udpPortForwarding, customDns, customProxyDomain := "", "", "", "", ""
 	showVersion := false
 	atrustAuthInfo := false
+	atrustTrustDevice := false
+	atrustUntrustDevice := false
 
 	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
 	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
@@ -186,6 +188,8 @@ func init() {
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.BoolVar(&atrustAuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
+	flag.BoolVar(&atrustTrustDevice, "trust-device", false, "Trust the current device for aTrust with client data, but not connect")
+	flag.BoolVar(&atrustUntrustDevice, "untrust-device", false, "Untrust the current device for aTrust with client data, but not connect")
 
 	flag.Parse()
 
@@ -211,6 +215,34 @@ func init() {
 			os.Exit(1)
 		}
 		fmt.Println(string(jsonInfo))
+		os.Exit(0)
+	}
+
+	if atrustTrustDevice || atrustUntrustDevice {
+		if conf.Protocol != "atrust" {
+			fmt.Fprintln(os.Stderr, "Trust/Untrust device is only supported by the atrust protocol")
+			os.Exit(1)
+		}
+		if conf.ClientDataFile == "" {
+			fmt.Fprintln(os.Stderr, "Client data file is required for trust/untrust device")
+			os.Exit(1)
+		}
+		clientData, err := os.ReadFile(conf.ClientDataFile)
+		if err != nil {
+			log.Printf("Read client data file error: %s", err)
+			os.Exit(1)
+		}
+
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
+			os.Exit(1)
+		}
+		if atrustTrustDevice {
+			log.Println("Device trusted successfully")
+		} else {
+			log.Println("Device untrusted successfully")
+		}
 		os.Exit(0)
 	}
 

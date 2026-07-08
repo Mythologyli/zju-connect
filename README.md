@@ -200,6 +200,10 @@
 
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 
++ `trust-device`: 设置当前设备为授信终端（需要已登录的 `-client-data-file`），不启用隧道
+
++ `untrust-device`: 从授信终端中移除当前设备（需要已登录的 `-client-data-file`），不启用隧道
+
 + `sid`: aTrust SID，调试用途，一般不需要加此参数
 
 + `device-id`: aTrust 设备 ID，调试用途，一般不需要加此参数
