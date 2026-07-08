@@ -106,7 +106,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 					if ips, err = r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 						resolveLock.Unlock()
 						// All remote DNS failed, so we keep do nothing but use secondary dns
-						log.Printf("Resolve IPv4 addr failed using remote UDP/TCP DNS: " + host + ", using secondary DNS instead")
+						log.Printf("Resolve IPv4 addr failed using remote UDP/TCP DNS: %s, using secondary DNS instead", host)
 						return r.ResolveWithSecondaryDNS(ctx, host)
 					} else {
 						r.tcpLock.Lock()
@@ -131,7 +131,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 				// Only try tcp and secondary DNS
 				if ips, err := r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 					resolveLock.Unlock()
-					log.Printf("Resolve IPv4 addr failed using remote TCP DNS: " + host + ", using secondary DNS instead")
+					log.Printf("Resolve IPv4 addr failed using remote TCP DNS: %s, using secondary DNS instead", host)
 					return r.ResolveWithSecondaryDNS(ctx, host)
 				} else {
 					r.setDNSCache(host, ips[0])
@@ -173,10 +173,10 @@ func (r *Resolver) RemoteTCPResolver() (*net.Resolver, error) {
 
 func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (context.Context, net.IP, error) {
 	if targets, err := r.secondaryResolver.LookupIP(ctx, "ip4", host); err != nil {
-		log.Printf("Resolve IPv4 addr failed using secondary DNS: " + host + ". Try IPv6 addr")
+		log.Printf("Resolve IPv4 addr failed using secondary DNS: %s. Try IPv6 addr", host)
 
 		if targets, err = r.secondaryResolver.LookupIP(ctx, "ip6", host); err != nil {
-			log.Printf("Resolve IPv6 addr failed using secondary DNS: " + host)
+			log.Printf("Resolve IPv6 addr failed using secondary DNS: %s", host)
 			return ctx, nil, err
 		} else {
 			log.Printf("%s -> %s", host, targets[0].String())

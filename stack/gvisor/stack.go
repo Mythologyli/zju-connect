@@ -49,7 +49,7 @@ func (ep *Endpoint) MTU() uint32 {
 }
 
 func (ep *Endpoint) SetMTU(mtu uint32) {
-	log.Println("don't support change MTU from %d to %d", MTU, mtu)
+	log.Printf("don't support change MTU from %d to %d", MTU, mtu)
 }
 
 func (ep *Endpoint) MaxHeaderLength() uint16 {

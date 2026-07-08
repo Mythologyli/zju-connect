@@ -33,7 +33,7 @@ func ServeSocks5(bindAddr string, dialer *dial.Dialer, resolver *resolve.Resolve
 		socks5.WithLogger(socks5.NewLogger(log.NewLogger("[SOCKS5] "))),
 	)
 
-	log.Printf("SOCKS5 server listening on " + bindAddr)
+	log.Printf("SOCKS5 server listening on %s", bindAddr)
 
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {

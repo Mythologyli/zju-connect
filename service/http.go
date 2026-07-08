@@ -102,7 +102,7 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 		}
 	})
 
-	log.Printf("HTTP server listening on " + bindAddr)
+	log.Printf("HTTP server listening on %s", bindAddr)
 
 	server := &http.Server{Addr: bindAddr, Handler: handlerFunc}
 
