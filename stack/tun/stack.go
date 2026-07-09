@@ -58,12 +58,17 @@ func (s *Stack) Run() {
 	if connErr != nil {
 		panic(connErr)
 	}
+	defer s.l3Conn.Close()
+
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
 			buf := make([]byte, MTU+tun.PacketOffset)
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
+				if hook_func.IsTerminal() {
+					return
+				}
 				panic(err)
 			}
 			log.DebugPrintf("Recv: read %d bytes", n)
