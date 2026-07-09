@@ -240,10 +240,14 @@ func (c *Client) sessionKeepAliveLoop() {
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(c.lifecycleCtx, 10*time.Second)
+			cancel()
 			if err := c.requestUpdateSession(ctx); err != nil {
+				if err == errNotFound {
+					log.Println("server does not support update_session, stopping keepalive")
+					return
+				}
 				log.Printf("update_session keepalive failed: %v", err)
 			}
-			cancel()
 		}
 	}
 }

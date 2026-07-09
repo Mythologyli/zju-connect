@@ -32,6 +32,7 @@ import (
 var errSMSRequired = errors.New("SMS code required")
 var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
+var errNotFound = errors.New("not found")
 
 func (c *Client) requestTwfID(graphCodeFile string) error {
 	err := c.loginAuthAndPsw(graphCodeFile)
@@ -512,6 +513,9 @@ func (c *Client) requestUpdateSession(ctx context.Context) error {
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return errNotFound
+		}
 		return fmt.Errorf("update_session: unexpected status %d", resp.StatusCode)
 	}
 
