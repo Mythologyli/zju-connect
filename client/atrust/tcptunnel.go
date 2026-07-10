@@ -7,7 +7,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -22,7 +21,7 @@ import (
 )
 
 type tcpTunnelConn struct {
-	tlsConn *tls.Conn
+	tlsConn net.Conn
 	reader  *bufio.Reader
 	readBuf []byte
 }
@@ -199,9 +198,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	if nodeAddr == "" {
 		return nil, fmt.Errorf("no available aTrust node for group %q", nodeGroupID)
 	}
-	conn, err := tls.Dial("tcp", nodeAddr, &tls.Config{
-		InsecureSkipVerify: true,
-	})
+	conn, err := dialATrustTLS(nodeAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
