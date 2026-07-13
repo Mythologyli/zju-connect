@@ -73,18 +73,6 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 	return re.Data.IsLogin, re.Data.AuthServerInfoList, nil
 }
 
-func (s *Session) authConfigInit() (int, []AuthInfo, error) {
-	return s.authConfigImpl(WithSharedParams(url.Values{
-		"needTicket": {"1"},
-	}))
-}
-
-func (s *Session) authConfigMod() (int, []AuthInfo, error) {
-	return s.authConfigImpl(WithSharedParams(url.Values{
-		"mod": {"1"},
-	}))
-}
-
 func (s *Session) reportEnv() error {
 	log.Println("Perform POST /controller/v1/public/reportEnv")
 
@@ -142,7 +130,70 @@ func (s *Session) reportEnv() error {
 	return nil
 }
 
-func (s *Session) authCheck() (string, error) {
+type smsMode uint8
+
+const (
+	smsModeUnknown smsMode = iota
+	smsWithoutAuthID
+	smsWithAuthID
+)
+
+type authServiceInfo struct {
+	AuthID   string `json:"authId"`
+	AuthType string `json:"authType"`
+}
+
+type authStepData struct {
+	NextService     string            `json:"nextService"`
+	NextServiceList []authServiceInfo `json:"nextServiceList"`
+}
+
+type authStep struct {
+	Service string
+	AuthID  string
+	SMSMode smsMode
+}
+
+func authStepFromData(data authStepData) authStep {
+	step := authStep{Service: data.NextService}
+
+	var selected *authServiceInfo
+	for i := range data.NextServiceList {
+		service := &data.NextServiceList[i]
+		if step.Service != "" && service.AuthType == step.Service {
+			selected = service
+			break
+		}
+	}
+	if selected == nil && len(data.NextServiceList) > 0 {
+		selected = &data.NextServiceList[0]
+	}
+
+	if selected != nil {
+		step.AuthID = selected.AuthID
+		if step.Service == "" {
+			step.Service = selected.AuthType
+		}
+	}
+
+	// Some older gateways omit authType and only return an authId. This was
+	// historically the response shape for SMS secondary authentication.
+	if step.Service == "" && step.AuthID != "" {
+		step.Service = "auth/sms"
+	}
+
+	if step.Service == "auth/sms" {
+		if step.AuthID == "" {
+			step.SMSMode = smsWithoutAuthID
+		} else {
+			step.SMSMode = smsWithAuthID
+		}
+	}
+
+	return step
+}
+
+func (s *Session) authCheck() (authStep, error) {
 	log.Println("Perform GET /passport/v1/auth/authCheck")
 
 	u := s.baseURL + "/passport/v1/auth/authCheck"
@@ -153,7 +204,7 @@ func (s *Session) authCheck() (string, error) {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", err
+		return authStep{}, err
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -162,34 +213,113 @@ func (s *Session) authCheck() (string, error) {
 	log.DebugPrintf("Received auth check: %s", string(body))
 
 	var ac struct {
-		Data struct {
-			NextServiceList []struct {
-				AuthId string `json:"authId"`
-			} `json:"nextServiceList"`
-		} `json:"data"`
+		Code    int          `json:"code"`
+		Message string       `json:"message"`
+		Data    authStepData `json:"data"`
 	}
 	err = json.Unmarshal(body, &ac)
 	if err != nil {
-		return "", err
+		return authStep{}, err
 	}
 	log.DebugPrintf("Parsed auth check: %+v", ac)
 
-	if len(ac.Data.NextServiceList) > 0 {
-		return ac.Data.NextServiceList[0].AuthId, nil
-	} else {
-		return "", nil
+	if ac.Code != 0 {
+		return authStep{}, fmt.Errorf("authCheck failed with code %d: %s", ac.Code, ac.Message)
 	}
+
+	return authStepFromData(ac.Data), nil
 }
 
-func (s *Session) authSms(authId string) error {
+func (s *Session) phoneNumber(authID string) ([]string, error) {
+	log.Println("Perform GET /passport/v1/public/phoneNumber")
+
+	u := s.baseURL + "/passport/v1/public/phoneNumber"
+	params := WithSharedParams(nil)
+	if authID != "" {
+		params.Set("authId", authID)
+	}
+	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("x-csrf-token", s.csrfToken)
+	req.Header.Set("x-sdp-traceid", s.randSdpId())
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
+
+	var re struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			PhoneNumber         json.RawMessage `json:"phoneNumber"`
+			MaskIdentifierValue string          `json:"maskIdentifierValue"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &re); err != nil {
+		return nil, err
+	}
+	if re.Code != 0 {
+		return nil, fmt.Errorf("phoneNumber failed with code %d: %s", re.Code, re.Message)
+	}
+
+	phoneNumbers, err := parsePhoneNumbers(re.Data.PhoneNumber)
+	if err != nil {
+		return nil, err
+	}
+	if len(phoneNumbers) == 0 && re.Data.MaskIdentifierValue != "" {
+		phoneNumbers = append(phoneNumbers, re.Data.MaskIdentifierValue)
+	}
+	return phoneNumbers, nil
+}
+
+func parsePhoneNumbers(raw json.RawMessage) ([]string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, nil
+	}
+
+	if raw[0] == '[' {
+		var phoneNumbers []string
+		if err := json.Unmarshal(raw, &phoneNumbers); err != nil {
+			return nil, fmt.Errorf("parse phoneNumber list: %w", err)
+		}
+		return phoneNumbers, nil
+	}
+
+	var phoneNumber string
+	if err := json.Unmarshal(raw, &phoneNumber); err != nil {
+		return nil, fmt.Errorf("parse phoneNumber: %w", err)
+	}
+	if phoneNumber == "" {
+		return nil, nil
+	}
+	return []string{phoneNumber}, nil
+}
+
+func (s *Session) authSms(step authStep) error {
 	log.Println("Perform GET /passport/v1/auth/sms")
 	u := s.baseURL + "/passport/v1/auth/sms"
 	params := WithSharedParams(url.Values{
-		"action":       {"sendsms"},
-		"isPrevEffect": {"0"},
-		"taskId":       {""},
-		"authId":       {authId},
+		"action": {"sendsms"},
 	})
+	switch step.SMSMode {
+	case smsWithAuthID:
+		if step.AuthID == "" {
+			return fmt.Errorf("SMS authentication requires authId")
+		}
+		params.Set("isPrevEffect", "0")
+		params.Set("taskId", "")
+		params.Set("authId", step.AuthID)
+	case smsWithoutAuthID:
+		// The stateful SMS flow does not use authId.
+	default:
+		return fmt.Errorf("unknown SMS authentication mode")
+	}
 	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("x-csrf-token", s.csrfToken)
@@ -228,37 +358,57 @@ func (s *Session) authSms(authId string) error {
 	return nil
 }
 
-func (s *Session) smsCheckCode(authId string) error {
+func (s *Session) smsCheckCode(step authStep) (authStep, error) {
 	log.Println("Perform POST /passport/v1/auth/sms")
 
 	code := ""
 	log.Print("Please enter the SMS verification code: ")
 	_, err := fmt.Scanln(&code)
 	if err != nil {
-		return err
+		return authStep{}, err
 	}
+	return s.secondarySMSCheckCodeImpl(step, code)
+}
 
+func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string) (authStep, error) {
 	u := s.baseURL + "/passport/v1/auth/sms"
 	params := WithSharedParams(url.Values{
 		"action": {"checkcode"},
 	})
-	payload := map[string]interface{}{
-		"isPrevEffect":      false,
-		"code":              code,
-		"skipSecondaryAuth": "0",
-		"taskId":            "",
-		"authId":            authId,
+
+	var req *http.Request
+	switch step.SMSMode {
+	case smsWithoutAuthID:
+		form := url.Values{
+			"code":              {code},
+			"skipSecondaryAuth": {"0"},
+		}
+		req, _ = http.NewRequest("POST", u+"?"+params.Encode(), strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	case smsWithAuthID:
+		if step.AuthID == "" {
+			return authStep{}, fmt.Errorf("SMS authentication requires authId")
+		}
+		payload := map[string]any{
+			"isPrevEffect":      false,
+			"code":              code,
+			"skipSecondaryAuth": "0",
+			"taskId":            "",
+			"authId":            step.AuthID,
+		}
+		bdy, _ := json.Marshal(payload)
+		req, _ = http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(bdy))
+		req.Header.Set("Content-Type", "application/json;charset=utf-8")
+	default:
+		return authStep{}, fmt.Errorf("unknown SMS authentication mode")
 	}
-	bdy, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", u+"?"+params.Encode(), bytes.NewReader(bdy))
 	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return authStep{}, err
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -267,20 +417,22 @@ func (s *Session) smsCheckCode(authId string) error {
 	log.DebugPrintf("Received sms check: %s", string(body))
 
 	var re struct {
-		Code int `json:"code"`
+		Code    int          `json:"code"`
+		Message string       `json:"message"`
+		Data    authStepData `json:"data"`
 	}
 	err = json.Unmarshal(body, &re)
 	if err != nil {
-		return err
+		return authStep{}, err
 	}
 	log.DebugPrintf("Parsed sms check: %+v", re)
 
 	if re.Code != 0 {
 		log.Printf("smsCheckCode failed with code %d: %s", re.Code, string(body))
-		return fmt.Errorf("smsCheckCode failed with code %d", re.Code)
+		return authStep{}, fmt.Errorf("smsCheckCode failed with code %d: %s", re.Code, re.Message)
 	}
 
-	return nil
+	return authStepFromData(re.Data), nil
 }
 
 func (s *Session) onlineInfo() (string, error) {

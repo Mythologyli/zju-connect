@@ -10,14 +10,16 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
 )
 
 const (
-	UserAgent   = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
-	maxAttempts = 5
+	UserAgent    = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) aTrustTray/2.4.10.50 Chrome/83.0.4103.94 Electron/9.0.2 Safari/537.36 aTrustTray-Linux-Plat-Ubuntu-x64 SPCClientType"
+	maxAttempts  = 5
+	maxAuthSteps = 8
 )
 
 var sharedParams = url.Values{
@@ -192,6 +194,63 @@ func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
 	return list, err
 }
 
+func (s *Session) continueAuth(step authStep) error {
+	for attempt := 0; attempt < maxAuthSteps; attempt++ {
+		log.DebugPrintf("Continue authentication: service=%s smsMode=%d", step.Service, step.SMSMode)
+
+		var err error
+		switch step.Service {
+		case "":
+			return nil
+		case "auth/authCheck":
+			step, err = s.authCheck()
+		case "auth/sms":
+			step, err = s.completeSMS(step)
+		default:
+			return fmt.Errorf("unsupported next authentication service: %s", step.Service)
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	return fmt.Errorf("authentication chain exceeded %d steps", maxAuthSteps)
+}
+
+func (s *Session) completeSMS(step authStep) (authStep, error) {
+	switch step.SMSMode {
+	case smsWithAuthID:
+		// HITSZ-style gateways refresh the ticket-bearing auth config before
+		// querying the phone number and sending the SMS.
+		if _, _, err := s.authConfig(true, true); err != nil {
+			return authStep{}, err
+		}
+	case smsWithoutAuthID:
+		// SARI-style gateways refresh auth config after sending the SMS.
+	default:
+		return authStep{}, fmt.Errorf("unknown SMS authentication mode")
+	}
+
+	phoneNumbers, err := s.phoneNumber(step.AuthID)
+	if err != nil {
+		log.Printf("Warning: failed to get phone number: %v", err)
+	} else if len(phoneNumbers) > 0 {
+		log.Printf("Phone number: %s", strings.Join(phoneNumbers, ", "))
+	}
+
+	if err := s.authSms(step); err != nil {
+		return authStep{}, err
+	}
+
+	if step.SMSMode == smsWithoutAuthID {
+		if _, _, err := s.authConfig(true, true); err != nil {
+			return authStep{}, err
+		}
+	}
+
+	return s.smsCheckCode(step)
+}
+
 func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, error) {
 	sid := ""
 	if len(opts.Cookies) > 0 {
@@ -251,20 +310,9 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 		return LoginResult{}, err
 	}
 
-	authID, err := s.authCheck()
+	err = s.continueAuth(authStep{Service: "auth/authCheck"})
 	if err != nil {
 		return LoginResult{}, err
-	}
-
-	if authID != "" {
-		err = s.authSms(authID)
-		if err != nil {
-			return LoginResult{}, err
-		}
-		err = s.smsCheckCode(authID)
-		if err != nil {
-			return LoginResult{}, err
-		}
 	}
 
 	username, err := s.onlineInfo()
