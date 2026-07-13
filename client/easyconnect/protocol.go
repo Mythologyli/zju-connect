@@ -68,7 +68,7 @@ func (c *Client) tlsConn() (*tls.UConn, error) {
 	_ = conn.SetTLSVers(tls.VersionTLS11, tls.VersionTLS11, []tls.TLSExtension{})
 	conn.HandshakeState.Hello.Vers = tls.VersionTLS11
 	conn.HandshakeState.Hello.CipherSuites = []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.FAKE_TLS_EMPTY_RENEGOTIATION_INFO_SCSV}
-	conn.HandshakeState.Hello.CompressionMethods = []uint8{1, 0}
+	conn.HandshakeState.Hello.CompressionMethods = []uint8{0}
 	conn.HandshakeState.Hello.SessionId = []byte{'L', '3', 'I', 'P', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	conn.Extensions = []tls.TLSExtension{&fakeHeartBeatExtension{}}
 
