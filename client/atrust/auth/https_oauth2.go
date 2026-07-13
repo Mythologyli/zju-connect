@@ -43,7 +43,7 @@ func (s *Session) loginAuthHttpsOauth2(loginURL, loginDomain, code, callback str
 		return err
 	}
 
-	_, _, err := s.authConfigMod()
+	_, _, err := s.authConfig(true, false)
 	return err
 }
 

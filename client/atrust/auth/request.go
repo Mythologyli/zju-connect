@@ -8,13 +8,22 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
 )
 
-func (s *Session) authConfigImpl(params url.Values) (int, []AuthInfo, error) {
+func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 	log.Println("Perform GET /passport/v1/public/authConfig")
+
+	params := WithSharedParams(nil)
+	if mod {
+		params.Set("mod", "1")
+	}
+	if needTicket {
+		params.Set("needTicket", "1")
+	}
 
 	u := s.baseURL + "/passport/v1/public/authConfig"
 	req, _ := http.NewRequest("GET", u+"?"+params.Encode(), nil)

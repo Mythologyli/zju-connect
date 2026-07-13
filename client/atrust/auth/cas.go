@@ -39,7 +39,7 @@ func (s *Session) loginAuthCas(loginURL, loginDomain, ticket string) error {
 	if err := s.cas(callback); err != nil {
 		return err
 	}
-	_, _, err := s.authConfigMod()
+	_, _, err := s.authConfig(true, false)
 	return err
 }
 

@@ -142,7 +142,7 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 			return err
 		}
 
-		_, _, err = s.authConfigInit()
+		_, _, err = s.authConfig(false, true)
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func (s *Session) withGraphCheckCode(process func(string) (int, error), graphCod
 }
 
 func (s *Session) GetAuthInfoList() ([]AuthInfo, error) {
-	_, list, err := s.authConfigInit()
+	_, list, err := s.authConfig(false, true)
 	return list, err
 }
 
@@ -211,7 +211,7 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 	s.deviceID = opts.DeviceID
 	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + opts.DeviceID + `"}`))
 
-	isLogin, authInfoList, err := s.authConfigInit()
+	isLogin, authInfoList, err := s.authConfig(false, true)
 	if err != nil {
 		return LoginResult{}, err
 	}
