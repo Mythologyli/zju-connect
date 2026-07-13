@@ -39,9 +39,12 @@ func (s *Session) authConfigImpl(params url.Values) (int, []AuthInfo, error) {
 			AuthServerInfoList []AuthInfo `json:"authServerInfoList"`
 			IsLogin            int        `json:"isLogin"`
 			CSRF               string     `json:"csrfToken"`
-			PubKey             string     `json:"pubKey"`
-			PubKeyExp          string     `json:"pubKeyExp"`
-			AntiReplayRand     string     `json:"antiReplayRand"`
+			Security           struct {
+				CSRF string `json:"csrfToken"`
+			} `json:"security"`
+			PubKey         string `json:"pubKey"`
+			PubKeyExp      string `json:"pubKeyExp"`
+			AntiReplayRand string `json:"antiReplayRand"`
 		} `json:"data"`
 	}
 	err = json.Unmarshal(body, &re)
@@ -51,6 +54,9 @@ func (s *Session) authConfigImpl(params url.Values) (int, []AuthInfo, error) {
 	log.DebugPrintf("Parsed auth config: %+v", re)
 
 	s.csrfToken = re.Data.CSRF
+	if s.csrfToken == "" {
+		s.csrfToken = re.Data.Security.CSRF
+	}
 	s.pubKey = re.Data.PubKey
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
