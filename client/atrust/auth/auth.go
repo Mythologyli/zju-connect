@@ -206,6 +206,8 @@ func (s *Session) continueAuth(step authStep) error {
 			step, err = s.authCheck()
 		case "auth/sms":
 			step, err = s.completeSMS(step)
+		case "auth/customSms":
+			step, err = s.completeCustomSMS()
 		default:
 			return fmt.Errorf("unsupported next authentication service: %s", step.Service)
 		}
