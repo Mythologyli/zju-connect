@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
@@ -13,6 +14,12 @@ type TCPing struct {
 	target *Target
 	done   chan struct{}
 	result *Result
+	dial   func(context.Context, string, string) (net.Conn, error)
+}
+
+// SetDialContext overrides the system dialer used by TCPing.
+func (tcping *TCPing) SetDialContext(dial func(context.Context, string, string) (net.Conn, error)) {
+	tcping.dial = dial
 }
 
 var _ Pinger = (*TCPing)(nil)
@@ -88,7 +95,13 @@ func (tcping *TCPing) Stop() {
 func (tcping TCPing) ping() (time.Duration, net.Addr, error) {
 	var remoteAddr net.Addr
 	duration, errIfce := timeIt(func() interface{} {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", tcping.target.Host, tcping.target.Port), tcping.target.Timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), tcping.target.Timeout)
+		defer cancel()
+		dial := (&net.Dialer{}).DialContext
+		if tcping.dial != nil {
+			dial = tcping.dial
+		}
+		conn, err := dial(ctx, "tcp", fmt.Sprintf("%s:%d", tcping.target.Host, tcping.target.Port))
 		if err != nil {
 			return err
 		}

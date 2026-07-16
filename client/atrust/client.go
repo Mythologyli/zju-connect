@@ -16,6 +16,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -47,6 +48,7 @@ type Client struct {
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
 	closeOnce       sync.Once
+	underlayDialer  *underlay.Dialer
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -137,7 +139,8 @@ func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, err
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	sess := auth.NewSession(serverHost)
+	dialer := underlay.New(serverHost)
+	sess := auth.NewSession(serverHost, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
 
@@ -176,7 +179,8 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	sess := auth.NewSession(serverHost)
+	dialer := underlay.New(serverHost)
+	sess := auth.NewSession(serverHost, dialer.DialContext)
 
 	sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
@@ -204,6 +208,13 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 
 func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
 	c.serverAddress = serverAddress
+	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
+	c.underlayDialer = underlay.New(serverHost)
+	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
+		log.Printf("Underlay interface: %s", interfaceName)
+	} else {
+		log.Println("Warning: failed to detect underlay interface; using system routing")
+	}
 
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
@@ -230,13 +241,13 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
 
-		var serverHost string
+		var authServerHost string
 		if serverPort == 443 {
-			serverHost = serverAddress
+			authServerHost = serverAddress
 		} else {
-			serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+			authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 		}
-		sess := auth.NewSession(serverHost)
+		sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
 
 		var err error
 		var loginMethod auth.LoginMethod
@@ -301,7 +312,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
-	c.BestNodes = getBestNodes(c.NodeGroups)
+	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext)
 
 	err = c.getIP()
 	if err != nil {

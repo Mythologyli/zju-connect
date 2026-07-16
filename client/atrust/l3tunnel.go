@@ -1,9 +1,11 @@
 package atrust
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 )
@@ -90,7 +92,9 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 		connectionID: t.client.ConnectionID,
 		username:     t.client.Username,
 	}
-	conn, err := newL3TunnelConn(addr, info, t.client.SignKey, t.updateVIP)
+	ctx, cancel := context.WithTimeout(t.client.lifecycleCtx, 10*time.Second)
+	defer cancel()
+	conn, err := newL3TunnelConn(ctx, t.client.underlayDialer.DialTLSContext, addr, info, t.client.SignKey, t.updateVIP)
 	if err != nil {
 		return nil, err
 	}
