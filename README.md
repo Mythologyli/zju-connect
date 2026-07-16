@@ -198,6 +198,10 @@
 
 + `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
 
++ `underlay-interface`: 手动指定 aTrust 底层连接使用的网卡接口。非空时优先使用该接口，不再自动探测
+
++ `disable-underlay-auto-detect`: 禁用 aTrust 底层网卡自动探测和绑定。未同时指定 `underlay-interface` 时，底层连接使用系统路由
+
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 
 + `trust-device`: 设置当前设备为授信终端（需要已登录的 `-client-data-file`），不启用隧道

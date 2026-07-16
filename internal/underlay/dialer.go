@@ -15,6 +15,13 @@ type Dialer struct {
 	interfaceName string
 }
 
+type Options struct {
+	// InterfaceName explicitly selects the interface used by underlay sockets.
+	// It takes precedence over AutoDetect.
+	InterfaceName string
+	AutoDetect    bool
+}
+
 func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
 	rawConn, err := d.DialContext(ctx, network, address)
 	if err != nil {
@@ -35,7 +42,17 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, co
 	return tlsConn, nil
 }
 
-func New(serverAddress string) *Dialer {
+func New(serverAddress string, options ...Options) *Dialer {
+	option := Options{AutoDetect: true}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	if option.InterfaceName != "" {
+		return &Dialer{interfaceName: option.InterfaceName}
+	}
+	if !option.AutoDetect {
+		return &Dialer{}
+	}
 	return &Dialer{interfaceName: detectInterface(serverAddress)}
 }
 

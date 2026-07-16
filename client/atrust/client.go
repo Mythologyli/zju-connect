@@ -132,14 +132,14 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func GetAuthInfoList(serverAddress string, serverPort int) ([]auth.AuthInfo, error) {
+func GetAuthInfoList(serverAddress string, serverPort int, underlayInterface string, disableUnderlayAutoDetect bool) ([]auth.AuthInfo, error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := underlay.New(serverHost)
+	dialer := newUnderlayDialer(serverHost, underlayInterface, disableUnderlayAutoDetect)
 	sess := auth.NewSession(serverHost, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
@@ -158,7 +158,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return tunnel.NewL3Conn()
 }
 
-func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool) error {
+func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, underlayInterface string, disableUnderlayAutoDetect bool) error {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -179,7 +179,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := underlay.New(serverHost)
+	dialer := newUnderlayDialer(serverHost, underlayInterface, disableUnderlayAutoDetect)
 	sess := auth.NewSession(serverHost, dialer.DialContext)
 
 	sess.Login(nil, auth.LoginOptions{
@@ -206,12 +206,14 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int, underlayInterface string, disableUnderlayAutoDetect bool) ([]byte, error) {
 	c.serverAddress = serverAddress
 	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
-	c.underlayDialer = underlay.New(serverHost)
+	c.underlayDialer = newUnderlayDialer(serverHost, underlayInterface, disableUnderlayAutoDetect)
 	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
 		log.Printf("Underlay interface: %s", interfaceName)
+	} else if disableUnderlayAutoDetect {
+		log.Println("Underlay interface auto detection disabled; using system routing")
 	} else {
 		log.Println("Warning: failed to detect underlay interface; using system routing")
 	}
@@ -318,6 +320,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	if err != nil {
 		return nil, err
 	}
+	c.underlayDialer.ExcludeIP(c.ip)
 
 	l3Tunnel, err := NewL3Tunnel(c)
 	if err != nil {
@@ -332,6 +335,13 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	}
 
 	return authData, nil
+}
+
+func newUnderlayDialer(serverHost, underlayInterface string, disableUnderlayAutoDetect bool) *underlay.Dialer {
+	return underlay.New(serverHost, underlay.Options{
+		InterfaceName: underlayInterface,
+		AutoDetect:    !disableUnderlayAutoDetect,
+	})
 }
 
 func buildConnectionID(deviceID string) string {
