@@ -236,9 +236,25 @@ func main() {
 		}
 
 		if conf.AddRoute && ipSet != nil {
+			// Resolve VPN server IPs to detect routing conflicts.
+			// If a route prefix contains the VPN server IP, skip it to
+			// prevent a dead loop where the TLS control connection is
+			// routed into the TUN device it is supposed to carry.
+			serverIPs, _ := net.LookupHost(conf.ServerAddress)
 			for _, prefix := range ipSet.Prefixes() {
-				log.Printf("Add route to %s", prefix.String())
-				_ = vpnTUNStack.AddRoute(prefix.String())
+				skip := false
+				for _, serverIPStr := range serverIPs {
+					serverIP, err := netaddr.ParseIP(serverIPStr)
+					if err == nil && prefix.Contains(serverIP) {
+						log.Printf("WARNING: Skip route %s (contains VPN server %s)", prefix.String(), serverIPStr)
+						skip = true
+						break
+					}
+				}
+				if !skip {
+					log.Printf("Add route to %s", prefix.String())
+					_ = vpnTUNStack.AddRoute(prefix.String())
+				}
 			}
 		} else if !conf.AddRoute && !conf.DisableZJUConfig && conf.Protocol == "easyconnect" {
 			log.Println("Add route to 10.0.0.0/8")
