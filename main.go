@@ -128,6 +128,8 @@ func main() {
 			clientData,
 			resourceData,
 			conf.UpdateBestNodesInterval,
+			conf.UnderlayInterface,
+			conf.DisableUnderlayAutoDetect,
 		)
 		if err != nil {
 			log.Fatalf("VPN client setup error: %s", err)

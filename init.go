@@ -80,6 +80,8 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
 	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 	conf.UpdateBestNodesInterval = getTOMLVal(confTOML.UpdateBestNodesInterval, 300)
+	conf.UnderlayInterface = getTOMLVal(confTOML.UnderlayInterface, "")
+	conf.DisableUnderlayAutoDetect = getTOMLVal(confTOML.DisableUnderlayAutoDetect, false)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -181,6 +183,8 @@ func init() {
 	flag.StringVar(&conf.SignKey, "sign-key", "", "aTrust Sign Key (mostly for debug usage)")
 	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
 	flag.IntVar(&conf.UpdateBestNodesInterval, "update-best-nodes-interval", 300, "Interval to update best nodes in seconds. Set to 0 to disable")
+	flag.StringVar(&conf.UnderlayInterface, "underlay-interface", "", "Bind aTrust underlay connections to this network interface (disables auto detection)")
+	flag.BoolVar(&conf.DisableUnderlayAutoDetect, "disable-underlay-auto-detect", false, "Disable automatic detection and binding of the aTrust underlay interface")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
