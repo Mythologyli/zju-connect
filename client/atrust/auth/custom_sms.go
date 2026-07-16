@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -17,12 +18,14 @@ func (s *Session) completeCustomSMS() (authStep, error) {
 	}
 
 	code := ""
+	log.Println("Tips: Add prefix '$' to sms code to skip secondary authentication")
 	log.Print("Please enter the SMS verification code: ")
 	if _, err := fmt.Scanln(&code); err != nil {
 		return authStep{}, err
 	}
 
-	return s.customSMSCheckCode(code)
+	code, skipSecondaryAuth := strings.CutPrefix(code, "$")
+	return s.customSMSCheckCode(code, skipSecondaryAuth)
 }
 
 func (s *Session) sendCustomSMS() error {
@@ -80,8 +83,13 @@ func (s *Session) sendCustomSMS() error {
 	return nil
 }
 
-func (s *Session) customSMSCheckCode(code string) (authStep, error) {
+func (s *Session) customSMSCheckCode(code string, skipSecondaryAuth bool) (authStep, error) {
 	log.Println("Perform POST /passport/v1/auth/customSms")
+
+	skipSecondaryAuthStr := "0"
+	if skipSecondaryAuth {
+		skipSecondaryAuthStr = "1"
+	}
 
 	payload := struct {
 		IsPrevEffect      bool   `json:"isPrevEffect"`
@@ -91,7 +99,7 @@ func (s *Session) customSMSCheckCode(code string) (authStep, error) {
 	}{
 		IsPrevEffect:      false,
 		CustomCode:        code,
-		SkipSecondaryAuth: "0",
+		SkipSecondaryAuth: skipSecondaryAuthStr,
 		TaskID:            "",
 	}
 	body, err := json.Marshal(payload)

@@ -362,26 +362,34 @@ func (s *Session) smsCheckCode(step authStep) (authStep, error) {
 	log.Println("Perform POST /passport/v1/auth/sms")
 
 	code := ""
+	log.Println("Tips: Add prefix '$' to sms code to skip secondary authentication")
 	log.Print("Please enter the SMS verification code: ")
 	_, err := fmt.Scanln(&code)
 	if err != nil {
 		return authStep{}, err
 	}
-	return s.secondarySMSCheckCodeImpl(step, code)
+
+	code, skipSecondaryAuth := strings.CutPrefix(code, "$")
+	return s.secondarySMSCheckCodeImpl(step, code, skipSecondaryAuth)
 }
 
-func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string) (authStep, error) {
+func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string, skipSecondaryAuth bool) (authStep, error) {
 	u := s.baseURL + "/passport/v1/auth/sms"
 	params := WithSharedParams(url.Values{
 		"action": {"checkcode"},
 	})
+
+	skipSecondaryAuthStr := "0"
+	if skipSecondaryAuth {
+		skipSecondaryAuthStr = "1"
+	}
 
 	var req *http.Request
 	switch step.SMSMode {
 	case smsWithoutAuthID:
 		form := url.Values{
 			"code":              {code},
-			"skipSecondaryAuth": {"0"},
+			"skipSecondaryAuth": {skipSecondaryAuthStr},
 		}
 		req, _ = http.NewRequest("POST", u+"?"+params.Encode(), strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -392,7 +400,7 @@ func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string) (authSte
 		payload := map[string]any{
 			"isPrevEffect":      false,
 			"code":              code,
-			"skipSecondaryAuth": "0",
+			"skipSecondaryAuth": skipSecondaryAuthStr,
 			"taskId":            "",
 			"authId":            step.AuthID,
 		}
