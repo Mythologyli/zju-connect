@@ -11,6 +11,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -25,7 +26,8 @@ type Client struct {
 	parseResource     bool
 	useDomainResource bool
 
-	httpClient *http.Client
+	httpClient     *http.Client
+	underlayDialer *underlay.Dialer
 
 	twfID string
 	token *[48]byte
@@ -76,6 +78,7 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		c.lifecycleCancel()
+		c.httpClient.CloseIdleConnections()
 		c.requestIPConnMu.Lock()
 		if c.requestIPConn != nil {
 			_ = c.requestIPConn.Close()
@@ -141,7 +144,12 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	return nil, errors.New("not supported")
 }
 
-func (c *Client) Setup(graphCodeFile string) error {
+func (c *Client) Setup(graphCodeFile, underlayInterface string, disableUnderlayAutoDetect bool) error {
+	c.setupUnderlay(underlayInterface, disableUnderlayAutoDetect)
+	return c.setup(graphCodeFile)
+}
+
+func (c *Client) setup(graphCodeFile string) error {
 	// Use username/password/(SMS code) to get the TwfID
 	if c.twfID == "" {
 		err := c.requestTwfID(graphCodeFile)
@@ -162,7 +170,7 @@ func (c *Client) Setup(graphCodeFile string) error {
 			} else {
 				log.Printf("Line list: %v", c.lineList)
 
-				bestLine, err := findBestLine(c.lineList)
+				bestLine, err := findBestLine(c.lineList, c.dialContext)
 				if err != nil {
 					log.Printf("Error occurred while finding best line: %v", err)
 				} else {
@@ -174,7 +182,7 @@ func (c *Client) Setup(graphCodeFile string) error {
 						c.testMultiLine = false
 						c.twfID = ""
 
-						return c.Setup(graphCodeFile)
+						return c.setup(graphCodeFile)
 					}
 				}
 			}
@@ -229,6 +237,38 @@ func (c *Client) Setup(graphCodeFile string) error {
 	})
 
 	return nil
+}
+
+func (c *Client) setupUnderlay(underlayInterface string, disableUnderlayAutoDetect bool) {
+	c.underlayDialer = underlay.New(c.server, underlay.Options{
+		InterfaceName: underlayInterface,
+		AutoDetect:    !disableUnderlayAutoDetect,
+	})
+	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
+		log.Printf("Underlay interface: %s", interfaceName)
+	} else if disableUnderlayAutoDetect {
+		log.Println("Underlay interface auto detection disabled; using system routing")
+	} else {
+		log.Println("Warning: failed to detect underlay interface; using system routing")
+	}
+	c.setHTTPTransport(&tls.Config{InsecureSkipVerify: true})
+}
+
+func (c *Client) setHTTPTransport(tlsConfig *tls.Config) {
+	if transport, ok := c.httpClient.Transport.(*http.Transport); ok {
+		transport.CloseIdleConnections()
+	}
+	c.httpClient.Transport = &http.Transport{
+		DialContext:     c.dialContext,
+		TLSClientConfig: tlsConfig,
+	}
+}
+
+func (c *Client) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if c.underlayDialer == nil {
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}
+	return c.underlayDialer.DialContext(ctx, network, address)
 }
 
 func (c *Client) sessionKeepAliveLoop() {

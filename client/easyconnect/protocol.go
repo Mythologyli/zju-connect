@@ -1,11 +1,11 @@
 package easyconnect
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/refraction-networking/utls"
@@ -52,7 +52,7 @@ func (e *fakeHeartBeatExtension) Read(b []byte) (n int, err error) {
 // Create a special TLS connection to the VPN server
 func (c *Client) tlsConn() (*tls.UConn, error) {
 	// Dial the VPN server
-	dialConn, err := net.Dial("tcp", c.server)
+	dialConn, err := c.dialContext(context.Background(), "tcp", c.server)
 	if err != nil {
 		return nil, err
 	}

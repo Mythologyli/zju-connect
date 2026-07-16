@@ -63,7 +63,7 @@ func login(server string, username string, password string) string {
 		old.Close()
 	}
 
-	err := newClient.Setup("")
+	err := newClient.Setup("", "", false)
 	if err != nil {
 		newClient.Close()
 		return ""
