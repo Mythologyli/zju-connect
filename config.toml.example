@@ -23,6 +23,8 @@ dns_server_bind = ""
 dns_hijack = false
 fake_ip = false
 debug_dump = false
+underlay_interface = ""
+disable_underlay_auto_detect = false
 
 # Port forwarding
 port_forwarding = [
@@ -60,8 +62,6 @@ cas_ticket = ""
 oauth2_code = ""
 phone = ""
 update_best_nodes_interval = 300
-underlay_interface = ""
-disable_underlay_auto_detect = false
 sid = ""
 device_id = ""
 sign_key = ""

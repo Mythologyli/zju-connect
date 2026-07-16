@@ -151,6 +151,10 @@
 
 + `debug-dump`: Whether to enable debugging, generally no need to add this argument
 
++ `underlay-interface`: Manually bind VPN underlay connections to this network interface for either EasyConnect or aTrust. A non-empty value takes precedence over automatic detection.
+
++ `disable-underlay-auto-detect`: Disable automatic detection and binding of the VPN underlay interface. If `underlay-interface` is also empty, underlay connections use system routing.
+
 + `tcp-port-forwarding`: TCP port forwarding, format is `local address-remote address,local address-remote address,...`, for example `127.0.0.1:9898-10.10.98.98:80,0.0.0.0:9899-10.10.98.98:80`. Multiple forwardings are separated by `,`
 
 + `udp-port-forwarding`: UDP port forwarding, format is `local address-remote address,local address-remote address,...`, for example `127.0.0.1:53-10.10.0.21:53`. Multiple forwardings are separated by `,`
@@ -187,8 +191,6 @@
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
 + `phone`: Phone number used for SMS verification code login.
 + `update-best-nodes-interval`: Interval for updating the optimal line automatically, in seconds, default is `300`. Set to `0` to disable automatic optimal line selection.
-+ `underlay-interface`: Manually bind aTrust underlay connections to this network interface. A non-empty value takes precedence over automatic detection.
-+ `disable-underlay-auto-detect`: Disable automatic detection and binding of the aTrust underlay interface. If `underlay-interface` is also empty, underlay connections use system routing.
 + `auth-info`: Only get aTrust authentication information without logging in, generally no need to add this argument. Can be used to check supported authentication methods.
 + `trust-device`: Trust the current device (requires logged-in `-client-data-file`), does not start the tunnel.
 + `untrust-device`: Untrust the current device (requires logged-in `-client-data-file`), does not start the tunnel.

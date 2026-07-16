@@ -242,7 +242,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 
 func (c *Client) loginSMS() error {
 	addr := "https://" + c.server + "/por/login_sms.csp?apiversion=1"
-	log.Printf("SMS request: " + addr)
+	log.Printf("SMS request: %s", addr)
 	req, err := http.NewRequest("POST", addr, nil)
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
@@ -278,7 +278,7 @@ func (c *Client) loginSMS() error {
 	}
 
 	addr = "https://" + c.server + "/por/login_sms1.csp?apiversion=1"
-	log.Printf("SMS Request: " + addr)
+	log.Printf("SMS Request: %s", addr)
 	form := url.Values{
 		"svpn_inputsms": {smsCode},
 	}
@@ -401,14 +401,12 @@ func (c *Client) loginCert() error {
 		return errors.New("failed to parse server certificate")
 	}
 
-	c.httpClient.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-			Renegotiation:      tls.RenegotiateOnceAsClient,
-			Certificates:       []tls.Certificate{c.tlsCert},
-			RootCAs:            caCertPool,
-		},
-	}
+	c.setHTTPTransport(&tls.Config{
+		InsecureSkipVerify: true,
+		Renegotiation:      tls.RenegotiateOnceAsClient,
+		Certificates:       []tls.Certificate{c.tlsCert},
+		RootCAs:            caCertPool,
+	})
 
 	addr = "https://" + c.server + "/por/login_cert.csp?anti_replay=1&encrypt=1&type=cs"
 	log.Printf("Cert Request: %s", addr)
@@ -564,7 +562,10 @@ func (c *Client) requestResources() (string, error) {
 }
 
 func (c *Client) requestToken() error {
-	dialConn, err := net.Dial("tcp", c.server)
+	dialConn, err := c.dialContext(context.Background(), "tcp", c.server)
+	if err != nil {
+		return err
+	}
 	defer func(dialConn net.Conn) {
 		_ = dialConn.Close()
 	}(dialConn)
@@ -637,6 +638,9 @@ func (c *Client) requestIP() error {
 
 	c.ip = reply[4:8]
 	c.ipReverse = []byte{c.ip[3], c.ip[2], c.ip[1], c.ip[0]}
+	if c.underlayDialer != nil {
+		c.underlayDialer.ExcludeIP(c.ip)
+	}
 
 	log.Printf("Client IP: %s", c.ip.String())
 

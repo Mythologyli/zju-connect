@@ -156,6 +156,10 @@
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 
++ `underlay-interface`: 手动指定 VPN 底层连接使用的网卡接口，支持 EasyConnect 和 aTrust。非空时优先使用该接口，不再自动探测
+
++ `disable-underlay-auto-detect`: 禁用 VPN 底层网卡自动探测和绑定。未同时指定 `underlay-interface` 时，底层连接使用系统路由
+
 + `tcp-port-forwarding`: TCP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:9898-10.10.98.98:80,0.0.0.0:9899-10.10.98.98:80`。多个转发用 `,` 分隔
 
 + `udp-port-forwarding`: UDP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:53-10.10.0.21:53`。多个转发用 `,` 分隔
@@ -197,10 +201,6 @@
 + `phone`: 短信验证码登录时使用的手机号
 
 + `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
-
-+ `underlay-interface`: 手动指定 aTrust 底层连接使用的网卡接口。非空时优先使用该接口，不再自动探测
-
-+ `disable-underlay-auto-detect`: 禁用 aTrust 底层网卡自动探测和绑定。未同时指定 `underlay-interface` 时，底层连接使用系统路由
 
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 

@@ -1,7 +1,9 @@
 package easyconnect
 
 import (
+	"context"
 	"errors"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +13,7 @@ import (
 
 const pingNum = 3
 
-func findBestLine(lineList []string) (string, error) {
+func findBestLine(lineList []string, dialContext func(context.Context, string, string) (net.Conn, error)) (string, error) {
 	bestLine := ""
 	bestLatency := int64(0)
 
@@ -27,6 +29,7 @@ func findBestLine(lineList []string) (string, error) {
 		}
 
 		tcping := ping.NewTCPing()
+		tcping.SetDialContext(dialContext)
 		target := ping.Target{
 			Protocol: ping.TCP,
 			Host:     host,

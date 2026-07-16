@@ -69,6 +69,8 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.FakeIP = getTOMLVal(confTOML.FakeIP, false)
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
+	conf.UnderlayInterface = getTOMLVal(confTOML.UnderlayInterface, "")
+	conf.DisableUnderlayAutoDetect = getTOMLVal(confTOML.DisableUnderlayAutoDetect, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "")
 	conf.Phone = getTOMLVal(confTOML.Phone, "")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
@@ -80,8 +82,6 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
 	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 	conf.UpdateBestNodesInterval = getTOMLVal(confTOML.UpdateBestNodesInterval, 300)
-	conf.UnderlayInterface = getTOMLVal(confTOML.UnderlayInterface, "")
-	conf.DisableUnderlayAutoDetect = getTOMLVal(confTOML.DisableUnderlayAutoDetect, false)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -171,6 +171,8 @@ func init() {
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect. False by default.")
 	flag.BoolVar(&conf.FakeIP, "fake-ip", false, "Enable Fake IP for DNS hijack")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "Graph Check Code File")
+	flag.StringVar(&conf.UnderlayInterface, "underlay-interface", "", "Bind VPN underlay connections to this network interface (disables auto detection)")
+	flag.BoolVar(&conf.DisableUnderlayAutoDetect, "disable-underlay-auto-detect", false, "Disable automatic detection and binding of the VPN underlay interface")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "", "aTrust authentication type (auth/psw, auth/cas, auth/httpsOauth2, auth/smsCheckCode)")
 	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
@@ -183,8 +185,6 @@ func init() {
 	flag.StringVar(&conf.SignKey, "sign-key", "", "aTrust Sign Key (mostly for debug usage)")
 	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
 	flag.IntVar(&conf.UpdateBestNodesInterval, "update-best-nodes-interval", 300, "Interval to update best nodes in seconds. Set to 0 to disable")
-	flag.StringVar(&conf.UnderlayInterface, "underlay-interface", "", "Bind aTrust underlay connections to this network interface (disables auto detection)")
-	flag.BoolVar(&conf.DisableUnderlayAutoDetect, "disable-underlay-auto-detect", false, "Disable automatic detection and binding of the aTrust underlay interface")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
@@ -208,7 +208,7 @@ func init() {
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
-		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort)
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.UnderlayInterface, conf.DisableUnderlayAutoDetect)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
 			os.Exit(1)
@@ -237,7 +237,7 @@ func init() {
 			os.Exit(1)
 		}
 
-		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice)
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.UnderlayInterface, conf.DisableUnderlayAutoDetect)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
 			os.Exit(1)

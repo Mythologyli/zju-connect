@@ -3,34 +3,36 @@ package configs
 type (
 	Config struct {
 		// Common fields
-		Protocol           string // "easyconnect" or "atrust"
-		ServerAddress      string
-		ServerPort         int
-		Username           string
-		Password           string
-		SocksBind          string
-		SocksUser          string
-		SocksPasswd        string
-		HTTPBind           string
-		PortForwardingList []SinglePortForwarding
-		ShadowsocksURL     string
-		DialDirectProxy    string
-		DisableZJUConfig   bool
-		DisableRemoteDNS   bool
-		DNSTTL             uint64
-		RemoteDNSServer    string
-		SecondaryDNSServer string
-		DNSServerBind      string
-		CustomDNSList      []SingleCustomDNS
-		DisableKeepAlive   bool
-		KeepAliveURL       string
-		TCPTunnelMode      bool
-		TUNMode            bool
-		AddRoute           bool
-		DNSHijack          bool
-		FakeIP             bool
-		GraphCodeFile      string
-		DebugDump          bool
+		Protocol                  string // "easyconnect" or "atrust"
+		ServerAddress             string
+		ServerPort                int
+		Username                  string
+		Password                  string
+		SocksBind                 string
+		SocksUser                 string
+		SocksPasswd               string
+		HTTPBind                  string
+		PortForwardingList        []SinglePortForwarding
+		ShadowsocksURL            string
+		DialDirectProxy           string
+		DisableZJUConfig          bool
+		DisableRemoteDNS          bool
+		DNSTTL                    uint64
+		RemoteDNSServer           string
+		SecondaryDNSServer        string
+		DNSServerBind             string
+		CustomDNSList             []SingleCustomDNS
+		DisableKeepAlive          bool
+		KeepAliveURL              string
+		TCPTunnelMode             bool
+		TUNMode                   bool
+		AddRoute                  bool
+		DNSHijack                 bool
+		FakeIP                    bool
+		GraphCodeFile             string
+		DebugDump                 bool
+		UnderlayInterface         string
+		DisableUnderlayAutoDetect bool
 
 		// EasyConnect fields
 		TOTPSecret          string
@@ -44,19 +46,17 @@ type (
 		TwfID               string
 
 		// aTrust fields
-		AuthType                  string
-		Phone                     string
-		LoginDomain               string
-		ClientDataFile            string
-		CasTicket                 string
-		OAuth2Code                string
-		SID                       string
-		DeviceID                  string
-		SignKey                   string
-		ResourceFile              string
-		UpdateBestNodesInterval   int
-		UnderlayInterface         string
-		DisableUnderlayAutoDetect bool
+		AuthType                string
+		Phone                   string
+		LoginDomain             string
+		ClientDataFile          string
+		CasTicket               string
+		OAuth2Code              string
+		SID                     string
+		DeviceID                string
+		SignKey                 string
+		ResourceFile            string
+		UpdateBestNodesInterval int
 	}
 
 	SinglePortForwarding struct {
