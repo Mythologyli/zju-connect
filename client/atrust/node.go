@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +13,7 @@ import (
 
 const pingNum = 3
 
-func getBestNodes(nodeGroups map[string][]string) map[string]string {
+func getBestNodes(nodeGroups map[string][]string, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 1 {
@@ -28,6 +29,7 @@ func getBestNodes(nodeGroups map[string][]string) map[string]string {
 				}
 
 				tcping := ping.NewTCPing()
+				tcping.SetDialContext(dialContext)
 				target := ping.Target{
 					Protocol: ping.TCP,
 					Host:     host,
@@ -87,7 +89,7 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 		case <-ticker.C:
 		}
 
-		bestNodes := getBestNodes(c.NodeGroups)
+		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext)
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()

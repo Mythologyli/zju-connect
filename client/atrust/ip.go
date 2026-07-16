@@ -1,6 +1,7 @@
 package atrust
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -24,7 +25,9 @@ func (c *Client) getIP() error {
 		return fmt.Errorf("no reachable node for ip request")
 	}
 
-	conn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return err
 	}

@@ -199,7 +199,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	if nodeAddr == "" {
 		return nil, fmt.Errorf("no available aTrust node for group %q", nodeGroupID)
 	}
-	conn, err := tls.Dial("tcp", nodeAddr, &tls.Config{
+	conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", nodeAddr, &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {

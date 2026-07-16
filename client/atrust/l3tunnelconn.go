@@ -3,6 +3,7 @@ package atrust
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
@@ -144,8 +145,8 @@ type frame struct {
 	dataMode string
 }
 
-func newL3TunnelConn(addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
-	tlsConn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
+	tlsConn, err := dialTLS(ctx, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}

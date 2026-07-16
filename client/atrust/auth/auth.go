@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	mathrand "math/rand"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -74,9 +76,12 @@ type Session struct {
 	response map[string]json.RawMessage
 }
 
-func NewSession(server string) *Session {
+func NewSession(server string, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	if len(dialContext) > 0 && dialContext[0] != nil {
+		tr.DialContext = dialContext[0]
 	}
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
