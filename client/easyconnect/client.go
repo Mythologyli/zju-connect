@@ -144,8 +144,8 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	return nil, errors.New("not supported")
 }
 
-func (c *Client) Setup(graphCodeFile, underlayInterface string, disableUnderlayAutoDetect bool) error {
-	c.setupUnderlay(underlayInterface, disableUnderlayAutoDetect)
+func (c *Client) Setup(graphCodeFile, bindInterface string, autoDetectInterface bool) error {
+	c.setupUnderlay(bindInterface, autoDetectInterface)
 	return c.setup(graphCodeFile)
 }
 
@@ -239,14 +239,14 @@ func (c *Client) setup(graphCodeFile string) error {
 	return nil
 }
 
-func (c *Client) setupUnderlay(underlayInterface string, disableUnderlayAutoDetect bool) {
+func (c *Client) setupUnderlay(bindInterface string, autoDetectInterface bool) {
 	c.underlayDialer = underlay.New(c.server, underlay.Options{
-		InterfaceName: underlayInterface,
-		AutoDetect:    !disableUnderlayAutoDetect,
+		InterfaceName: bindInterface,
+		AutoDetect:    autoDetectInterface,
 	})
 	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
 		log.Printf("Underlay interface: %s", interfaceName)
-	} else if disableUnderlayAutoDetect {
+	} else if !autoDetectInterface {
 		log.Println("Underlay interface auto detection disabled; using system routing")
 	} else {
 		log.Println("Warning: failed to detect underlay interface; using system routing")

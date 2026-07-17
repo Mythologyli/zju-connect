@@ -23,8 +23,8 @@ dns_server_bind = ""
 dns_hijack = false
 fake_ip = false
 debug_dump = false
-underlay_interface = ""
-disable_underlay_auto_detect = false
+bind_interface = ""
+auto_detect_interface = false
 
 # Port forwarding
 port_forwarding = [

@@ -8,7 +8,7 @@ import (
 
 func TestSetupUnderlayUsesManualInterfaceForHTTP(t *testing.T) {
 	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false)
-	client.setupUnderlay("manual-interface", false)
+	client.setupUnderlay("manual-interface", true)
 
 	if got := client.underlayDialer.InterfaceName(); got != "manual-interface" {
 		t.Fatalf("underlay interface = %q, want %q", got, "manual-interface")
@@ -24,7 +24,7 @@ func TestSetupUnderlayUsesManualInterfaceForHTTP(t *testing.T) {
 
 func TestCertificateTransportKeepsUnderlayDialer(t *testing.T) {
 	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false)
-	client.setupUnderlay("", true)
+	client.setupUnderlay("", false)
 	client.setHTTPTransport(&tls.Config{Renegotiation: tls.RenegotiateOnceAsClient})
 
 	transport, ok := client.httpClient.Transport.(*http.Transport)

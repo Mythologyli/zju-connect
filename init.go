@@ -69,8 +69,8 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.FakeIP = getTOMLVal(confTOML.FakeIP, false)
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
-	conf.UnderlayInterface = getTOMLVal(confTOML.UnderlayInterface, "")
-	conf.DisableUnderlayAutoDetect = getTOMLVal(confTOML.DisableUnderlayAutoDetect, false)
+	conf.BindInterface = getTOMLVal(confTOML.BindInterface, "")
+	conf.AutoDetectInterface = getTOMLVal(confTOML.AutoDetectInterface, false)
 	conf.AuthType = getTOMLVal(confTOML.AuthType, "")
 	conf.Phone = getTOMLVal(confTOML.Phone, "")
 	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
@@ -171,8 +171,8 @@ func init() {
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect. False by default.")
 	flag.BoolVar(&conf.FakeIP, "fake-ip", false, "Enable Fake IP for DNS hijack")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "Graph Check Code File")
-	flag.StringVar(&conf.UnderlayInterface, "underlay-interface", "", "Bind VPN underlay connections to this network interface (disables auto detection)")
-	flag.BoolVar(&conf.DisableUnderlayAutoDetect, "disable-underlay-auto-detect", false, "Disable automatic detection and binding of the VPN underlay interface")
+	flag.StringVar(&conf.BindInterface, "bind-interface", "", "Bind VPN underlay connections to this network interface (takes precedence over auto detection)")
+	flag.BoolVar(&conf.AutoDetectInterface, "auto-detect-interface", false, "Automatically detect and bind the VPN underlay interface")
 	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
 	flag.StringVar(&conf.AuthType, "auth-type", "", "aTrust authentication type (auth/psw, auth/cas, auth/httpsOauth2, auth/smsCheckCode)")
 	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
@@ -208,7 +208,7 @@ func init() {
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
-		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.UnderlayInterface, conf.DisableUnderlayAutoDetect)
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
 			os.Exit(1)
@@ -237,7 +237,7 @@ func init() {
 			os.Exit(1)
 		}
 
-		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.UnderlayInterface, conf.DisableUnderlayAutoDetect)
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
 			os.Exit(1)

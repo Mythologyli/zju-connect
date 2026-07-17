@@ -156,9 +156,9 @@
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 
-+ `underlay-interface`: 手动指定 VPN 底层连接使用的网卡接口，支持 EasyConnect 和 aTrust。非空时优先使用该接口，不再自动探测
++ `bind-interface`: 手动指定 VPN 底层连接使用的网卡接口，支持 EasyConnect 和 aTrust。非空时优先使用该接口，不再自动探测
 
-+ `disable-underlay-auto-detect`: 禁用 VPN 底层网卡自动探测和绑定。未同时指定 `underlay-interface` 时，底层连接使用系统路由
++ `auto-detect-interface`: 自动探测并绑定 VPN 底层网卡，默认为 `false`。设为 `true` 时启用自动探测；未启用且未指定 `bind-interface` 时，底层连接使用系统路由
 
 + `tcp-port-forwarding`: TCP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:9898-10.10.98.98:80,0.0.0.0:9899-10.10.98.98:80`。多个转发用 `,` 分隔
 
