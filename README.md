@@ -134,6 +134,8 @@
 
 + `tcp-tunnel-mode`: TCP 隧道模式，默认为 `false`。启用后仅可通过 TCP 隧道代理 TCP 流量。由于只有 aTrust 支持 TCP 隧道，此模式在 EasyConnect 下无效。启用后会禁用 TUN 模式
 
++ `skip-tcp-tunnel-wait`: 不等待 aTrust TCP 隧道连接状态，默认为 `false`。仅用于兼容不返回连接状态的服务端；启用后连接失败可能要到后续读写时才能发现
+
 + `tun-mode`: TUN 模式（实验性）。请阅读 TUN 模式注意事项
 
 + `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由

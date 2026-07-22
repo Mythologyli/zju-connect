@@ -49,6 +49,12 @@ type Client struct {
 	lifecycleCancel context.CancelFunc
 	closeOnce       sync.Once
 	underlayDialer  *underlay.Dialer
+
+	skipTCPTunnelWait bool
+}
+
+func (c *Client) SetSkipTCPTunnelWait(skip bool) {
+	c.skipTCPTunnelWait = skip
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {

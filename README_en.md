@@ -129,6 +129,8 @@
 
 + `tcp-tunnel-mode`: TCP tunnel mode, default is `false`. When enabled, only TCP traffic can be proxied through the TCP tunnel. Since only aTrust supports TCP tunneling, this mode is ineffective under EasyConnect. Enabling this will disable TUN mode
 
++ `skip-tcp-tunnel-wait`: Do not wait for the aTrust TCP tunnel connection status, default is `false`. This is intended only for compatibility with servers that do not return connection status; connection failures may then be detected only during subsequent I/O
+
 + `tun-mode`: TUN mode (experimental). Please read the TUN mode precautions below
 
 + `add-route`: Add routes according to the configuration issued by the server when TUN mode is enabled
