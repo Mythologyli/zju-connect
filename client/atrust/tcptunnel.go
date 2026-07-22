@@ -125,6 +125,13 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 	}
 }
 
+func (c *Client) waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) error {
+	if c.skipTCPTunnelWait {
+		return nil
+	}
+	return waitForTCPConnect(ctx, conn, reader)
+}
+
 func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	if len(c.readBuf) > 0 {
 		n := copy(b, c.readBuf)
@@ -375,7 +382,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
 	}
-	if err := waitForTCPConnect(ctx, conn, tunnelConn.reader); err != nil {
+	if err := c.waitForTCPConnect(ctx, conn, tunnelConn.reader); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}

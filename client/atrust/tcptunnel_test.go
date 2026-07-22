@@ -131,3 +131,15 @@ func TestWaitForTCPConnectRejectsMalformedResponse(t *testing.T) {
 		t.Fatalf("waitForTCPConnect() error = %v", err)
 	}
 }
+
+func TestClientWaitForTCPConnectCanBeSkipped(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	client := &Client{skipTCPTunnelWait: true}
+	err := client.waitForTCPConnect(context.Background(), clientConn, bufio.NewReader(clientConn))
+	if err != nil {
+		t.Fatalf("waitForTCPConnect() error = %v", err)
+	}
+}
