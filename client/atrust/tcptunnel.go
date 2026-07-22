@@ -39,7 +39,25 @@ func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
 	return string(data), nil
 }
 
-func waitForTCPConnect(conn net.Conn, reader *bufio.Reader) error {
+func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	cancelDone := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		defer close(cancelDone)
+		_ = conn.Close()
+	})
+	defer func() {
+		if !stopCancel() {
+			<-cancelDone
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+		}
+	}()
+
 	for {
 		header := make([]byte, 2)
 		if _, err := io.ReadFull(reader, header); err != nil {
@@ -357,7 +375,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
 	}
-	if err := waitForTCPConnect(conn, tunnelConn.reader); err != nil {
+	if err := waitForTCPConnect(ctx, conn, tunnelConn.reader); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
