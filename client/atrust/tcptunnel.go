@@ -27,6 +27,8 @@ type tcpTunnelConn struct {
 	readBuf []byte
 }
 
+const tcpTunnelSetupTimeout = 18 * time.Second
+
 func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
 	lengthBytes := make([]byte, 2)
 	if _, err := io.ReadFull(reader, lengthBytes); err != nil {
@@ -39,24 +41,42 @@ func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
 	return string(data), nil
 }
 
-func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) (err error) {
-	if err := ctx.Err(); err != nil {
-		return err
+func readTCPConnectStatus(reader *bufio.Reader) (byte, error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return 0, err
+	}
+	if header[0] != 0x05 {
+		return 0, fmt.Errorf("unexpected tcp tunnel connect status: %02X %02X", header[0], header[1])
+	}
+	if header[1] != 0x00 {
+		return header[1], nil
 	}
 
-	cancelDone := make(chan struct{})
-	stopCancel := context.AfterFunc(ctx, func() {
-		defer close(cancelDone)
-		_ = conn.Close()
-	})
-	defer func() {
-		if !stopCancel() {
-			<-cancelDone
+	addressLength := 0
+	switch header[3] {
+	case 0x01:
+		addressLength = net.IPv4len
+	case 0x03:
+		length := make([]byte, 1)
+		if _, err := io.ReadFull(reader, length); err != nil {
+			return 0, err
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = ctxErr
-		}
-	}()
+		addressLength = int(length[0])
+	case 0x04:
+		addressLength = net.IPv6len
+	default:
+		return 0, fmt.Errorf("unexpected tcp tunnel address type: 0x%02X", header[3])
+	}
+
+	addressAndPort := make([]byte, addressLength+2)
+	if _, err := io.ReadFull(reader, addressAndPort); err != nil {
+		return 0, err
+	}
+	return header[1], nil
+}
+
+func waitForTCPConnect(reader *bufio.Reader) error {
 
 	for {
 		header := make([]byte, 2)
@@ -83,25 +103,13 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 		break
 	}
 
-	probe := []byte{0x01, 0x00, 0x00, 0x00}
-	if n, err := conn.Write(probe); err != nil {
-		return fmt.Errorf("failed to send tcp tunnel connect probe: %w", err)
-	} else if n != len(probe) {
-		return fmt.Errorf("failed to send tcp tunnel connect probe: %w", io.ErrShortWrite)
-	}
-	log.DebugPrint("Sent TCP connect probe")
-	log.DebugDumpHex(probe)
-
-	status := make([]byte, 2)
-	if _, err := io.ReadFull(reader, status); err != nil {
+	status, err := readTCPConnectStatus(reader)
+	if err != nil {
 		return fmt.Errorf("failed to read tcp tunnel connect status: %w", err)
 	}
-	log.DebugPrint("Received TCP connect status: ", fmt.Sprintf("%02X %02X", status[0], status[1]))
-	if status[0] != 0x05 {
-		return fmt.Errorf("unexpected tcp tunnel connect status: %02X %02X", status[0], status[1])
-	}
+	log.DebugPrint("Received TCP connect status: ", fmt.Sprintf("05 %02X", status))
 
-	switch status[1] {
+	switch status {
 	case 0x00:
 		return nil
 	case 0x01:
@@ -121,15 +129,39 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 	case 0x08:
 		return fmt.Errorf("tcp tunnel address type not supported")
 	default:
-		return fmt.Errorf("tcp tunnel connect failed with status 0x%02X", status[1])
+		return fmt.Errorf("tcp tunnel connect failed with status 0x%02X", status)
 	}
 }
 
-func (c *Client) waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) error {
+func (c *Client) establishTCPConnection(ctx context.Context, conn net.Conn, reader *bufio.Reader, request []byte) (err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	cancelDone := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		defer close(cancelDone)
+		_ = conn.Close()
+	})
+	defer func() {
+		if !stopCancel() {
+			<-cancelDone
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+		}
+	}()
+
+	if n, err := conn.Write(request); err != nil {
+		return fmt.Errorf("failed to send tcp tunnel request: %w", err)
+	} else if n != len(request) {
+		return fmt.Errorf("failed to send tcp tunnel request: %w", io.ErrShortWrite)
+	}
+	log.DebugDumpHex(request)
 	if c.skipTCPTunnelWait {
 		return nil
 	}
-	return waitForTCPConnect(ctx, conn, reader)
+	return waitForTCPConnect(reader)
 }
 
 func (c *tcpTunnelConn) Read(b []byte) (int, error) {
@@ -350,11 +382,6 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	initHeader := []byte{0x05, 0x01, 0x81, 0x53, 0x03}
 	initMsg := append(initHeader, lenBytes...)
 	initMsg = append(initMsg, msgBytes...)
-	if _, err := conn.Write(initMsg); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("failed to send init message: %w", err)
-	}
-	log.DebugDumpHex(initMsg)
 
 	var destMsg []byte
 	if domain == "" {
@@ -372,19 +399,27 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		destMsg = append(destHeader, []byte(domain)...)
 	}
 	destMsg = append(destMsg, destPort...)
-	if _, err := conn.Write(destMsg); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("failed to send dest address: %w", err)
+	initMsg = append(initMsg, destMsg...)
+	deadline := time.Now().Add(tcpTunnelSetupTimeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
 	}
-	log.DebugDumpHex(destMsg)
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to set tcp tunnel deadline: %w", err)
+	}
 
 	tunnelConn := &tcpTunnelConn{
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
 	}
-	if err := c.waitForTCPConnect(ctx, conn, tunnelConn.reader); err != nil {
+	if err := c.establishTCPConnection(ctx, conn, tunnelConn.reader, initMsg); err != nil {
 		_ = conn.Close()
 		return nil, err
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to clear tcp tunnel deadline: %w", err)
 	}
 	return tunnelConn, nil
 }

@@ -2,51 +2,24 @@ package atrust
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
 	"strings"
-	"sync"
 	"testing"
 )
 
-func runTCPConnectExchange(t *testing.T, status byte) (error, []byte) {
-	t.Helper()
+var tcpSetupResponse = []byte{0x05, 0x81, 0x53, 0x00, 0x00, 0x02, 'O', 'K'}
 
-	client, server := net.Pipe()
-	t.Cleanup(func() {
-		_ = client.Close()
-		_ = server.Close()
-	})
-
-	probeCh := make(chan []byte, 1)
-	serverErrCh := make(chan error, 1)
-	go func() {
-		setupResponse := []byte{0x05, 0x81, 0x53, 0x00, 0x00, 0x02, 'O', 'K'}
-		for _, value := range setupResponse {
-			if _, err := server.Write([]byte{value}); err != nil {
-				serverErrCh <- err
-				return
-			}
-		}
-
-		probe := make([]byte, 4)
-		if _, err := io.ReadFull(server, probe); err != nil {
-			serverErrCh <- err
-			return
-		}
-		probeCh <- probe
-		_, err := server.Write([]byte{0x05, status})
-		serverErrCh <- err
-	}()
-
-	err := waitForTCPConnect(context.Background(), client, bufio.NewReader(client))
-	probe := <-probeCh
-	if serverErr := <-serverErrCh; serverErr != nil {
-		t.Fatalf("server exchange failed: %v", serverErr)
+func runTCPConnectExchange(status byte) error {
+	response := append([]byte{}, tcpSetupResponse...)
+	response = append(response, 0x05, status, 0x00, 0x01)
+	if status == 0x00 {
+		response = append(response, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
 	}
-	return err, probe
+	return waitForTCPConnect(bufio.NewReader(bytes.NewReader(response)))
 }
 
 func TestWaitForTCPConnectStatus(t *testing.T) {
@@ -69,10 +42,7 @@ func TestWaitForTCPConnectStatus(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err, probe := runTCPConnectExchange(t, test.status)
-			if string(probe) != string([]byte{0x01, 0x00, 0x00, 0x00}) {
-				t.Fatalf("unexpected connect probe: % X", probe)
-			}
+			err := runTCPConnectExchange(test.status)
 			if test.wantErrMsg == "" {
 				if err != nil {
 					t.Fatalf("waitForTCPConnect() error = %v", err)
@@ -86,60 +56,80 @@ func TestWaitForTCPConnectStatus(t *testing.T) {
 	}
 }
 
-type signalingReader struct {
-	io.Reader
-	once    sync.Once
-	started chan struct{}
+func TestReadTCPConnectStatusSuccessReplies(t *testing.T) {
+	tests := []struct {
+		name  string
+		reply []byte
+	}{
+		{name: "IPv4", reply: []byte{0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x1f, 0x90}},
+		{name: "domain", reply: []byte{0x05, 0x00, 0x00, 0x03, 0x03, 'z', 'j', 'u', 0x01, 0xbb}},
+		{name: "IPv6", reply: []byte{0x05, 0x00, 0x00, 0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 80}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, err := readTCPConnectStatus(bufio.NewReader(bytes.NewReader(test.reply)))
+			if err != nil {
+				t.Fatalf("readTCPConnectStatus() error = %v", err)
+			}
+			if status != 0x00 {
+				t.Fatalf("readTCPConnectStatus() status = 0x%02X", status)
+			}
+		})
+	}
 }
 
-func (r *signalingReader) Read(p []byte) (int, error) {
-	r.once.Do(func() { close(r.started) })
-	return r.Reader.Read(p)
-}
+func TestEstablishTCPConnectionHonorsContextCancellation(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
 
-func TestWaitForTCPConnectHonorsContextCancellation(t *testing.T) {
-	client, server := net.Pipe()
-	defer client.Close()
-	defer server.Close()
-
-	started := make(chan struct{})
-	reader := bufio.NewReader(&signalingReader{Reader: client, started: started})
-	ctx, cancel := context.WithCancel(context.Background())
-	resultCh := make(chan error, 1)
+	request := []byte{0x05, 0x01, 0x81, 0x05, 0x01, 0x01}
+	requestRead := make(chan struct{})
 	go func() {
-		resultCh <- waitForTCPConnect(ctx, client, reader)
+		_, _ = io.ReadFull(serverConn, make([]byte, len(request)))
+		close(requestRead)
 	}()
 
-	<-started
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan error, 1)
+	client := &Client{}
+	go func() {
+		resultCh <- client.establishTCPConnection(ctx, clientConn, bufio.NewReader(clientConn), request)
+	}()
+
+	<-requestRead
 	cancel()
 	if err := <-resultCh; !errors.Is(err, context.Canceled) {
-		t.Fatalf("waitForTCPConnect() error = %v, want context.Canceled", err)
+		t.Fatalf("establishTCPConnection() error = %v, want context.Canceled", err)
 	}
 }
 
 func TestWaitForTCPConnectRejectsMalformedResponse(t *testing.T) {
-	client, server := net.Pipe()
-	defer client.Close()
-	defer server.Close()
-
-	go func() {
-		_, _ = server.Write([]byte{0x01, 0x00})
-	}()
-
-	err := waitForTCPConnect(context.Background(), client, bufio.NewReader(client))
+	err := waitForTCPConnect(bufio.NewReader(bytes.NewReader([]byte{0x01, 0x00})))
 	if err == nil || !strings.Contains(err.Error(), "unexpected tcp tunnel response: 01 00") {
 		t.Fatalf("waitForTCPConnect() error = %v", err)
 	}
 }
 
-func TestClientWaitForTCPConnectCanBeSkipped(t *testing.T) {
+func TestEstablishTCPConnectionCanSkipWait(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
+	request := []byte{0x05, 0x01, 0x81, 0x05, 0x01, 0x01}
+	requestCh := make(chan []byte, 1)
+	go func() {
+		got := make([]byte, len(request))
+		_, _ = io.ReadFull(serverConn, got)
+		requestCh <- got
+	}()
+
 	client := &Client{skipTCPTunnelWait: true}
-	err := client.waitForTCPConnect(context.Background(), clientConn, bufio.NewReader(clientConn))
-	if err != nil {
-		t.Fatalf("waitForTCPConnect() error = %v", err)
+	if err := client.establishTCPConnection(context.Background(), clientConn, bufio.NewReader(clientConn), request); err != nil {
+		t.Fatalf("establishTCPConnection() error = %v", err)
+	}
+	if got := <-requestCh; !bytes.Equal(got, request) {
+		t.Fatalf("request = % X, want % X", got, request)
 	}
 }
