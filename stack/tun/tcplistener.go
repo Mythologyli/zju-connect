@@ -4,10 +4,14 @@ package tun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync"
+	"time"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
@@ -22,9 +26,35 @@ import (
 
 const NICID tcpip.NICID = 2
 
+const tcpUnreachableCacheTTL = 2 * time.Minute
+
 type TCPListenerEndpoint struct {
-	tunEndpoint *Endpoint
-	dispatcher  stack.NetworkDispatcher
+	tunEndpoint    *Endpoint
+	dispatcher     stack.NetworkDispatcher
+	unreachableTCP sync.Map
+}
+
+func (ep *TCPListenerEndpoint) isTCPUnreachable(requestID stack.TransportEndpointID) bool {
+	value, ok := ep.unreachableTCP.Load(requestID)
+	if !ok {
+		return false
+	}
+
+	expiresAt := value.(time.Time)
+	if time.Now().Before(expiresAt) {
+		return true
+	}
+
+	ep.unreachableTCP.CompareAndDelete(requestID, expiresAt)
+	return false
+}
+
+func (ep *TCPListenerEndpoint) cacheTCPUnreachable(requestID stack.TransportEndpointID) {
+	expiresAt := time.Now().Add(tcpUnreachableCacheTTL)
+	ep.unreachableTCP.Store(requestID, expiresAt)
+	time.AfterFunc(tcpUnreachableCacheTTL, func() {
+		ep.unreachableTCP.CompareAndDelete(requestID, expiresAt)
+	})
 }
 
 func (ep *TCPListenerEndpoint) ParseHeader(*stack.PacketBuffer) bool {
@@ -118,29 +148,43 @@ func (s *Stack) CreateTCPListener() error {
 
 func (s *Stack) StartTCPListener() {
 	forwarder := tcp.NewForwarder(s.tcpListenerStack, 0, 10000, func(r *tcp.ForwarderRequest) {
-		outboundAddr := r.ID().LocalAddress.String()
-		outboundPort := r.ID().LocalPort
+		requestID := r.ID()
+		outboundAddr := requestID.LocalAddress.String()
+		outboundPort := requestID.LocalPort
 
 		log.DebugPrintf("[tcp listener] new connection to %s:%d", outboundAddr, outboundPort)
+		if s.tcpListenerEndpoint.isTCPUnreachable(requestID) {
+			r.Complete(false)
+			return
+		}
+
+		remoteConn, err := s.dialRemoteTCP(outboundAddr, outboundPort)
+		if err != nil {
+			log.Printf("Error dialing remote TCP %s:%d via tunnel: %v", outboundAddr, outboundPort, err)
+			if errors.Is(err, client.ErrNetworkUnreachable) || errors.Is(err, client.ErrHostUnreachable) {
+				s.tcpListenerEndpoint.cacheTCPUnreachable(requestID)
+				r.Complete(false)
+			} else {
+				r.Complete(true)
+			}
+			return
+		}
 
 		var w waiter.Queue
-		ep, err := r.CreateEndpoint(&w)
-		if err != nil {
+		ep, endpointErr := r.CreateEndpoint(&w)
+		if endpointErr != nil {
+			_ = remoteConn.Close()
 			r.Complete(true)
 			return
 		}
 		r.Complete(false)
 		localConn := gonet.NewTCPConn(&w, ep)
-		go s.handleInboundConn(localConn, outboundAddr, outboundPort)
+		go s.handleInboundConn(localConn, remoteConn)
 	})
 	s.tcpListenerStack.SetTransportProtocolHandler(tcp.ProtocolNumber, forwarder.HandlePacket)
 }
 
-func (s *Stack) handleInboundConn(lConn net.Conn, targetIP string, targetPort uint16) {
-	defer func(lConn net.Conn) {
-		_ = lConn.Close()
-	}(lConn)
-
+func (s *Stack) dialRemoteTCP(targetIP string, targetPort uint16) (net.Conn, error) {
 	domain, resource, ok := s.ipPool.GetDomain(net.ParseIP(targetIP))
 	ctx := context.Background()
 	if ok {
@@ -153,13 +197,15 @@ func (s *Stack) handleInboundConn(lConn net.Conn, targetIP string, targetPort ui
 	log.Printf("%s -> VPN", targetAddr)
 	addr, err := net.ResolveTCPAddr("tcp", targetAddr)
 	if err != nil {
-		return
+		return nil, err
 	}
-	remoteConn, err := s.endpoint.client.DialTCP(ctx, addr)
-	if err != nil {
-		log.Printf("Error dialing remote TCP %s via tunnel: %v", targetAddr, err)
-		return
-	}
+	return s.endpoint.client.DialTCP(ctx, addr)
+}
+
+func (s *Stack) handleInboundConn(lConn, remoteConn net.Conn) {
+	defer func(lConn net.Conn) {
+		_ = lConn.Close()
+	}(lConn)
 	defer func(remoteConn net.Conn) {
 		_ = remoteConn.Close()
 	}(remoteConn)

@@ -117,11 +117,11 @@ func waitForTCPConnect(reader *bufio.Reader) error {
 	case 0x02:
 		return fmt.Errorf("tcp tunnel connection not allowed")
 	case 0x03:
-		return fmt.Errorf("network is unreachable")
+		return client.ErrNetworkUnreachable
 	case 0x04:
-		return fmt.Errorf("host is unreachable")
+		return client.ErrHostUnreachable
 	case 0x05:
-		return fmt.Errorf("connection refused")
+		return client.ErrConnectionRefused
 	case 0x06:
 		return fmt.Errorf("tcp tunnel TTL expired")
 	case 0x07:

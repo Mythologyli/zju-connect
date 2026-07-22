@@ -9,6 +9,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/mythologyli/zju-connect/client"
 )
 
 var tcpSetupResponse = []byte{0x05, 0x81, 0x53, 0x00, 0x00, 0x02, 'O', 'K'}
@@ -26,14 +28,15 @@ func TestWaitForTCPConnectStatus(t *testing.T) {
 	tests := []struct {
 		name       string
 		status     byte
+		wantErr    error
 		wantErrMsg string
 	}{
 		{name: "connected", status: 0x00},
 		{name: "server failure", status: 0x01, wantErrMsg: "tcp tunnel server failure"},
 		{name: "not allowed", status: 0x02, wantErrMsg: "tcp tunnel connection not allowed"},
-		{name: "network unreachable", status: 0x03, wantErrMsg: "network is unreachable"},
-		{name: "host unreachable", status: 0x04, wantErrMsg: "host is unreachable"},
-		{name: "refused", status: 0x05, wantErrMsg: "connection refused"},
+		{name: "network unreachable", status: 0x03, wantErr: client.ErrNetworkUnreachable, wantErrMsg: "network is unreachable"},
+		{name: "host unreachable", status: 0x04, wantErr: client.ErrHostUnreachable, wantErrMsg: "host is unreachable"},
+		{name: "refused", status: 0x05, wantErr: client.ErrConnectionRefused, wantErrMsg: "connection refused"},
 		{name: "TTL expired", status: 0x06, wantErrMsg: "tcp tunnel TTL expired"},
 		{name: "command unsupported", status: 0x07, wantErrMsg: "tcp tunnel command not supported"},
 		{name: "address type unsupported", status: 0x08, wantErrMsg: "tcp tunnel address type not supported"},
@@ -43,6 +46,9 @@ func TestWaitForTCPConnectStatus(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := runTCPConnectExchange(test.status)
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Fatalf("waitForTCPConnect() error = %v, want %v", err, test.wantErr)
+			}
 			if test.wantErrMsg == "" {
 				if err != nil {
 					t.Fatalf("waitForTCPConnect() error = %v", err)

@@ -9,7 +9,12 @@ import (
 	"inet.af/netaddr"
 )
 
-var ErrResourceNotFound = errors.New("resource not found")
+var (
+	ErrResourceNotFound   = errors.New("resource not found")
+	ErrNetworkUnreachable = errors.New("network is unreachable")
+	ErrHostUnreachable    = errors.New("host is unreachable")
+	ErrConnectionRefused  = errors.New("connection refused")
+)
 
 type IPResource struct {
 	IPMin       net.IP
