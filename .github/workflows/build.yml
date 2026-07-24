@@ -160,7 +160,7 @@ jobs:
           sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=${PKGREL}/" PKGBUILD
 
-          docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash <<'EOF'
+          docker run --rm -i -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash <<'EOF'
           set -euo pipefail
           pacman -Sy --noconfirm pacman-contrib
           useradd -m builder
