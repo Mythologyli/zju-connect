@@ -162,6 +162,8 @@ jobs:
 
           docker run --rm -i -v "$PWD:/pkg" -w /pkg archlinux:base-devel bash <<'EOF'
           set -euo pipefail
+          pkg_owner="$(stat -c '%u:%g' /pkg)"
+          trap 'chown -R "$pkg_owner" /pkg' EXIT
           pacman -Sy --noconfirm pacman-contrib
           useradd -m builder
           chown -R builder:builder /pkg
