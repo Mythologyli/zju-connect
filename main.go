@@ -36,11 +36,7 @@ var conf configs.Config
 func main() {
 	log.Init()
 
-	if CommitID != "" {
-		log.Println("Start ZJU Connect v" + zjuConnectVersion + "-" + CommitID)
-	} else {
-		log.Println("Start ZJU Connect v" + zjuConnectVersion)
-	}
+	log.Println("Start ZJU Connect " + zjuConnectVersionString())
 	if conf.DebugDump {
 		log.EnableDebug()
 	}

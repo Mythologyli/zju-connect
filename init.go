@@ -16,9 +16,17 @@ import (
 	"github.com/mythologyli/zju-connect/configs"
 )
 
-var CommitID string
+var (
+	zjuConnectVersion = "dev"
+	CommitID          string
+)
 
-const zjuConnectVersion = "1.2.0"
+func zjuConnectVersionString() string {
+	if CommitID != "" {
+		return zjuConnectVersion + "-" + CommitID
+	}
+	return zjuConnectVersion
+}
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 	if valPointer == nil {
@@ -200,7 +208,7 @@ func init() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("ZJU Connect v%s\n", zjuConnectVersion)
+		fmt.Printf("ZJU Connect %s\n", zjuConnectVersionString())
 		os.Exit(0)
 	}
 
