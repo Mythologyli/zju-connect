@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/dial"
@@ -35,11 +36,27 @@ import (
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
-	client := &http.Client{
+type httpTunnel struct {
+	client net.Conn
+	target net.Conn
+}
+
+type httpProxy struct {
+	dialContext func(context.Context, string, string) (net.Conn, error)
+	client      *http.Client
+	tunnelsMu   sync.Mutex
+	tunnels     map[*httpTunnel]struct{}
+}
+
+func newHTTPProxy(dialer *dial.Dialer) *httpProxy {
+	proxy := &httpProxy{
+		dialContext: dialer.Dial,
+		tunnels:     make(map[*httpTunnel]struct{}),
+	}
+	proxy.client = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, net, addr string) (net.Conn, error) {
-				return dialer.Dial(ctx, net, addr)
+				return proxy.dialContext(ctx, net, addr)
 			},
 		},
 		// We must pass redirect response to browser
@@ -47,69 +64,131 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 			return http.ErrUseLastResponse
 		},
 	}
+	return proxy
+}
 
-	handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method == "CONNECT" {
-			serverConn, err := dialer.Dial(context.Background(), "tcp", req.Host)
-			if err != nil {
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte(err.Error() + "\n"))
-				return
-			}
+func newHTTPHandler(dialer *dial.Dialer) http.Handler {
+	return newHTTPProxy(dialer)
+}
 
-			hijacker, ok := w.(http.Hijacker)
-			if !ok {
-				_ = serverConn.Close()
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte("Failed cast to hijacker\n"))
-				return
-			}
+func (p *httpProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodConnect {
+		p.handleConnect(w, req)
+		return
+	}
 
-			w.WriteHeader(200)
+	req.RequestURI = ""
 
-			_, bio, err := hijacker.Hijack()
-			if err != nil {
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte(err.Error() + "\n"))
-				_ = serverConn.Close()
-				return
-			}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(err.Error() + "\n"))
+		return
+	}
 
-			go func() {
-				_, _ = io.Copy(serverConn, bio)
-			}()
-			go func() {
-				_, _ = io.Copy(bio, serverConn)
-			}()
-		} else {
-			req.RequestURI = ""
+	hdr := w.Header()
+	for k, v := range resp.Header {
+		hdr[k] = v
+	}
 
-			resp, err := client.Do(req)
-			if err != nil {
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte(err.Error() + "\n"))
-				return
-			}
+	w.WriteHeader(resp.StatusCode)
 
-			hdr := w.Header()
-			for k, v := range resp.Header {
-				hdr[k] = v
-			}
+	_, _ = io.Copy(w, resp.Body)
+}
 
-			w.WriteHeader(resp.StatusCode)
+func (p *httpProxy) handleConnect(w http.ResponseWriter, req *http.Request) {
+	targetConn, err := p.dialContext(req.Context(), "tcp", req.Host)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error() + "\n"))
+		return
+	}
 
-			_, _ = io.Copy(w, resp.Body)
-		}
-	})
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		_ = targetConn.Close()
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Failed cast to hijacker\n"))
+		return
+	}
+
+	clientConn, buffered, err := hijacker.Hijack()
+	if err != nil {
+		_ = targetConn.Close()
+		return
+	}
+
+	tunnel := &httpTunnel{client: clientConn, target: targetConn}
+	p.registerTunnel(tunnel)
+	defer p.unregisterTunnel(tunnel)
+	defer clientConn.Close()
+	defer targetConn.Close()
+
+	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+		return
+	}
+	if err := buffered.Flush(); err != nil {
+		return
+	}
+
+	relayDone := make(chan struct{}, 2)
+	go relayHTTPConnect(targetConn, buffered, relayDone)
+	go relayHTTPConnect(clientConn, targetConn, relayDone)
+	<-relayDone
+	_ = clientConn.Close()
+	_ = targetConn.Close()
+	<-relayDone
+}
+
+func relayHTTPConnect(dst net.Conn, src io.Reader, done chan<- struct{}) {
+	_, _ = io.Copy(dst, src)
+	if conn, ok := dst.(interface{ CloseWrite() error }); ok {
+		_ = conn.CloseWrite()
+	}
+	if conn, ok := src.(interface{ CloseRead() error }); ok {
+		_ = conn.CloseRead()
+	}
+	done <- struct{}{}
+}
+
+func (p *httpProxy) registerTunnel(tunnel *httpTunnel) {
+	p.tunnelsMu.Lock()
+	p.tunnels[tunnel] = struct{}{}
+	p.tunnelsMu.Unlock()
+}
+
+func (p *httpProxy) unregisterTunnel(tunnel *httpTunnel) {
+	p.tunnelsMu.Lock()
+	delete(p.tunnels, tunnel)
+	p.tunnelsMu.Unlock()
+}
+
+func (p *httpProxy) closeTunnels() {
+	p.tunnelsMu.Lock()
+	tunnels := make([]*httpTunnel, 0, len(p.tunnels))
+	for tunnel := range p.tunnels {
+		tunnels = append(tunnels, tunnel)
+	}
+	p.tunnelsMu.Unlock()
+
+	for _, tunnel := range tunnels {
+		_ = tunnel.client.Close()
+		_ = tunnel.target.Close()
+	}
+}
+
+func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
+	proxy := newHTTPProxy(dialer)
 
 	log.Printf("HTTP server listening on %s", bindAddr)
 
-	server := &http.Server{Addr: bindAddr, Handler: handlerFunc}
+	server := &http.Server{Addr: bindAddr, Handler: proxy}
 
 	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(ctx context.Context) error {
 		log.Println("Closing HTTP listener...")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		defer proxy.closeTunnels()
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("close HTTP listener failed: %w", err)
 		}
