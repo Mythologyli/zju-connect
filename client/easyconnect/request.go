@@ -65,7 +65,11 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	addr := "https://" + c.server + "/por/login_auth.csp?apiversion=1"
 	log.Printf("Request: %s", addr)
 
-	resp, err := c.httpClient.Get(addr)
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		debug.PrintStack()
 		return err
@@ -138,7 +142,10 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		if graphCodeFile != "" {
 			addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
 			log.Printf("Request: %s", addr)
-			req, err := http.NewRequest("GET", addr, nil)
+			req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
+			if err != nil {
+				return err
+			}
 			req.Header.Set("Cookie", "TWFID="+c.twfID)
 			req.Header.Set("User-Agent", "EasyConnect_windows")
 
@@ -183,7 +190,10 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		"svpn_password":     {encryptedPasswordHex},
 	}
 
-	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+	req, err = http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
@@ -243,7 +253,10 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 func (c *Client) loginSMS() error {
 	addr := "https://" + c.server + "/por/login_sms.csp?apiversion=1"
 	log.Printf("SMS request: %s", addr)
-	req, err := http.NewRequest("POST", addr, nil)
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, nil)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
@@ -283,7 +296,10 @@ func (c *Client) loginSMS() error {
 		"svpn_inputsms": {smsCode},
 	}
 
-	req, err = http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+	req, err = http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
@@ -337,7 +353,7 @@ func (c *Client) loginTOTP() error {
 	form := url.Values{
 		"svpn_inputtoken": {totpCode},
 	}
-	req, err := http.NewRequest("POST", addr, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
@@ -373,7 +389,7 @@ func (c *Client) loginTOTP() error {
 func (c *Client) loginCert() error {
 	addr := "https://" + c.server + "/com/server.crt"
 	log.Printf("Get server cert: %s", addr)
-	req, err := http.NewRequest("POST", addr, nil)
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, nil)
 	if err != nil {
 		return err
 	}
@@ -410,7 +426,7 @@ func (c *Client) loginCert() error {
 
 	addr = "https://" + c.server + "/por/login_cert.csp?anti_replay=1&encrypt=1&type=cs"
 	log.Printf("Cert Request: %s", addr)
-	req, err = http.NewRequest("POST", addr, nil)
+	req, err = http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, nil)
 	if err != nil {
 		return err
 	}
@@ -459,7 +475,10 @@ func (c *Client) requestConfig() (string, error) {
 	addr := "https://" + c.server + "/por/conf.csp"
 	log.Printf("Request: %s", addr)
 
-	req, err := http.NewRequest("GET", addr, nil)
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 
 	resp, err := c.httpClient.Do(req)
@@ -541,7 +560,10 @@ func (c *Client) requestResources() (string, error) {
 	addr := "https://" + c.server + "/por/rclist.csp"
 	log.Printf("Request: %s", addr)
 
-	req, err := http.NewRequest("GET", addr, nil)
+	req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 
 	resp, err := c.httpClient.Do(req)
@@ -562,7 +584,9 @@ func (c *Client) requestResources() (string, error) {
 }
 
 func (c *Client) requestToken() error {
-	dialConn, err := c.dialContext(context.Background(), "tcp", c.server)
+	ctx, cancel := c.rawRequestContext()
+	defer cancel()
+	dialConn, err := c.dialContext(ctx, "tcp", c.server)
 	if err != nil {
 		return err
 	}
@@ -573,6 +597,14 @@ func (c *Client) requestToken() error {
 	defer func(conn *utls.UConn) {
 		_ = conn.Close()
 	}(conn)
+	clearDeadline, err := armConnectionContext(ctx, conn)
+	if err != nil {
+		return err
+	}
+	defer clearDeadline()
+	if err := conn.HandshakeContext(ctx); err != nil {
+		return err
+	}
 
 	// When establish an HTTPS connection to server and send a valid request with TWFID to it
 	// The **TLS ServerHello SessionId** is the first part of token
@@ -594,7 +626,7 @@ func (c *Client) requestToken() error {
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
 	if n == 0 || err != nil {
-		return errors.New("ECAgent request invalid: error " + err.Error() + "\n" + string(buf[:]))
+		return fmt.Errorf("ECAgent request invalid: read %d bytes: %w", n, err)
 	}
 
 	c.token = (*[48]byte)([]byte(sessionID[:31] + "\x00" + c.twfID))
@@ -605,10 +637,23 @@ func (c *Client) requestToken() error {
 }
 
 func (c *Client) requestIP() error {
-	conn, err := c.tlsConn()
+	ctx, cancel := c.rawRequestContext()
+	defer cancel()
+	conn, err := c.tlsConn(ctx)
 	if err != nil {
 		return err
 	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = conn.Close()
+		}
+	}()
+	clearDeadline, err := armConnectionContext(ctx, conn)
+	if err != nil {
+		return err
+	}
+	defer clearDeadline()
 
 	// Request IP Packet
 	message := []byte{0x00, 0x00, 0x00, 0x00}
@@ -646,6 +691,7 @@ func (c *Client) requestIP() error {
 
 	// Request IP conn CAN NOT be closed, otherwise tx/rx handshake will fail
 	c.setRequestIPConn(conn)
+	succeeded = true
 
 	return nil
 }

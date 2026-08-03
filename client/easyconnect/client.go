@@ -16,6 +16,13 @@ import (
 	"inet.af/netaddr"
 )
 
+const (
+	easyConnectHTTPTimeout           = 30 * time.Second
+	easyConnectDialTimeout           = 10 * time.Second
+	easyConnectResponseHeaderTimeout = 15 * time.Second
+	easyConnectRawRequestTimeout     = 15 * time.Second
+)
+
 type Client struct {
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username          string
@@ -26,8 +33,9 @@ type Client struct {
 	parseResource     bool
 	useDomainResource bool
 
-	httpClient     *http.Client
-	underlayDialer *underlay.Dialer
+	httpClient        *http.Client
+	underlayDialer    *underlay.Dialer
+	rawRequestTimeout time.Duration
 
 	twfID string
 	token *[48]byte
@@ -54,7 +62,7 @@ type Client struct {
 
 func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
-	return &Client{
+	c := &Client{
 		server:            server,
 		username:          username,
 		password:          password,
@@ -63,14 +71,14 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 		testMultiLine:     testMultiLine,
 		parseResource:     parseResource,
 		useDomainResource: useDomainResource,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}},
-		twfID:           twfID,
-		lifecycleCtx:    lifecycleCtx,
-		lifecycleCancel: lifecycleCancel,
+		httpClient:        &http.Client{Timeout: easyConnectHTTPTimeout},
+		rawRequestTimeout: easyConnectRawRequestTimeout,
+		twfID:             twfID,
+		lifecycleCtx:      lifecycleCtx,
+		lifecycleCancel:   lifecycleCancel,
 	}
+	c.setHTTPTransport(&tls.Config{InsecureSkipVerify: true})
+	return c
 }
 
 // Close releases background resources held by the client. Safe to call
@@ -258,17 +266,41 @@ func (c *Client) setHTTPTransport(tlsConfig *tls.Config) {
 	if transport, ok := c.httpClient.Transport.(*http.Transport); ok {
 		transport.CloseIdleConnections()
 	}
-	c.httpClient.Transport = &http.Transport{
-		DialContext:     c.dialContext,
-		TLSClientConfig: tlsConfig,
-	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = c.dialContext
+	transport.TLSClientConfig = tlsConfig.Clone()
+	transport.ResponseHeaderTimeout = easyConnectResponseHeaderTimeout
+	c.httpClient.Transport = transport
 }
 
 func (c *Client) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	if c.underlayDialer == nil {
-		return (&net.Dialer{}).DialContext(ctx, network, address)
+		return (&net.Dialer{Timeout: easyConnectDialTimeout, KeepAlive: 30 * time.Second}).DialContext(ctx, network, address)
 	}
 	return c.underlayDialer.DialContext(ctx, network, address)
+}
+
+func (c *Client) rawRequestContext() (context.Context, context.CancelFunc) {
+	timeout := c.rawRequestTimeout
+	if timeout <= 0 {
+		timeout = easyConnectRawRequestTimeout
+	}
+	return context.WithTimeout(c.lifecycleCtx, timeout)
+}
+
+func armConnectionContext(ctx context.Context, conn net.Conn) (func(), error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return nil, err
+		}
+	}
+	stopCancel := context.AfterFunc(ctx, func() {
+		_ = conn.SetDeadline(time.Now())
+	})
+	return func() {
+		stopCancel()
+		_ = conn.SetDeadline(time.Time{})
+	}, nil
 }
 
 func (c *Client) sessionKeepAliveLoop() {
