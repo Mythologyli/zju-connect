@@ -200,6 +200,7 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 		pkt := gvisorstack.NewPacketBuffer(gvisorstack.PacketBufferOptions{
 			Payload: buffer.MakeWithData(packet),
 		})
+		defer pkt.DecRef()
 		s.tcpListenerEndpoint.dispatcher.DeliverNetworkPacket(ipv4.ProtocolNumber, pkt)
 		return nil
 	}
