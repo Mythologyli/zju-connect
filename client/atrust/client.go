@@ -36,7 +36,7 @@ type Client struct {
 	dnsServer       string
 
 	MajorNodeGroup   string
-	NodeGroups       map[string][]string
+	NodeGroups       map[string]NodeGroup
 	BestNodes        map[string]string
 	BestNodesRWMutex sync.RWMutex
 

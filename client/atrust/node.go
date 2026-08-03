@@ -13,10 +13,46 @@ import (
 
 const pingNum = 3
 
-func getBestNodes(nodeGroups map[string][]string, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
+type NodeGroup struct {
+	WAN []string
+	LAN []string
+}
+
+type nodeGroupsProbeFunc func(map[string][]string) map[string]string
+
+func getBestNodes(nodeGroups map[string]NodeGroup, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
+	return selectBestNodes(nodeGroups, func(nodeGroups map[string][]string) map[string]string {
+		return getBestReachableNodes(nodeGroups, dialContext)
+	})
+}
+
+func selectBestNodes(nodeGroups map[string]NodeGroup, probe nodeGroupsProbeFunc) map[string]string {
+	wanNodeGroups := make(map[string][]string, len(nodeGroups))
+	for group, nodes := range nodeGroups {
+		wanNodeGroups[group] = nodes.WAN
+	}
+	bestNodes := probe(wanNodeGroups)
+
+	fallbackNodeGroups := make(map[string][]string)
+	for group, nodes := range nodeGroups {
+		if bestNodes[group] == "" && len(nodes.LAN) > 0 {
+			fallbackNodeGroups[group] = nodes.LAN
+		}
+	}
+
+	if len(fallbackNodeGroups) == 0 {
+		return bestNodes
+	}
+	for group, node := range probe(fallbackNodeGroups) {
+		bestNodes[group] = node
+	}
+	return bestNodes
+}
+
+func getBestReachableNodes(nodeGroups map[string][]string, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
-		if len(nodes) > 1 {
+		if len(nodes) > 0 {
 			var pingList []ping.TCPing
 			var chList []<-chan struct{}
 
@@ -66,12 +102,7 @@ func getBestNodes(nodeGroups map[string][]string, dialContext func(context.Conte
 			if bestNode != "" {
 				bestNodes[group] = bestNode
 				log.Printf("Best node in group %s: %s with latency %d ms", group, bestNode, bestLatency)
-			} else {
-				log.Printf("No reachable node in group %s, using the first node", group)
-				bestNodes[group] = nodes[0]
 			}
-		} else if len(nodes) == 1 {
-			bestNodes[group] = nodes[0]
 		}
 	}
 
