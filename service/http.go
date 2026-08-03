@@ -15,6 +15,14 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+const (
+	httpProxyMaxIdleConns        = 100
+	httpProxyMaxIdleConnsPerHost = 10
+	httpProxyMaxConnsPerHost     = 50
+	httpProxyIdleConnTimeout     = 90 * time.Second
+	httpProxyResponseTimeout     = 30 * time.Second
+)
+
 // The MIT License (MIT)
 //
 // Copyright (c) 2016 Ian Denhardt <ian@zenhack.net>
@@ -53,12 +61,17 @@ func newHTTPProxy(dialer *dial.Dialer) *httpProxy {
 		dialContext: dialer.Dial,
 		tunnels:     make(map[*httpTunnel]struct{}),
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, net, addr string) (net.Conn, error) {
+		return proxy.dialContext(ctx, net, addr)
+	}
+	transport.MaxIdleConns = httpProxyMaxIdleConns
+	transport.MaxIdleConnsPerHost = httpProxyMaxIdleConnsPerHost
+	transport.MaxConnsPerHost = httpProxyMaxConnsPerHost
+	transport.IdleConnTimeout = httpProxyIdleConnTimeout
+	transport.ResponseHeaderTimeout = httpProxyResponseTimeout
 	proxy.client = &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, net, addr string) (net.Conn, error) {
-				return proxy.dialContext(ctx, net, addr)
-			},
-		},
+		Transport: transport,
 		// We must pass redirect response to browser
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -85,6 +98,7 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte(err.Error() + "\n"))
 		return
 	}
+	defer resp.Body.Close()
 
 	hdr := w.Header()
 	for k, v := range resp.Header {
@@ -177,6 +191,11 @@ func (p *httpProxy) closeTunnels() {
 	}
 }
 
+func (p *httpProxy) close() {
+	p.closeTunnels()
+	p.client.CloseIdleConnections()
+}
+
 func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 	proxy := newHTTPProxy(dialer)
 
@@ -188,7 +207,7 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 		log.Println("Closing HTTP listener...")
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		defer proxy.closeTunnels()
+		defer proxy.close()
 		if err := server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("close HTTP listener failed: %w", err)
 		}

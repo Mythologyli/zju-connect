@@ -1,14 +1,74 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mythologyli/zju-connect/dial"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type trackingBody struct {
+	io.Reader
+	closed atomic.Bool
+}
+
+func (b *trackingBody) Close() error {
+	b.closed.Store(true)
+	return nil
+}
+
+func TestHTTPProxyClosesUpstreamResponseBody(t *testing.T) {
+	body := &trackingBody{Reader: bytes.NewBufferString("response")}
+	proxy := newHTTPProxy(dial.NewDialer(nil, nil, nil, false, ""))
+	proxy.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       body,
+		}, nil
+	})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	proxy.ServeHTTP(recorder, req)
+
+	if !body.closed.Load() {
+		t.Fatal("upstream response body was not closed")
+	}
+}
+
+func TestHTTPProxyTransportHasBoundedPool(t *testing.T) {
+	proxy := newHTTPProxy(dial.NewDialer(nil, nil, nil, false, ""))
+	transport, ok := proxy.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", proxy.client.Transport)
+	}
+	if transport.MaxIdleConns <= 0 || transport.MaxIdleConnsPerHost <= 0 {
+		t.Fatalf("idle limits = global %d, per-host %d; want positive", transport.MaxIdleConns, transport.MaxIdleConnsPerHost)
+	}
+	if transport.MaxConnsPerHost <= 0 {
+		t.Fatalf("MaxConnsPerHost = %d, want positive", transport.MaxConnsPerHost)
+	}
+	if transport.IdleConnTimeout <= 0 {
+		t.Fatal("IdleConnTimeout is not configured")
+	}
+	if transport.ResponseHeaderTimeout <= 0 {
+		t.Fatal("ResponseHeaderTimeout is not configured")
+	}
+}
 
 func TestHTTPConnectClosesTargetWhenClientDisconnects(t *testing.T) {
 	targetListener, err := net.Listen("tcp", "127.0.0.1:0")
