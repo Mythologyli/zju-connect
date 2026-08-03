@@ -274,14 +274,19 @@ func (c *Client) dialContext(ctx context.Context, network, address string) (net.
 func (c *Client) sessionKeepAliveLoop() {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
+	c.runSessionKeepAlive(ticker.C, 10*time.Second)
+}
+
+func (c *Client) runSessionKeepAlive(ticks <-chan time.Time, requestTimeout time.Duration) {
 	for {
 		select {
 		case <-c.lifecycleCtx.Done():
 			return
-		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(c.lifecycleCtx, 10*time.Second)
+		case <-ticks:
+			ctx, cancel := context.WithTimeout(c.lifecycleCtx, requestTimeout)
+			err := c.requestUpdateSession(ctx)
 			cancel()
-			if err := c.requestUpdateSession(ctx); err != nil {
+			if err != nil {
 				if err == errNotFound {
 					log.Println("server does not support update_session, stopping keepalive")
 					return
