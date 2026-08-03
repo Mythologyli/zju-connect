@@ -163,7 +163,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 			}
 
 			fmt.Print("Please enter rand code: ")
-			_, err = fmt.Scan(&randCode)
+			_, err = fmt.Scanln(&randCode)
 			if err != nil {
 				return err
 			}
@@ -272,7 +272,7 @@ func (c *Client) loginSMS() error {
 
 	fmt.Print("Please enter your SMS code: ")
 	smsCode := ""
-	_, err = fmt.Scan(&smsCode)
+	_, err = fmt.Scanln(&smsCode)
 	if err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func (c *Client) loginTOTP() error {
 	var err error
 	if c.totpSecret == "" {
 		fmt.Print("Please enter your TOTP code:")
-		_, err = fmt.Scan(&totpCode)
+		_, err = fmt.Scanln(&totpCode)
 	} else {
 		totpCode, err = totp.GenerateCode(c.totpSecret, time.Now())
 		fmt.Println("Generate TOTP code:", totpCode)
