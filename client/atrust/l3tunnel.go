@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 )
 
 type L3Tunnel struct {
@@ -15,7 +16,7 @@ type L3Tunnel struct {
 
 	ip net.IP
 
-	ipResources []client.IPResource
+	resourceIndex *ipresource.Index
 
 	conns   map[string]*l3TunnelConn
 	connsMu sync.Mutex
@@ -37,7 +38,7 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 	if ipResources == nil {
 		ipResources = []client.IPResource{}
 	}
-	t.ipResources = ipResources
+	t.resourceIndex = ipresource.New(ipResources)
 
 	ip, err := aTrustClient.IP()
 	if err != nil {

@@ -89,10 +89,7 @@ func (ep *Endpoint) SetOnCloseAction(func()) {}
 // WritePackets is called when get packets from gVisor stack. Then it sends them to VPN server
 func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
 	for _, packetBuffer := range list.AsSlice() {
-		var buf []byte
-		for _, t := range packetBuffer.AsSlices() {
-			buf = append(buf, t...)
-		}
+		buf := joinPacketSlices(packetBuffer.AsSlices())
 
 		if ep.l3Conn != nil {
 			n, err := ep.l3Conn.Write(buf)
@@ -128,6 +125,19 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 	}
 
 	return list.Len(), nil
+}
+
+func joinPacketSlices(slices [][]byte) []byte {
+	total := 0
+	for _, slice := range slices {
+		total += len(slice)
+	}
+	buf := make([]byte, total)
+	offset := 0
+	for _, slice := range slices {
+		offset += copy(buf[offset:], slice)
+	}
+	return buf
 }
 
 func NewStack(client client.Client) (*Stack, error) {
@@ -191,8 +201,8 @@ func (s *Stack) Run() {
 		panic(connErr)
 	}
 	// Read from VPN server and send to gVisor stack
+	buf := make([]byte, MTU)
 	for {
-		buf := make([]byte, MTU)
 		n, err := s.endpoint.l3Conn.Read(buf)
 		if err != nil {
 			if hook_func.IsTerminal() {

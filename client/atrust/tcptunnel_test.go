@@ -2,14 +2,64 @@ package atrust
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"testing"
 )
+
+var tcpTunnelFrameSink []byte
+
+func TestBuildTCPTunnelDataFramePreservesWireFormat(t *testing.T) {
+	payload := []byte{0x10, 0x20, 0x30}
+	want := []byte{0x01, 0x00, 0x00, 0x03, 0x10, 0x20, 0x30}
+	if got := buildTCPTunnelDataFrame(payload); !bytes.Equal(got, want) {
+		t.Fatalf("frame = % X, want % X", got, want)
+	}
+}
+
+func TestBuildTCPTunnelDataFrameAllocatesOnce(t *testing.T) {
+	payload := make([]byte, 1200)
+	if allocs := testing.AllocsPerRun(1000, func() { tcpTunnelFrameSink = buildTCPTunnelDataFrame(payload) }); allocs != 1 {
+		t.Fatalf("frame allocations = %v, want 1", allocs)
+	}
+}
+
+func TestTCPTunnelReadPreservesFrameAcrossBufferSizes(t *testing.T) {
+	for _, bufferSize := range []int{2, 5, 16} {
+		t.Run(fmt.Sprintf("buffer_%d", bufferSize), func(t *testing.T) {
+			payload := []byte("hello")
+			frame := buildTCPTunnelDataFrame(payload)
+			conn := &tcpTunnelConn{reader: bufio.NewReader(bytes.NewReader(frame))}
+			var got []byte
+			buf := make([]byte, bufferSize)
+			for len(got) < len(payload) {
+				n, err := conn.Read(buf)
+				if err != nil {
+					t.Fatalf("Read() error = %v", err)
+				}
+				got = append(got, buf[:n]...)
+			}
+			if !bytes.Equal(got, payload) {
+				t.Fatalf("Read() payload = %q, want %q", got, payload)
+			}
+		})
+	}
+}
+
+func BenchmarkBuildTCPTunnelDataFrame(b *testing.B) {
+	payload := make([]byte, 1200)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(payload)))
+	for i := 0; i < b.N; i++ {
+		tcpTunnelFrameSink = buildTCPTunnelDataFrame(payload)
+	}
+}
 
 func runTCPConnectExchange(t *testing.T, status byte) (error, []byte) {
 	t.Helper()

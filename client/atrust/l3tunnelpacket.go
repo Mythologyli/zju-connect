@@ -1,7 +1,6 @@
 package atrust
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -28,18 +27,9 @@ func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 		return fmt.Errorf("protocol %d: %w", packet.Protocol(), client.ErrResourceNotFound)
 	}
 
-	for _, resource := range t.ipResources {
-		if bytes.Compare(packet.DestinationIP(), resource.IPMin) >= 0 && bytes.Compare(packet.DestinationIP(), resource.IPMax) <= 0 {
-			if resource.Protocol == protocol || resource.Protocol == "all" {
-				if protocol == "icmp" {
-					return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
-				}
-
-				if resource.PortMin <= port && port <= resource.PortMax {
-					return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
-				}
-			}
-		}
+	resource, ok := t.resourceIndex.Match(packet.DestinationIP(), protocol, port)
+	if ok {
+		return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
 	}
 
 	if port != -1 {

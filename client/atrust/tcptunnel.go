@@ -140,19 +140,27 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	}
 
 	for {
-		header := make([]byte, 2)
-		_, err := io.ReadFull(c.reader, header)
+		var header [2]byte
+		_, err := io.ReadFull(c.reader, header[:])
 		if err != nil {
 			return 0, err
 		}
 		log.DebugPrint("Received header: ", fmt.Sprintf("%02X %02X", header[0], header[1]))
 		if header[0] == 0x01 && header[1] == 0x00 {
-			lengthBytes := make([]byte, 2)
-			_, err = io.ReadFull(c.reader, lengthBytes)
+			var lengthBytes [2]byte
+			_, err = io.ReadFull(c.reader, lengthBytes[:])
 			if err != nil {
 				return 0, err
 			}
-			length := binary.BigEndian.Uint16(lengthBytes)
+			length := int(binary.BigEndian.Uint16(lengthBytes[:]))
+			if length <= len(b) {
+				if _, err = io.ReadFull(c.reader, b[:length]); err != nil {
+					return 0, err
+				}
+				log.DebugPrint("Received application data, length:", length)
+				log.DebugDumpHex(b[:length])
+				return length, nil
+			}
 			data := make([]byte, length)
 			_, err = io.ReadFull(c.reader, data)
 			if err != nil {
@@ -168,8 +176,7 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 
 			return n, nil
 		} else if header[0] == 0x01 && header[1] == 0x01 {
-			header = make([]byte, 2)
-			_, err = io.ReadFull(c.reader, header)
+			_, err = io.ReadFull(c.reader, header[:])
 			if err != nil {
 				return 0, err
 			}
@@ -180,12 +187,12 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 				return 0, fmt.Errorf("connection closed by server")
 			}
 		} else if header[0] == 0x53 && header[1] == 0x00 {
-			lengthBytes := make([]byte, 2)
-			_, err = io.ReadFull(c.reader, lengthBytes)
+			var lengthBytes [2]byte
+			_, err = io.ReadFull(c.reader, lengthBytes[:])
 			if err != nil {
 				return 0, err
 			}
-			length := binary.BigEndian.Uint16(lengthBytes)
+			length := binary.BigEndian.Uint16(lengthBytes[:])
 
 			data := make([]byte, length)
 			_, err = io.ReadFull(c.reader, data)
@@ -211,21 +218,24 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 }
 
 func (c *tcpTunnelConn) Write(b []byte) (int, error) {
-	header := []byte{0x01, 0x00}
 	length := len(b)
 	if length > 0xFFFF {
 		return 0, fmt.Errorf("data too large")
 	}
-	lengthBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(lengthBytes, uint16(length))
-	frame := bytes.Buffer{}
-	frame.Write(header)
-	frame.Write(lengthBytes)
-	frame.Write(b)
-	_, err := c.tlsConn.Write(frame.Bytes())
-	log.DebugDumpHex(frame.Bytes())
+	frame := buildTCPTunnelDataFrame(b)
+	_, err := c.tlsConn.Write(frame)
+	log.DebugDumpHex(frame)
 
 	return length, err
+}
+
+func buildTCPTunnelDataFrame(data []byte) []byte {
+	frame := make([]byte, 4+len(data))
+	frame[0] = 0x01
+	frame[1] = 0x00
+	binary.BigEndian.PutUint16(frame[2:4], uint16(len(data)))
+	copy(frame[4:], data)
+	return frame
 }
 
 func (c *tcpTunnelConn) Close() error {
