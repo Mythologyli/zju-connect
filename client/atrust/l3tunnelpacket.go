@@ -107,6 +107,19 @@ func isAuthTimeoutErr(err error) bool {
 	return errors.Is(err, errL3TunnelAuthTimeout)
 }
 
+func packetClosesConntrack(packet []byte) bool {
+	ipPacket := zctcpip.IPv4Packet(packet)
+	if !ipPacket.Valid() || ipPacket.Protocol() != zctcpip.TCP {
+		return false
+	}
+	tcpPacket := zctcpip.TCPPacket(ipPacket.Payload())
+	if !tcpPacket.Valid() {
+		return false
+	}
+	flags := tcpPacket.Flags()
+	return flags&zctcpip.TCPFin != 0 || flags&zctcpip.TCPRst != 0
+}
+
 func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {
 	if packet.Protocol() == zctcpip.ICMP {
 		return packetMeta{

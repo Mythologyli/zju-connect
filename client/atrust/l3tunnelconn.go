@@ -182,6 +182,7 @@ func (c *l3TunnelConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
+		c.conntrackMgr.close()
 		err = c.tlsConn.Close()
 	})
 	return err
@@ -243,6 +244,7 @@ func (c *l3TunnelConn) heartbeatLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			c.conntrackMgr.removeExpired()
 			_ = c.writeFrame([]byte{l3Version, cmdHeartbeatReq, 0x00, 0x00})
 		case <-c.closeCh:
 			return
@@ -348,7 +350,11 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 	}
 	payload := buildDataPayload(token, [][]byte{pkt})
 	log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
-	return c.writeFrame(payload)
+	err := c.writeFrame(payload)
+	if err == nil && packetClosesConntrack(pkt) {
+		c.conntrackMgr.remove(meta.key)
+	}
+	return err
 }
 
 func (c *l3TunnelConn) ensureAuth(ct *conntrack, meta packetMeta) error {

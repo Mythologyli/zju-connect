@@ -100,6 +100,11 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 	}
 
 	t.connsMu.Lock()
+	if existing := t.conns[nodeGroupID]; existing != nil {
+		t.connsMu.Unlock()
+		_ = conn.Close()
+		return existing, nil
+	}
 	t.conns[nodeGroupID] = conn
 	t.connsMu.Unlock()
 
@@ -110,9 +115,14 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 
 func (t *L3Tunnel) evictConn(nodeGroupID string, conn *l3TunnelConn) {
 	t.connsMu.Lock()
-	defer t.connsMu.Unlock()
+	removed := false
 	if existing := t.conns[nodeGroupID]; existing == conn {
 		delete(t.conns, nodeGroupID)
+		removed = true
+	}
+	t.connsMu.Unlock()
+	if removed {
+		_ = conn.Close()
 	}
 }
 
