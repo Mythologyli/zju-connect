@@ -6,9 +6,9 @@ import (
 )
 
 type L3Conn struct {
-	l3Tunnel *L3Tunnel
-	sendLock sync.Mutex
-	recvLock sync.Mutex
+	l3Tunnel    *L3Tunnel
+	writePacket func([]byte) error
+	recvLock    sync.Mutex
 }
 
 // try best to read, if return err!=nil, please panic
@@ -27,10 +27,12 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 
 // try best to write, if return err!=nil, please panic
 func (c *L3Conn) Write(p []byte) (n int, err error) {
-	c.sendLock.Lock()
-	defer c.sendLock.Unlock()
 	n = len(p)
-	err = c.l3Tunnel.processIPV4(p)
+	if c.writePacket != nil {
+		err = c.writePacket(p)
+	} else {
+		err = c.l3Tunnel.processIPV4(p)
+	}
 	return n, err
 }
 

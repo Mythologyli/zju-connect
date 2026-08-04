@@ -2,14 +2,72 @@ package atrust
 
 import (
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 )
+
+func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
+	tunnel := &L3Tunnel{resourceIndex: ipresource.New(nil)}
+	conn := &L3Conn{l3Tunnel: tunnel}
+	packet := makeUDPPacket(12345, 53)
+
+	n, err := conn.Write(packet)
+	if n != len(packet) {
+		t.Fatalf("Write() length = %d, want %d", n, len(packet))
+	}
+	if !errors.Is(err, client.ErrResourceNotFound) {
+		t.Fatalf("Write() error = %v, want resource-not-found", err)
+	}
+}
+
+func TestL3ConnWritesDoNotBlockUnrelatedFlows(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	conn := &L3Conn{writePacket: func(packet []byte) error {
+		if packet[0] == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		return nil
+	}}
+
+	firstDone := make(chan struct{})
+	go func() {
+		_, _ = conn.Write([]byte{1})
+		close(firstDone)
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first write did not start")
+	}
+
+	secondDone := make(chan struct{})
+	go func() {
+		_, _ = conn.Write([]byte{2})
+		close(secondDone)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("unrelated write was blocked by the first flow")
+	}
+
+	close(releaseFirst)
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("first write did not finish")
+	}
+}
 
 func TestEvictConnClosesRemovedTunnel(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
@@ -94,6 +152,21 @@ func makeTCPPacket(flags uint16) []byte {
 	packet.SetProtocol(zctcpip.TCP)
 	tcpPacket := zctcpip.TCPPacket(packet.Payload())
 	tcpPacket[13] = byte(flags)
+	return packet
+}
+
+func makeUDPPacket(srcPort, dstPort uint16) []byte {
+	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.UDPHeaderSize)
+	packet[0] = zctcpip.IPv4Version << 4
+	packet.SetHeaderLen(zctcpip.IPv4HeaderSize)
+	packet.SetTotalLength(uint16(len(packet)))
+	packet.SetProtocol(zctcpip.UDP)
+	packet.SetSourceIP(net.IPv4(192, 0, 2, 1))
+	packet.SetDestinationIP(net.IPv4(198, 51, 100, 1))
+	udpPacket := zctcpip.UDPPacket(packet.Payload())
+	udpPacket.SetSourcePort(srcPort)
+	udpPacket.SetDestinationPort(dstPort)
+	udpPacket.SetLength(zctcpip.UDPHeaderSize)
 	return packet
 }
 
