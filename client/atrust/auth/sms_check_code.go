@@ -92,8 +92,11 @@ func (s *Session) sendSms(phone, loginDomain, graphCheckCode string) (int, error
 		return 0, err
 	}
 	log.DebugPrintf("Parsed sendSms: %+v", re)
-	if re.Code != 0 || re.Message != "" {
-		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
+	if re.Code != 0 {
+		if re.Data.GraphCheckCodeEnable == 1 {
+			return re.Data.GraphCheckCodeEnable, nil
+		}
+		return 0, fmt.Errorf("sendSms failed with code %d: %s", re.Code, re.Message)
 	}
 
 	return re.Data.GraphCheckCodeEnable, nil
@@ -142,11 +145,17 @@ func (s *Session) smsCheckCodeImpl(code, phone, loginDomain, graphCheckCode stri
 	if err != nil {
 		return 0, err
 	}
-	if re.Code != 0 || re.Message != "" {
-		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
+	if re.Code != 0 {
+		if re.Data.GraphCheckCodeEnable == 1 {
+			return re.Data.GraphCheckCodeEnable, nil
+		}
+		return 0, fmt.Errorf("SMS authentication failed with code %d: %s", re.Code, re.Message)
 	}
 	log.DebugPrintf("Parsed smsCheckCode: %+v", re)
 
+	if re.Data.Ticket == "" && re.Data.GraphCheckCodeEnable == 0 {
+		return 0, fmt.Errorf("SMS authentication succeeded without a ticket")
+	}
 	s.ticket = re.Data.Ticket
 
 	return re.Data.GraphCheckCodeEnable, nil

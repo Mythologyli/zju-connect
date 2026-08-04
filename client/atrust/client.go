@@ -214,7 +214,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
 	c.serverAddress = serverAddress
 	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
 	c.underlayDialer = newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
@@ -292,8 +292,9 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		}
 
 		loginResult, err := sess.Login(loginMethod, auth.LoginOptions{
-			DeviceID: c.DeviceID,
-			Cookies:  clientAuthData.Cookies,
+			DeviceID:   c.DeviceID,
+			Cookies:    clientAuthData.Cookies,
+			TOTPSecret: totpSecret,
 		})
 		if err != nil {
 			log.Println("Login error:", err)

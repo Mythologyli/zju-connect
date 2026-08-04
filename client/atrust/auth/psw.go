@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -43,20 +44,26 @@ func (s *Session) loginAuthPsw(username, password, loginDomain, graphCodeFile st
 func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string) (int, error) {
 	log.Println("Perform POST /passport/v1/auth/psw")
 
-	N := new(big.Int)
-	N.SetString(s.pubKey, 16)
-	E, _ := strconv.Atoi(s.pubKeyExp)
+	N, ok := new(big.Int).SetString(s.pubKey, 16)
+	if !ok {
+		return 0, fmt.Errorf("invalid RSA public key modulus")
+	}
+	E, err := strconv.Atoi(s.pubKeyExp)
+	if err != nil || E <= 0 {
+		return 0, fmt.Errorf("invalid RSA public key exponent %q", s.pubKeyExp)
+	}
 	pub := &rsa.PublicKey{N: N, E: E}
 
 	msg := []byte(password + "_" + s.antiReplayRand)
-	cipherBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pub, msg)
+	cipherBytes, err := encryptPKCS1v15Chunks(pub, msg)
 	if err != nil {
 		return 0, err
 	}
 	encryptedPwd := hex.EncodeToString(cipherBytes)
 
+	s.username = username + "@" + loginDomain
 	data := map[string]interface{}{
-		"username":    username + "@" + loginDomain,
+		"username":    s.username,
 		"password":    encryptedPwd,
 		"rememberPwd": "0",
 	}
@@ -96,12 +103,37 @@ func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string
 	if err != nil {
 		return 0, err
 	}
-	if re.Code != 0 || re.Message != "" {
-		log.Printf("Code: %d, Message: %s", re.Code, re.Message)
+	if re.Code != 0 {
+		if re.Data.GraphCheckCodeEnable == 1 {
+			return re.Data.GraphCheckCodeEnable, nil
+		}
+		return 0, fmt.Errorf("password authentication failed with code %d: %s", re.Code, re.Message)
 	}
 	log.DebugPrintf("Parsed psw: %+v", re)
 
+	if re.Data.Ticket == "" && re.Data.GraphCheckCodeEnable == 0 {
+		return 0, fmt.Errorf("password authentication succeeded without a ticket")
+	}
 	s.ticket = re.Data.Ticket
 
 	return re.Data.GraphCheckCodeEnable, nil
+}
+
+func encryptPKCS1v15Chunks(pub *rsa.PublicKey, plaintext []byte) ([]byte, error) {
+	maxChunkSize := pub.Size() - 11
+	if maxChunkSize <= 0 {
+		return nil, fmt.Errorf("RSA public key is too small")
+	}
+
+	ciphertext := make([]byte, 0, ((len(plaintext)+maxChunkSize-1)/maxChunkSize)*pub.Size())
+	for len(plaintext) > 0 {
+		chunkSize := min(len(plaintext), maxChunkSize)
+		chunk, err := rsa.EncryptPKCS1v15(rand.Reader, pub, plaintext[:chunkSize])
+		if err != nil {
+			return nil, err
+		}
+		ciphertext = append(ciphertext, chunk...)
+		plaintext = plaintext[chunkSize:]
+	}
+	return ciphertext, nil
 }

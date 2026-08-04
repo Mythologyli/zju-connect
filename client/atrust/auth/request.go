@@ -173,7 +173,16 @@ func authStepFromData(data authStepData) authStep {
 		step.AuthID = selected.AuthID
 		if step.Service == "" {
 			step.Service = selected.AuthType
+		} else if step.Service == "auth/token" {
+			switch selected.AuthType {
+			case "auth/totp", "auth/radius":
+				step.Service = selected.AuthType
+			}
 		}
+	}
+
+	if step.Service == "auth/sendSms" {
+		step.Service = "auth/sms"
 	}
 
 	// Some older gateways omit authType and only return an authId. This was

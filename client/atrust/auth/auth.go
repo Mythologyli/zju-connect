@@ -59,8 +59,10 @@ type ClientAuthData struct {
 }
 
 type Session struct {
-	client   *http.Client
-	deviceID string
+	client     *http.Client
+	deviceID   string
+	username   string
+	totpSecret string
 
 	baseHost string
 	baseURL  string
@@ -105,8 +107,9 @@ type AuthInfo struct {
 }
 
 type LoginOptions struct {
-	DeviceID string
-	Cookies  []Cookie
+	DeviceID   string
+	Cookies    []Cookie
+	TOTPSecret string
 }
 
 type LoginResult struct {
@@ -213,6 +216,14 @@ func (s *Session) continueAuth(step authStep) error {
 			step, err = s.completeSMS(step)
 		case "auth/customSms":
 			step, err = s.completeCustomSMS()
+		case "auth/totp":
+			step, err = s.completeTOTP()
+		case "auth/radius":
+			step, err = s.completeRadius()
+		case "auth/accessCheck":
+			step, err = s.accessCheck()
+		case "auth/token":
+			return fmt.Errorf("token authentication type is missing")
 		default:
 			return fmt.Errorf("unsupported next authentication service: %s", step.Service)
 		}
@@ -275,6 +286,7 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 	}
 
 	s.deviceID = opts.DeviceID
+	s.totpSecret = opts.TOTPSecret
 	s.env = base64.StdEncoding.EncodeToString([]byte(`{"deviceId":"` + opts.DeviceID + `"}`))
 
 	isLogin, authInfoList, err := s.authConfig(false, true)

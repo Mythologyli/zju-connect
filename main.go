@@ -122,6 +122,7 @@ func main() {
 			conf.GraphCodeFile,
 			conf.CasTicket,
 			conf.OAuth2Code,
+			conf.TOTPSecret,
 			clientData,
 			resourceData,
 			conf.UpdateBestNodesInterval,
