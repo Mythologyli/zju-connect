@@ -147,6 +147,9 @@ func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {
 }
 
 func logPacket(direction string, packet []byte) {
+	if !log.DebugEnabled() {
+		return
+	}
 	if len(packet) == 0 {
 		log.DebugPrintf("l3-tunnel %s packet len=0", direction)
 		return

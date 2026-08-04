@@ -200,7 +200,9 @@ func (c *l3TunnelConn) readLoop() {
 		switch fr.cmd {
 		case cmdDataResp:
 			if fr.dataMode == "len" {
-				log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
+				if log.DebugEnabled() {
+					log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
+				}
 				if !c.deliverIncoming(fr.payload) {
 					return
 				}
@@ -215,7 +217,9 @@ func (c *l3TunnelConn) readLoop() {
 			if len(fr.payload) > 0 {
 				tokenLen = int(fr.payload[0])
 			}
-			log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
+			if log.DebugEnabled() {
+				log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
+			}
 			for _, pkt := range packets {
 				if !c.deliverIncoming(pkt) {
 					return
@@ -287,8 +291,10 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 						return frame{}, err
 					}
 				}
-				raw := append(append(header, statusLen...), payload...)
-				logFrame("recv", raw)
+				if log.DebugEnabled() {
+					raw := append(append(header, statusLen...), payload...)
+					logFrame("recv", raw)
+				}
 				return frame{cmd: cmd, status: status, payload: payload}, nil
 			}
 			if cmd == cmdDataResp {
@@ -296,9 +302,11 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 				if err != nil {
 					return frame{}, err
 				}
-				raw := append(append([]byte{}, header...), payload...)
-				logFrame("recv", raw)
-				log.DebugPrintf("l3-tunnel recv data resp mode=%s payloadLen=%d", mode, len(payload))
+				if log.DebugEnabled() {
+					raw := append(append([]byte{}, header...), payload...)
+					logFrame("recv", raw)
+					log.DebugPrintf("l3-tunnel recv data resp mode=%s payloadLen=%d", mode, len(payload))
+				}
 				return frame{cmd: cmd, payload: payload, dataMode: mode}, nil
 			}
 
@@ -313,8 +321,10 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 					return frame{}, err
 				}
 			}
-			raw := append(append(header, lenBytes...), payload...)
-			logFrame("recv", raw)
+			if log.DebugEnabled() {
+				raw := append(append(header, lenBytes...), payload...)
+				logFrame("recv", raw)
+			}
 			return frame{cmd: cmd, payload: payload}, nil
 		}
 
@@ -330,8 +340,10 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 					return frame{}, err
 				}
 			}
-			raw := append(append(header, lenBytes...), payload...)
-			logFrame("recv protocol", raw)
+			if log.DebugEnabled() {
+				raw := append(append(header, lenBytes...), payload...)
+				logFrame("recv protocol", raw)
+			}
 			continue
 		}
 
@@ -362,7 +374,9 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 		return fmt.Errorf("l3-tunnel connect token too long: %d", len(token))
 	}
 	payload := buildDataPayload(token, [][]byte{pkt})
-	log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
+	if log.DebugEnabled() {
+		log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
+	}
 	err := c.writeFrame(payload)
 	if err == nil && packetClosesConntrack(pkt) {
 		c.conntrackMgr.remove(meta.key)
@@ -397,7 +411,9 @@ func (c *l3TunnelConn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
 	if err != nil {
 		return err
 	}
-	log.DebugPrintf("l3-tunnel send auth authID=%d meta=%s payloadLen=%d", ct.authID, formatMeta(meta), len(req))
+	if log.DebugEnabled() {
+		log.DebugPrintf("l3-tunnel send auth authID=%d meta=%s payloadLen=%d", ct.authID, formatMeta(meta), len(req))
+	}
 	payload := make([]byte, 0, 4+len(req))
 	payload = append(payload, l3Version, cmdAuthReq)
 	lenBytes := make([]byte, 2)
@@ -727,6 +743,9 @@ func formatMeta(meta packetMeta) string {
 }
 
 func logFrame(prefix string, data []byte) {
+	if !log.DebugEnabled() {
+		return
+	}
 	if len(data) >= 2 {
 		log.DebugPrintf("l3-tunnel %s frame cmd=0x%02x len=%d", prefix, data[1], len(data))
 	} else {

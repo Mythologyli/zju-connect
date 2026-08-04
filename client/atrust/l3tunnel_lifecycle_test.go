@@ -14,6 +14,7 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
+	zlog "github.com/mythologyli/zju-connect/log"
 )
 
 func TestForwardFromConnPreservesPacket(t *testing.T) {
@@ -111,6 +112,16 @@ func TestReadLoopDropsDataWhenIncomingQueueIsFull(t *testing.T) {
 	}
 	if got := len(conn.incoming); got != 1 {
 		t.Fatalf("incoming queue length = %d, want 1", got)
+	}
+}
+
+func TestLogPacketDisabledAllocatesNothing(t *testing.T) {
+	zlog.DisableDebug()
+	packet := makeUDPPacket(12345, 53)
+	if allocations := testing.AllocsPerRun(1000, func() {
+		logPacket("send", packet)
+	}); allocations != 0 {
+		t.Fatalf("disabled logPacket allocations = %v, want 0", allocations)
 	}
 }
 
