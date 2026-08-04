@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -25,6 +26,18 @@ type tcpTunnelConn struct {
 	tlsConn *tls.Conn
 	reader  *bufio.Reader
 	readBuf []byte
+}
+
+type tcpTunnelFrame struct {
+	payload []byte
+}
+
+const maxPooledTCPTunnelFrameSize = 4096
+
+var tcpTunnelFramePool = sync.Pool{
+	New: func() any {
+		return &tcpTunnelFrame{payload: make([]byte, 0, 2048)}
+	},
 }
 
 func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
@@ -228,9 +241,10 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 	if length > 0xFFFF {
 		return 0, fmt.Errorf("data too large")
 	}
-	frame := buildTCPTunnelDataFrame(b)
-	err := writeTCPTunnelFrame(c.tlsConn, frame)
-	log.DebugDumpHex(frame)
+	frame := getTCPTunnelFrame(b)
+	defer putTCPTunnelFrame(frame)
+	err := writeTCPTunnelFrame(c.tlsConn, frame.payload)
+	log.DebugDumpHex(frame.payload)
 
 	return length, err
 }
@@ -243,13 +257,27 @@ func writeTCPTunnelFrame(writer io.Writer, frame []byte) error {
 	return err
 }
 
-func buildTCPTunnelDataFrame(data []byte) []byte {
-	frame := make([]byte, 4+len(data))
-	frame[0] = 0x01
-	frame[1] = 0x00
-	binary.BigEndian.PutUint16(frame[2:4], uint16(len(data)))
-	copy(frame[4:], data)
+func getTCPTunnelFrame(data []byte) *tcpTunnelFrame {
+	frame := tcpTunnelFramePool.Get().(*tcpTunnelFrame)
+	required := 4 + len(data)
+	if cap(frame.payload) < required {
+		frame.payload = make([]byte, required)
+	} else {
+		frame.payload = frame.payload[:required]
+	}
+	frame.payload[0] = 0x01
+	frame.payload[1] = 0x00
+	binary.BigEndian.PutUint16(frame.payload[2:4], uint16(len(data)))
+	copy(frame.payload[4:], data)
 	return frame
+}
+
+func putTCPTunnelFrame(frame *tcpTunnelFrame) {
+	if cap(frame.payload) > maxPooledTCPTunnelFrameSize {
+		return
+	}
+	frame.payload = frame.payload[:0]
+	tcpTunnelFramePool.Put(frame)
 }
 
 func (c *tcpTunnelConn) Close() error {

@@ -16,27 +16,27 @@ import (
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 )
 
-var tcpTunnelFrameSink []byte
-
 type shortWriter struct{}
 
 func (shortWriter) Write(p []byte) (int, error) {
 	return len(p) - 1, nil
 }
 
-func TestBuildTCPTunnelDataFramePreservesWireFormat(t *testing.T) {
+func TestPooledTCPTunnelFramePreservesWireFormat(t *testing.T) {
 	payload := []byte{0x10, 0x20, 0x30}
 	want := []byte{0x01, 0x00, 0x00, 0x03, 0x10, 0x20, 0x30}
-	if got := buildTCPTunnelDataFrame(payload); !bytes.Equal(got, want) {
-		t.Fatalf("frame = % X, want % X", got, want)
+	frame := getTCPTunnelFrame(payload)
+	if !bytes.Equal(frame.payload, want) {
+		t.Fatalf("frame = % X, want % X", frame.payload, want)
 	}
-}
+	putTCPTunnelFrame(frame)
 
-func TestBuildTCPTunnelDataFrameAllocatesOnce(t *testing.T) {
-	payload := make([]byte, 1200)
-	if allocs := testing.AllocsPerRun(1000, func() { tcpTunnelFrameSink = buildTCPTunnelDataFrame(payload) }); allocs != 1 {
-		t.Fatalf("frame allocations = %v, want 1", allocs)
+	reused := getTCPTunnelFrame([]byte{0x40})
+	wantReused := []byte{0x01, 0x00, 0x00, 0x01, 0x40}
+	if !bytes.Equal(reused.payload, wantReused) {
+		t.Fatalf("reused frame = % X, want % X", reused.payload, wantReused)
 	}
+	putTCPTunnelFrame(reused)
 }
 
 func TestWriteTCPTunnelFrameRejectsShortWrite(t *testing.T) {
@@ -49,7 +49,7 @@ func TestTCPTunnelReadPreservesFrameAcrossBufferSizes(t *testing.T) {
 	for _, bufferSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprintf("buffer_%d", bufferSize), func(t *testing.T) {
 			payload := []byte("hello")
-			frame := buildTCPTunnelDataFrame(payload)
+			frame := append([]byte{0x01, 0x00, 0x00, byte(len(payload))}, payload...)
 			conn := &tcpTunnelConn{reader: bufio.NewReader(bytes.NewReader(frame))}
 			var got []byte
 			buf := make([]byte, bufferSize)
@@ -67,12 +67,13 @@ func TestTCPTunnelReadPreservesFrameAcrossBufferSizes(t *testing.T) {
 	}
 }
 
-func BenchmarkBuildTCPTunnelDataFrame(b *testing.B) {
+func BenchmarkGetTCPTunnelFrame(b *testing.B) {
 	payload := make([]byte, 1200)
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
 	for i := 0; i < b.N; i++ {
-		tcpTunnelFrameSink = buildTCPTunnelDataFrame(payload)
+		frame := getTCPTunnelFrame(payload)
+		putTCPTunnelFrame(frame)
 	}
 }
 
