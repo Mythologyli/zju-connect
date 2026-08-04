@@ -229,10 +229,18 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 		return 0, fmt.Errorf("data too large")
 	}
 	frame := buildTCPTunnelDataFrame(b)
-	_, err := c.tlsConn.Write(frame)
+	err := writeTCPTunnelFrame(c.tlsConn, frame)
 	log.DebugDumpHex(frame)
 
 	return length, err
+}
+
+func writeTCPTunnelFrame(writer io.Writer, frame []byte) error {
+	n, err := writer.Write(frame)
+	if err == nil && n != len(frame) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 func buildTCPTunnelDataFrame(data []byte) []byte {

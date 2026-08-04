@@ -18,6 +18,12 @@ import (
 
 var tcpTunnelFrameSink []byte
 
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
+}
+
 func TestBuildTCPTunnelDataFramePreservesWireFormat(t *testing.T) {
 	payload := []byte{0x10, 0x20, 0x30}
 	want := []byte{0x01, 0x00, 0x00, 0x03, 0x10, 0x20, 0x30}
@@ -30,6 +36,12 @@ func TestBuildTCPTunnelDataFrameAllocatesOnce(t *testing.T) {
 	payload := make([]byte, 1200)
 	if allocs := testing.AllocsPerRun(1000, func() { tcpTunnelFrameSink = buildTCPTunnelDataFrame(payload) }); allocs != 1 {
 		t.Fatalf("frame allocations = %v, want 1", allocs)
+	}
+}
+
+func TestWriteTCPTunnelFrameRejectsShortWrite(t *testing.T) {
+	if err := writeTCPTunnelFrame(shortWriter{}, []byte{1, 2, 3}); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("writeTCPTunnelFrame() error = %v, want io.ErrShortWrite", err)
 	}
 }
 
