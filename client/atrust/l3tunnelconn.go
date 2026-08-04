@@ -37,6 +37,16 @@ const (
 
 var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
 
+type dataFrame struct {
+	payload []byte
+}
+
+var dataFramePool = sync.Pool{
+	New: func() any {
+		return &dataFrame{payload: make([]byte, 0, 2048)}
+	},
+}
+
 type clientInfo struct {
 	sid          string
 	deviceID     string
@@ -373,7 +383,9 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 	if len(token) > 0xFF {
 		return fmt.Errorf("l3-tunnel connect token too long: %d", len(token))
 	}
-	payload := buildDataPayload(token, [][]byte{pkt})
+	frame := getDataPayload(token, pkt)
+	defer putDataPayload(frame)
+	payload := frame.payload
 	if log.DebugEnabled() {
 		log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
 	}
@@ -485,7 +497,10 @@ func (c *l3TunnelConn) writeFrame(data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	logFrame("send", data)
-	_, err := c.tlsConn.Write(data)
+	n, err := c.tlsConn.Write(data)
+	if err == nil && n != len(data) {
+		return io.ErrShortWrite
+	}
 	return err
 }
 
@@ -576,25 +591,29 @@ func encodeMeta(meta packetMeta) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func buildDataPayload(token string, packets [][]byte) []byte {
-	tokenBytes := []byte(token)
-	payloadLen := 1 + len(tokenBytes) + 2 + 1
-	for _, pkt := range packets {
-		payloadLen += 2 + len(pkt)
+func getDataPayload(token string, packet []byte) *dataFrame {
+	frame := dataFramePool.Get().(*dataFrame)
+	payload := frame.payload[:0]
+	required := 8 + len(token) + len(packet)
+	if cap(payload) < required {
+		payload = make([]byte, 0, required)
 	}
-	payload := make([]byte, 0, payloadLen+2)
-	payload = append(payload, l3Version, cmdDataReq)
-	payload = append(payload, byte(len(tokenBytes)))
-	payload = append(payload, tokenBytes...)
-	payload = append(payload, 0x00, 0x00)
-	payload = append(payload, byte(len(packets)))
-	for _, pkt := range packets {
-		lenBytes := make([]byte, 2)
-		binary.BigEndian.PutUint16(lenBytes, uint16(len(pkt)))
-		payload = append(payload, lenBytes...)
-		payload = append(payload, pkt...)
+	payload = append(payload, l3Version, cmdDataReq, byte(len(token)))
+	payload = append(payload, token...)
+	payload = append(payload, 0x00, 0x00, 0x01, 0x00, 0x00)
+	binary.BigEndian.PutUint16(payload[len(payload)-2:], uint16(len(packet)))
+	payload = append(payload, packet...)
+	frame.payload = payload
+	return frame
+}
+
+func putDataPayload(frame *dataFrame) {
+	// Avoid retaining unexpectedly large packets in the process-wide pool.
+	if cap(frame.payload) > maxDataPayload {
+		return
 	}
-	return payload
+	frame.payload = frame.payload[:0]
+	dataFramePool.Put(frame)
 }
 
 const maxDataPayload = 4096

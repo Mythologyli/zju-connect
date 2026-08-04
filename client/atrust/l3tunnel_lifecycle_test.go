@@ -125,6 +125,32 @@ func TestLogPacketDisabledAllocatesNothing(t *testing.T) {
 	}
 }
 
+func TestPooledDataPayloadPreservesWireFormat(t *testing.T) {
+	got := getDataPayload("x", []byte{1, 2, 3})
+	want := []byte{l3Version, cmdDataReq, 0x01, 'x', 0x00, 0x00, 0x01, 0x00, 0x03, 0x01, 0x02, 0x03}
+	if !bytes.Equal(got.payload, want) {
+		t.Fatalf("pooled payload = % X, want % X", got.payload, want)
+	}
+	putDataPayload(got)
+
+	next := getDataPayload("yz", []byte{4, 5})
+	wantNext := []byte{l3Version, cmdDataReq, 0x02, 'y', 'z', 0x00, 0x00, 0x01, 0x00, 0x02, 0x04, 0x05}
+	if !bytes.Equal(next.payload, wantNext) {
+		t.Fatalf("reused payload = % X, want % X", next.payload, wantNext)
+	}
+	putDataPayload(next)
+}
+
+func BenchmarkGetDataPayload(b *testing.B) {
+	packet := make([]byte, 1400)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(packet)))
+	for i := 0; i < b.N; i++ {
+		payload := getDataPayload("connect-token", packet)
+		putDataPayload(payload)
+	}
+}
+
 func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 	tunnel := &L3Tunnel{resourceIndex: ipresource.New(nil)}
 	conn := &L3Conn{l3Tunnel: tunnel}
