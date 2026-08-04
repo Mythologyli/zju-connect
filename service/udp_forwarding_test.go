@@ -215,6 +215,54 @@ func TestUDPForwardPreservesDatagramsAndReusesSession(t *testing.T) {
 	}
 }
 
+func TestUDPForwardEvictsLeastRecentlyActiveConnectionAtCapacity(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firstCtx, firstCancel := context.WithCancel(ctx)
+	secondCtx, secondCancel := context.WithCancel(ctx)
+	first := &UDPConnection{ctx: firstCtx, cancel: firstCancel, send: make(chan udpDatagram, 1)}
+	second := &UDPConnection{ctx: secondCtx, cancel: secondCancel, send: make(chan udpDatagram, 1)}
+	first.lastActive.Store(1)
+	second.lastActive.Store(2)
+	firstKey := netip.MustParseAddrPort("127.0.0.1:10001")
+	secondKey := netip.MustParseAddrPort("127.0.0.1:10002")
+	forward := &UDPForward{
+		connections:    map[netip.AddrPort]*UDPConnection{firstKey: first, secondKey: second},
+		maxConnections: 2,
+	}
+
+	evicted := forward.makeRoomForConnectionLocked()
+	if evicted != first {
+		t.Fatalf("evicted connection = %p, want oldest %p", evicted, first)
+	}
+	if _, ok := forward.connections[firstKey]; ok {
+		t.Fatal("oldest connection remained in the map")
+	}
+	if _, ok := forward.connections[secondKey]; !ok {
+		t.Fatal("newer connection was removed")
+	}
+}
+
+func TestUDPForwardQueuedMemoryBudgetIsReclaimed(t *testing.T) {
+	forward := &UDPForward{maxQueuedBytes: BufferSize}
+	first := udpDatagram{data: make([]byte, 1200), buffer: new(udpBuffer)}
+	second := udpDatagram{data: make([]byte, 1200), buffer: new(udpBuffer)}
+	if !forward.reserveDatagram(&first) {
+		t.Fatal("first datagram did not fit empty budget")
+	}
+	if forward.reserveDatagram(&second) {
+		t.Fatal("second datagram exceeded budget but was accepted")
+	}
+	forward.releaseDatagram(first)
+	if !forward.reserveDatagram(&second) {
+		t.Fatal("released budget was not reusable")
+	}
+	forward.releaseDatagram(second)
+	if got := forward.queuedBytes.Load(); got != 0 {
+		t.Fatalf("queued bytes = %d, want 0", got)
+	}
+}
+
 func BenchmarkUDPForwardHandle(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

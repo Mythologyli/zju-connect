@@ -19,6 +19,8 @@ import (
 const BufferSize = 40960
 const DefaultTimeout = time.Minute * 5
 const udpForwardQueueSize = 64
+const defaultUDPForwardMaxConnections = 1024
+const defaultUDPForwardMaxQueuedBytes int64 = 64 << 20
 
 type UDPForward struct {
 	src          *net.UDPAddr
@@ -36,10 +38,13 @@ type UDPForward struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 
-	bufferPool sync.Pool
-	wg         sync.WaitGroup
-	closeOnce  sync.Once
-	closeErr   error
+	bufferPool     sync.Pool
+	maxConnections int
+	maxQueuedBytes int64
+	queuedBytes    atomic.Int64
+	wg             sync.WaitGroup
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 type UDPConnection struct {
@@ -60,8 +65,9 @@ type UDPConnection struct {
 type udpBuffer [BufferSize]byte
 
 type udpDatagram struct {
-	data   []byte
-	buffer *udpBuffer
+	data           []byte
+	buffer         *udpBuffer
+	accountedBytes int64
 }
 
 func newUDPForward(vpnStack stack.Stack, src, dest string) *UDPForward {
@@ -75,6 +81,8 @@ func newUDPForward(vpnStack stack.Stack, src, dest string) *UDPForward {
 		timeout:            DefaultTimeout,
 		ctx:                ctx,
 		cancel:             cancel,
+		maxConnections:     defaultUDPForwardMaxConnections,
+		maxQueuedBytes:     defaultUDPForwardMaxQueuedBytes,
 	}
 	u.bufferPool.New = func() any { return new(udpBuffer) }
 
@@ -145,6 +153,11 @@ func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 }
 
 func (u *UDPForward) handleOwned(data udpDatagram, addr *net.UDPAddr) {
+	if !u.reserveDatagram(&data) {
+		u.releaseDatagram(data)
+		log.DebugPrintf("UDP forward: global queue budget exceeded for %s, dropping packet", addr)
+		return
+	}
 	conn := u.getOrCreateConnection(addr)
 	if !conn.enqueue(data) {
 		u.releaseDatagram(data)
@@ -159,6 +172,7 @@ func (u *UDPForward) getOrCreateConnection(addr *net.UDPAddr) *UDPConnection {
 		u.connectionsMutex.Unlock()
 		return conn
 	}
+	evicted := u.makeRoomForConnectionLocked()
 	ctx, cancel := context.WithCancel(u.ctx)
 	conn := &UDPConnection{
 		ctx:    ctx,
@@ -173,7 +187,28 @@ func (u *UDPForward) getOrCreateConnection(addr *net.UDPAddr) *UDPConnection {
 		u.runConnection(key, cloneUDPAddr(addr), conn)
 	}()
 	u.connectionsMutex.Unlock()
+	if evicted != nil {
+		evicted.close()
+	}
 	return conn
+}
+
+func (u *UDPForward) makeRoomForConnectionLocked() *UDPConnection {
+	if u.maxConnections <= 0 || len(u.connections) < u.maxConnections {
+		return nil
+	}
+	var oldestKey netip.AddrPort
+	var oldest *UDPConnection
+	for key, conn := range u.connections {
+		if oldest == nil || conn.lastActive.Load() < oldest.lastActive.Load() {
+			oldestKey = key
+			oldest = conn
+		}
+	}
+	if oldest != nil {
+		delete(u.connections, oldestKey)
+	}
+	return oldest
 }
 
 func (u *UDPForward) runConnection(key netip.AddrPort, clientAddr *net.UDPAddr, conn *UDPConnection) {
@@ -303,8 +338,31 @@ func (u *UDPForward) putBuffer(buf *udpBuffer) {
 }
 
 func (u *UDPForward) releaseDatagram(data udpDatagram) {
+	if data.accountedBytes > 0 {
+		u.queuedBytes.Add(-data.accountedBytes)
+	}
 	if data.buffer != nil {
 		u.putBuffer(data.buffer)
+	}
+}
+
+func (u *UDPForward) reserveDatagram(data *udpDatagram) bool {
+	if u.maxQueuedBytes <= 0 {
+		return true
+	}
+	bytes := int64(len(data.data))
+	if data.buffer != nil {
+		bytes = BufferSize
+	}
+	for {
+		used := u.queuedBytes.Load()
+		if bytes > u.maxQueuedBytes-used {
+			return false
+		}
+		if u.queuedBytes.CompareAndSwap(used, used+bytes) {
+			data.accountedBytes = bytes
+			return true
+		}
 	}
 }
 
