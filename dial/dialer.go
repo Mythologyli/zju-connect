@@ -1,12 +1,12 @@
 package dial
 
 import (
-	"bytes"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/stack"
@@ -29,6 +29,7 @@ type Dialer struct {
 	stack                stack.Stack
 	resolver             *resolve.Resolver
 	ipResources          []client.IPResource
+	resourceIndex        *ipresource.Index
 	alwaysUseVPN         bool
 	dialDirectHTTPProxy  string // format: "ip:port"
 	dialDirectSocksProxy string // WORKING IN PROCESS
@@ -124,16 +125,9 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	}
 
 	if !matchedResource && d.ipResources != nil {
-		for _, resource := range d.ipResources {
-			if bytes.Compare(target.IP, resource.IPMin) >= 0 && bytes.Compare(target.IP, resource.IPMax) <= 0 {
-				if resource.PortMin <= port && port <= resource.PortMax {
-					if resource.Protocol == network || resource.Protocol == "all" {
-						useVPN = true
-						matchedResource = true
-						break
-					}
-				}
-			}
+		if matchesIPResource(d.resourceIndex, target.IP, network, port) {
+			useVPN = true
+			matchedResource = true
 		}
 	}
 
@@ -172,6 +166,11 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	} else {
 		return d.dialDirectIP(ctx, network, ipAddr, hostAddr)
 	}
+}
+
+func matchesIPResource(index *ipresource.Index, target net.IP, network string, port int) bool {
+	_, ok := index.Match(target, network, port)
+	return ok
 }
 
 func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Conn, error) {
@@ -214,6 +213,7 @@ func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []clie
 		stack:                stack,
 		resolver:             resolver,
 		ipResources:          ipResources,
+		resourceIndex:        ipresource.New(ipResources),
 		alwaysUseVPN:         alwaysUseVPN,
 		dialDirectHTTPProxy:  dialHttpProxy,
 		dialDirectSocksProxy: dialSocksProxy,

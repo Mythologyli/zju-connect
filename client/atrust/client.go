@@ -16,6 +16,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
@@ -30,6 +31,7 @@ type Client struct {
 
 	serverAddress   string
 	ipResources     []client.IPResource
+	resourceIndex   *ipresource.Index
 	domainResources map[string]client.DomainResource
 	ipSet           *netaddr.IPSet
 	dnsResource     map[string]net.IP

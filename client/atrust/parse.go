@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -283,6 +284,7 @@ func (c *Client) parseResource(resource []byte) error {
 	}
 
 	c.ipSet, _ = ipSetBuilder.IPSet()
+	c.resourceIndex = ipresource.New(c.ipResources)
 
 	return nil
 }

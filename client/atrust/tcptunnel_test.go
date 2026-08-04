@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 )
 
 var tcpTunnelFrameSink []byte
@@ -191,5 +194,19 @@ func TestClientWaitForTCPConnectCanBeSkipped(t *testing.T) {
 	err := client.waitForTCPConnect(context.Background(), clientConn, bufio.NewReader(clientConn))
 	if err != nil {
 		t.Fatalf("waitForTCPConnect() error = %v", err)
+	}
+}
+
+func TestMatchTCPIPResourceUsesLastMatchingRule(t *testing.T) {
+	resources := []client.IPResource{
+		{IPMin: net.IPv4(10, 0, 0, 1), IPMax: net.IPv4(10, 0, 0, 10), PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "first"},
+		{IPMin: net.IPv4(10, 0, 0, 1), IPMax: net.IPv4(10, 0, 0, 10), PortMin: 1, PortMax: 65535, Protocol: "all", AppID: "last"},
+	}
+	resource, ok := matchTCPIPResource(ipresource.New(resources), &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 443})
+	if !ok {
+		t.Fatal("matchTCPIPResource() did not find matching resource")
+	}
+	if resource.AppID != "last" {
+		t.Fatalf("matched AppID = %q, want last matching rule", resource.AppID)
 	}
 }

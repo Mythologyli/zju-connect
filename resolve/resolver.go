@@ -22,7 +22,7 @@ type Resolver struct {
 	remoteTCPResolver *net.Resolver
 	secondaryResolver *net.Resolver
 	ttl               uint64
-	domainResources   map[string]client.DomainResource
+	domainIndex       *domainResourceIndex
 	dnsResource       map[string]net.IP
 	useRemoteDNS      bool
 
@@ -62,16 +62,11 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	}()
 	var domainResourceFound = false
 	var domainResource client.DomainResource
-	if r.domainResources != nil {
-		for domain, resource := range r.domainResources {
-			if strings.HasSuffix(host, normalizeHostname(domain)) {
-				domainResourceFound = true
-				domainResource = resource
-				ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
-				log.DebugPrintf("Domain resource found: %s", domain)
-				break
-			}
-		}
+	if domain, resource, found := matchDomainResource(r.domainIndex, host); found {
+		domainResourceFound = true
+		domainResource = resource
+		ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
+		log.DebugPrintf("Domain resource found: %s", domain)
 	}
 
 	if cachedIP, found := r.getDNSCache(host); found {
@@ -121,6 +116,10 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	} else {
 		return r.ResolveWithSecondaryDNS(ctx, host)
 	}
+}
+
+func matchDomainResource(index *domainResourceIndex, host string) (string, client.DomainResource, bool) {
+	return index.Match(host)
 }
 
 func (r *Resolver) resolveRemote(ctx context.Context, host string) (net.IP, error) {
@@ -240,11 +239,11 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 				})
 			},
 		},
-		ttl:             ttl,
-		domainResources: domainResources,
-		dnsResource:     dnsResource,
-		dnsCache:        cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
-		useRemoteDNS:    useRemoteDNS,
+		ttl:          ttl,
+		domainIndex:  newDomainResourceIndex(domainResources),
+		dnsResource:  dnsResource,
+		dnsCache:     cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
+		useRemoteDNS: useRemoteDNS,
 	}
 
 	if secondaryDNSServer != "" {

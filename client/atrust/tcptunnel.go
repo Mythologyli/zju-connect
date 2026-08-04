@@ -2,7 +2,6 @@ package atrust
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 )
@@ -287,6 +287,10 @@ func calcXRequestSig(key []byte, data []byte) string {
 	return strings.ToUpper(hex.EncodeToString(sum))
 }
 
+func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr) (client.IPResource, bool) {
+	return index.MatchLast(addr.IP, "tcp", addr.Port)
+}
+
 func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
 	appID := ""
 	nodeGroupID := ""
@@ -298,17 +302,9 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		if res = ctx.Value(resolve.ContextKeyResolveHost); res != nil {
 			domain = res.(string)
 		}
-	} else {
-		for _, resource := range c.ipResources {
-			if bytes.Compare(addr.IP, resource.IPMin) >= 0 && bytes.Compare(addr.IP, resource.IPMax) <= 0 {
-				if resource.PortMin <= addr.Port && addr.Port <= resource.PortMax {
-					if resource.Protocol == "tcp" || resource.Protocol == "all" {
-						appID = resource.AppID
-						nodeGroupID = resource.NodeGroupID
-					}
-				}
-			}
-		}
+	} else if resource, ok := matchTCPIPResource(c.resourceIndex, addr); ok {
+		appID = resource.AppID
+		nodeGroupID = resource.NodeGroupID
 	}
 
 	c.BestNodesRWMutex.RLock()
