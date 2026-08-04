@@ -44,7 +44,7 @@ func (s *Session) completeTOTP() (authStep, error) {
 	})
 }
 
-func (s *Session) completeRadius() (authStep, error) {
+func (s *Session) completeRadius(service string) (authStep, error) {
 	log.Print("Please enter the RADIUS token: ")
 	token := ""
 	if _, err := fmt.Scanln(&token); err != nil {
@@ -52,7 +52,7 @@ func (s *Session) completeRadius() (authStep, error) {
 	}
 
 	token, skipSecondaryAuth := parseTokenInput(token)
-	return s.submitToken(map[string]interface{}{
+	return s.submitTokenAt(service, map[string]interface{}{
 		"username":          s.username,
 		"radiusToken":       token,
 		"skipSecondaryAuth": skipSecondaryAuth,
@@ -68,8 +68,15 @@ func parseTokenInput(input string) (string, int) {
 }
 
 func (s *Session) submitToken(payload map[string]interface{}) (authStep, error) {
+	return s.submitTokenAt("auth/token", payload)
+}
+
+func (s *Session) submitTokenAt(service string, payload map[string]interface{}) (authStep, error) {
 	if s.username == "" {
 		return authStep{}, fmt.Errorf("username is empty for token authentication")
+	}
+	if service != "auth/token" && service != "auth/challenge" {
+		return authStep{}, fmt.Errorf("unsupported token authentication service: %s", service)
 	}
 
 	postBody, err := json.Marshal(payload)
@@ -77,8 +84,9 @@ func (s *Session) submitToken(payload map[string]interface{}) (authStep, error) 
 		return authStep{}, err
 	}
 
-	log.Println("Perform POST /passport/v1/auth/token")
-	u := s.baseURL + "/passport/v1/auth/token"
+	path := "/passport/v1/" + service
+	log.Printf("Perform POST %s", path)
+	u := s.baseURL + path
 	req, err := http.NewRequest("POST", u+"?"+WithSharedParams(nil).Encode(), bytes.NewReader(postBody))
 	if err != nil {
 		return authStep{}, err

@@ -51,7 +51,7 @@ func TestPswImplReturnsAuthenticationError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	session := NewSession(strings.TrimPrefix(server.URL, "https://"))
+	session := newTLSTestSession(server)
 	session.pubKey = privateKey.PublicKey.N.Text(16)
 	session.pubKeyExp = strconv.Itoa(privateKey.PublicKey.E)
 	session.antiReplayRand = "nonce"
@@ -73,7 +73,7 @@ func TestPswImplPreservesCaptchaChallenge(t *testing.T) {
 	}))
 	defer server.Close()
 
-	session := NewSession(strings.TrimPrefix(server.URL, "https://"))
+	session := newTLSTestSession(server)
 	session.pubKey = privateKey.PublicKey.N.Text(16)
 	session.pubKeyExp = strconv.Itoa(privateKey.PublicKey.E)
 	session.antiReplayRand = "nonce"

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -59,7 +58,7 @@ func TestSubmitTOTPToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	session := NewSession(strings.TrimPrefix(server.URL, "https://"))
+	session := newTLSTestSession(server)
 	session.username = "user@domain"
 	step, err := session.submitToken(map[string]interface{}{
 		"username":          session.username,
@@ -85,7 +84,7 @@ func TestAccessCheck(t *testing.T) {
 	}))
 	defer server.Close()
 
-	session := NewSession(strings.TrimPrefix(server.URL, "https://"))
+	session := newTLSTestSession(server)
 	step, err := session.accessCheck()
 	if err != nil {
 		t.Fatal(err)
