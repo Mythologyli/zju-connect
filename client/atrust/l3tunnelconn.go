@@ -201,9 +201,8 @@ func (c *l3TunnelConn) readLoop() {
 		case cmdDataResp:
 			if fr.dataMode == "len" {
 				log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
-				select {
-				case c.incoming <- fr.payload:
-				case <-c.closeCh:
+				if !c.deliverIncoming(fr.payload) {
+					return
 				}
 				continue
 			}
@@ -218,9 +217,7 @@ func (c *l3TunnelConn) readLoop() {
 			}
 			log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
 			for _, pkt := range packets {
-				select {
-				case c.incoming <- pkt:
-				case <-c.closeCh:
+				if !c.deliverIncoming(pkt) {
 					return
 				}
 			}
@@ -236,6 +233,22 @@ func (c *l3TunnelConn) readLoop() {
 			log.DebugPrintf("l3-tunnel ignore cmd 0x%02x", fr.cmd)
 		}
 	}
+}
+
+func (c *l3TunnelConn) deliverIncoming(packet []byte) bool {
+	select {
+	case <-c.closeCh:
+		return false
+	default:
+	}
+	select {
+	case c.incoming <- packet:
+	case <-c.closeCh:
+		return false
+	default:
+		log.DebugPrintf("l3-tunnel incoming queue full, dropping packet len=%d", len(packet))
+	}
+	return true
 }
 
 func (c *l3TunnelConn) heartbeatLoop() {

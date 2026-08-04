@@ -1,6 +1,8 @@
 package atrust
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -13,6 +15,104 @@ import (
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 )
+
+func TestForwardFromConnPreservesPacket(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	conn := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		incoming:     make(chan []byte, 1),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	tunnel := &L3Tunnel{
+		conns:    map[string]*l3TunnelConn{"group": conn},
+		dataChan: make(chan []byte, 1),
+		closeCh:  make(chan struct{}),
+	}
+	want := makeUDPPacket(12345, 53)
+	done := make(chan struct{})
+	go func() {
+		tunnel.forwardFromConn("group", conn)
+		close(done)
+	}()
+	conn.incoming <- want
+
+	select {
+	case got := <-tunnel.dataChan:
+		if !bytes.Equal(got, want) {
+			t.Fatalf("forwarded packet = % X, want % X", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("packet was not forwarded")
+	}
+	_ = conn.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("forwarder did not stop after connection close")
+	}
+}
+
+func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	conn := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		incoming:     make(chan []byte),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	tunnel := &L3Tunnel{
+		conns:    map[string]*l3TunnelConn{"group": conn},
+		dataChan: make(chan []byte, 1),
+		closeCh:  make(chan struct{}),
+	}
+	tunnel.dataChan <- []byte("queue full")
+	done := make(chan struct{})
+	go func() {
+		tunnel.forwardFromConn("group", conn)
+		close(done)
+	}()
+	sent := make(chan struct{})
+	go func() {
+		conn.incoming <- makeUDPPacket(12345, 53)
+		close(sent)
+	}()
+	select {
+	case <-sent:
+	case <-time.After(time.Second):
+		t.Fatal("forwarder did not receive packet")
+	}
+
+	tunnel.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("forwarder remained blocked after tunnel close")
+	}
+}
+
+func TestReadLoopDropsDataWhenIncomingQueueIsFull(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	frameData := []byte{l3Version, cmdDataResp, 0x00, 0x01, 0x45}
+	conn := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		reader:       bufio.NewReader(bytes.NewReader(frameData)),
+		incoming:     make(chan []byte, 1),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	conn.incoming <- []byte("already queued")
+	go conn.readLoop()
+
+	select {
+	case <-conn.closeCh:
+	case <-time.After(time.Second):
+		t.Fatal("read loop stopped consuming frames when data queue was full")
+	}
+	if got := len(conn.incoming); got != 1 {
+		t.Fatalf("incoming queue length = %d, want 1", got)
+	}
+}
 
 func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 	tunnel := &L3Tunnel{resourceIndex: ipresource.New(nil)}
