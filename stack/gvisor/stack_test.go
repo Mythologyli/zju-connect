@@ -15,6 +15,29 @@ func TestJoinPacketSlicesPreservesContent(t *testing.T) {
 	}
 }
 
+func TestInboundPacketBufferPreservesReadBytes(t *testing.T) {
+	buf := []byte{0x45, 0x00, 0x12, 0x34, 0x00, 0x00}
+	const bytesRead = 4
+	packet := makeInboundPacketBuffer(buf, bytesRead)
+	defer packet.DecRef()
+	got := joinPacketSlices(packet.AsSlices())
+	if !bytes.Equal(got[:bytesRead], buf[:bytesRead]) {
+		t.Fatalf("packet prefix = % X, want % X", got[:bytesRead], buf[:bytesRead])
+	}
+}
+
+func TestInboundPacketBufferExcludesUnreadCapacity(t *testing.T) {
+	buf := []byte{0x45, 0x00, 0x12, 0x34, 0xde, 0xad}
+	const bytesRead = 4
+	packet := makeInboundPacketBuffer(buf, bytesRead)
+	defer packet.DecRef()
+
+	got := joinPacketSlices(packet.AsSlices())
+	if !bytes.Equal(got, buf[:bytesRead]) {
+		t.Fatalf("packet = % X, want only read bytes % X", got, buf[:bytesRead])
+	}
+}
+
 func TestJoinPacketSlicesAllocatesOnce(t *testing.T) {
 	slices := [][]byte{make([]byte, 20), make([]byte, 20), make([]byte, 1160)}
 	if allocs := testing.AllocsPerRun(1000, func() { joinedPacketSink = joinPacketSlices(slices) }); allocs != 1 {

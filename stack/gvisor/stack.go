@@ -214,10 +214,14 @@ func (s *Stack) Run() {
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])
 
-		packetBuffer := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: buffer.MakeWithData(buf),
-		})
+		packetBuffer := makeInboundPacketBuffer(buf, n)
 		s.endpoint.dispatcher.DeliverNetworkPacket(header.IPv4ProtocolNumber, packetBuffer)
 		packetBuffer.DecRef()
 	}
+}
+
+func makeInboundPacketBuffer(buf []byte, n int) *stack.PacketBuffer {
+	return stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(buf[:n]),
+	})
 }
