@@ -3,6 +3,7 @@ package atrust
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 
@@ -47,6 +48,10 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 
 	conn, err := t.getConn(nodeGroupID)
 	if err != nil {
+		if isClosedConnErr(err) {
+			log.Printf("Drop packet while l3-tunnel reconnects after connection failure: %v", err)
+			return nil
+		}
 		return err
 	}
 	log.DebugPrintf("l3-tunnel send packet appID=%s group=%s len=%d", appID, nodeGroupID, len(packet))
@@ -58,25 +63,21 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 		t.evictConn(nodeGroupID, conn)
 		retryConn, retryErr := t.getConn(nodeGroupID)
 		if retryErr != nil {
+			if isClosedConnErr(retryErr) {
+				err = retryErr
+				continue
+			}
 			return retryErr
 		}
 		conn = retryConn
 		err = conn.WritePacket(meta, appID, nodeGroupID, packet)
 	}
 	if isAuthTimeoutErr(err) {
-		// Auth timeout can leave the conntrack entry stuck without a token.
-		// Rebuild the tunnel once; if it still fails, let the stack drop this packet.
-		log.Printf("Write packet failed with auth timeout, evicting conn and retrying once: %v", err)
-		t.evictConn(nodeGroupID, conn)
-		retryConn, retryErr := t.getConn(nodeGroupID)
-		if retryErr != nil {
-			return retryErr
-		}
-		conn = retryConn
-		err = conn.WritePacket(meta, appID, nodeGroupID, packet)
+		log.Printf("Drop packet after conntrack authentication timed out: %v", err)
+		return nil
 	}
-	if isAuthTimeoutErr(err) {
-		log.Printf("Drop packet after l3-tunnel auth timeout retry failed: %v", err)
+	if isClosedConnErr(err) {
+		log.Printf("Drop packet while l3-tunnel reconnect remains unavailable: %v", err)
 		t.evictConn(nodeGroupID, conn)
 		return nil
 	}
@@ -88,6 +89,9 @@ func isClosedConnErr(err error) bool {
 		return false
 	}
 	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	return strings.Contains(err.Error(), "use of closed network connection")

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -224,6 +225,22 @@ func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 	}
 	if !errors.Is(err, client.ErrResourceNotFound) {
 		t.Fatalf("Write() error = %v, want resource-not-found", err)
+	}
+}
+
+func TestClosedTunnelErrorsIncludeEOF(t *testing.T) {
+	for _, err := range []error{
+		io.EOF,
+		io.ErrUnexpectedEOF,
+		fmt.Errorf("tls write failed: %w", io.EOF),
+		net.ErrClosed,
+	} {
+		if !isClosedConnErr(err) {
+			t.Fatalf("isClosedConnErr(%v) = false, want true", err)
+		}
+	}
+	if isClosedConnErr(errors.New("authentication denied")) {
+		t.Fatal("authentication error was classified as a closed tunnel")
 	}
 }
 
