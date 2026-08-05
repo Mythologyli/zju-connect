@@ -58,6 +58,7 @@ type clientInfo struct {
 }
 
 type l3TunnelConn struct {
+	addr              string
 	tlsConn           *tls.Conn
 	reader            *bufio.Reader
 	writeMu           sync.Mutex
@@ -174,6 +175,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 	}
 
 	c := &l3TunnelConn{
+		addr:              addr,
 		tlsConn:           tlsConn,
 		reader:            bufio.NewReader(tlsConn),
 		incoming:          make(chan []byte, 128),

@@ -124,5 +124,12 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()
+
+		c.l3TunnelMu.Lock()
+		tunnel := c.l3Tunnel
+		c.l3TunnelMu.Unlock()
+		if tunnel != nil {
+			tunnel.evictStaleConns(bestNodes, c.MajorNodeGroup)
+		}
 	}
 }

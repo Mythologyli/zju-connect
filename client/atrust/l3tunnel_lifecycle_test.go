@@ -339,6 +339,51 @@ func TestEvictConnClosesRemovedTunnel(t *testing.T) {
 	}
 }
 
+func TestBestNodeChangeEvictsStaleTunnelConnection(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	conn := &l3TunnelConn{
+		addr:         "old.example:443",
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	tunnel := &L3Tunnel{conns: map[string]*l3TunnelConn{"group": conn}}
+
+	tunnel.evictStaleConns(map[string]string{"group": "new.example:443"}, "group")
+
+	tunnel.connsMu.Lock()
+	_, exists := tunnel.conns["group"]
+	tunnel.connsMu.Unlock()
+	if exists {
+		t.Fatal("stale tunnel connection remained cached")
+	}
+	select {
+	case <-transport.closed:
+	case <-time.After(time.Second):
+		t.Fatal("stale tunnel connection was not closed")
+	}
+}
+
+func TestUnchangedBestNodeKeepsTunnelConnection(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	conn := &l3TunnelConn{
+		addr:         "best.example:443",
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	tunnel := &L3Tunnel{conns: map[string]*l3TunnelConn{"group": conn}}
+
+	tunnel.evictStaleConns(map[string]string{"group": "best.example:443"}, "group")
+
+	tunnel.connsMu.Lock()
+	got := tunnel.conns["group"]
+	tunnel.connsMu.Unlock()
+	if got != conn {
+		t.Fatal("unchanged tunnel connection was evicted")
+	}
+}
+
 func TestConntrackCapacityIsBounded(t *testing.T) {
 	const maxEntries = 16384
 	manager := newConntrackMgr()

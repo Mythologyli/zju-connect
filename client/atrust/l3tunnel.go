@@ -9,6 +9,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 type L3Tunnel struct {
@@ -131,6 +132,27 @@ func (t *L3Tunnel) evictConn(nodeGroupID string, conn *l3TunnelConn) {
 	}
 	t.connsMu.Unlock()
 	if removed {
+		_ = conn.Close()
+	}
+}
+
+func (t *L3Tunnel) evictStaleConns(bestNodes map[string]string, majorNodeGroup string) {
+	t.connsMu.Lock()
+	stale := make([]*l3TunnelConn, 0)
+	for group, conn := range t.conns {
+		addr := bestNodes[group]
+		if addr == "" {
+			addr = bestNodes[majorNodeGroup]
+		}
+		if addr != "" && conn.addr != addr {
+			delete(t.conns, group)
+			stale = append(stale, conn)
+		}
+	}
+	t.connsMu.Unlock()
+
+	for _, conn := range stale {
+		log.DebugPrintf("l3-tunnel best node changed, closing stale connection to %s", conn.addr)
 		_ = conn.Close()
 	}
 }
