@@ -40,6 +40,15 @@ type Resolver struct {
 	closeOnce sync.Once
 }
 
+const remoteDNSTCPFallbackDelay = 300 * time.Millisecond
+
+type lookupIPFunc func(context.Context, string, string) ([]net.IP, error)
+
+type dnsLookupResult struct {
+	ips []net.IP
+	err error
+}
+
 func (r *Resolver) coordinationEntryCount() int {
 	return int(r.activeResolutions.Load())
 }
@@ -132,16 +141,82 @@ func (r *Resolver) resolveRemote(ctx context.Context, host string) (net.IP, erro
 		return r.cacheFirstIP(host, ips, err)
 	}
 
-	ips, udpErr := r.remoteUDPResolver.LookupIP(ctx, "ip4", host)
-	if udpErr == nil {
-		return r.cacheFirstIP(host, ips, nil)
+	ips, udpFailed, err := lookupIPWithTCPFallback(
+		ctx,
+		host,
+		r.remoteUDPResolver.LookupIP,
+		r.remoteTCPResolver.LookupIP,
+		remoteDNSTCPFallbackDelay,
+	)
+	if err != nil {
+		return nil, err
 	}
-	ips, tcpErr := r.remoteTCPResolver.LookupIP(ctx, "ip4", host)
-	if tcpErr != nil {
-		return nil, errors.Join(udpErr, tcpErr)
+	if udpFailed {
+		r.preferTCPTemporarily()
+	}
+	return r.cacheFirstIP(host, ips, nil)
+}
+
+func lookupIPWithTCPFallback(ctx context.Context, host string, udpLookup, tcpLookup lookupIPFunc, fallbackDelay time.Duration) ([]net.IP, bool, error) {
+	lookupCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	udpResult := make(chan dnsLookupResult, 1)
+	go func() {
+		ips, err := udpLookup(lookupCtx, "ip4", host)
+		udpResult <- dnsLookupResult{ips: ips, err: err}
+	}()
+
+	timer := time.NewTimer(fallbackDelay)
+	defer timer.Stop()
+	var tcpResult chan dnsLookupResult
+	var udpErr, tcpErr error
+	udpDone := false
+	tcpDone := false
+
+	startTCP := func() {
+		if tcpResult != nil {
+			return
+		}
+		tcpResult = make(chan dnsLookupResult, 1)
+		go func() {
+			ips, err := tcpLookup(lookupCtx, "ip4", host)
+			tcpResult <- dnsLookupResult{ips: ips, err: err}
+		}()
 	}
 
+	for {
+		select {
+		case result := <-udpResult:
+			udpDone = true
+			if result.err == nil {
+				return result.ips, false, nil
+			}
+			udpErr = result.err
+			startTCP()
+			if tcpDone {
+				return nil, true, errors.Join(udpErr, tcpErr)
+			}
+		case result := <-tcpResult:
+			tcpDone = true
+			if result.err == nil {
+				return result.ips, udpDone, nil
+			}
+			tcpErr = result.err
+			if udpDone {
+				return nil, true, errors.Join(udpErr, tcpErr)
+			}
+		case <-timer.C:
+			startTCP()
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		}
+	}
+}
+
+func (r *Resolver) preferTCPTemporarily() {
 	r.tcpLock.Lock()
+	defer r.tcpLock.Unlock()
 	r.useTCP = true
 	if r.timer == nil {
 		r.timer = time.AfterFunc(10*time.Minute, func() {
@@ -151,8 +226,6 @@ func (r *Resolver) resolveRemote(ctx context.Context, host string) (net.IP, erro
 			r.tcpLock.Unlock()
 		})
 	}
-	r.tcpLock.Unlock()
-	return r.cacheFirstIP(host, ips, nil)
 }
 
 func (r *Resolver) cacheFirstIP(host string, ips []net.IP, err error) (net.IP, error) {

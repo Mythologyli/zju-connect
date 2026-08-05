@@ -138,6 +138,76 @@ func TestResolverWaitingCallerHonorsContext(t *testing.T) {
 	}
 }
 
+func TestLookupIPWithTCPFallbackHedgesSlowUDP(t *testing.T) {
+	want := net.ParseIP("192.0.2.10")
+	udpCanceled := make(chan struct{})
+	udp := func(ctx context.Context, _, _ string) ([]net.IP, error) {
+		<-ctx.Done()
+		close(udpCanceled)
+		return nil, ctx.Err()
+	}
+	tcp := func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{want}, nil
+	}
+
+	started := time.Now()
+	ips, udpFailed, err := lookupIPWithTCPFallback(context.Background(), "slow.example", udp, tcp, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("lookupIPWithTCPFallback() error = %v", err)
+	}
+	if udpFailed {
+		t.Fatal("slow UDP was hedged, not proven failed")
+	}
+	if len(ips) != 1 || !ips[0].Equal(want) {
+		t.Fatalf("lookup result = %v, want %s", ips, want)
+	}
+	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+		t.Fatalf("hedged lookup took %s", elapsed)
+	}
+	select {
+	case <-udpCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("losing UDP lookup was not canceled")
+	}
+}
+
+func TestLookupIPWithTCPFallbackKeepsFastUDP(t *testing.T) {
+	want := net.ParseIP("192.0.2.11")
+	tcpCalled := make(chan struct{}, 1)
+	udp := func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{want}, nil
+	}
+	tcp := func(context.Context, string, string) ([]net.IP, error) {
+		tcpCalled <- struct{}{}
+		return nil, errors.New("unexpected TCP lookup")
+	}
+
+	ips, udpFailed, err := lookupIPWithTCPFallback(context.Background(), "fast.example", udp, tcp, time.Second)
+	if err != nil || udpFailed || len(ips) != 1 || !ips[0].Equal(want) {
+		t.Fatalf("lookup result = %v, udpFailed=%v, err=%v", ips, udpFailed, err)
+	}
+	select {
+	case <-tcpCalled:
+		t.Fatal("TCP lookup started for a fast UDP response")
+	default:
+	}
+}
+
+func TestLookupIPWithTCPFallbackMarksUDPFailure(t *testing.T) {
+	want := net.ParseIP("192.0.2.12")
+	udp := func(context.Context, string, string) ([]net.IP, error) {
+		return nil, errors.New("UDP unavailable")
+	}
+	tcp := func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{want}, nil
+	}
+
+	ips, udpFailed, err := lookupIPWithTCPFallback(context.Background(), "failed.example", udp, tcp, time.Second)
+	if err != nil || !udpFailed || len(ips) != 1 || !ips[0].Equal(want) {
+		t.Fatalf("lookup result = %v, udpFailed=%v, err=%v", ips, udpFailed, err)
+	}
+}
+
 func failingNetResolver() *net.Resolver {
 	return &net.Resolver{
 		PreferGo: true,
