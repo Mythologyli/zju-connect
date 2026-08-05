@@ -242,7 +242,15 @@ func (c *Client) parseResources(resources string) error {
 		return errors.New("no Dns dnsserver attribute found")
 	}
 
-	c.dnsServer = strings.Split(dnsServerStr.Value, ";")[0]
+	c.dnsServers = c.dnsServers[:0]
+	for _, server := range strings.Split(dnsServerStr.Value, ";") {
+		if server != "" {
+			c.dnsServers = append(c.dnsServers, server)
+		}
+	}
+	if len(c.dnsServers) > 0 {
+		c.dnsServer = c.dnsServers[0]
+	}
 
 	if c.dnsServer == "0.0.0.0" {
 		c.dnsServer = ""

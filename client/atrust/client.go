@@ -37,6 +37,7 @@ type Client struct {
 	ipSet           *netaddr.IPSet
 	dnsResource     map[string][]net.IP
 	dnsServer       string
+	dnsServers      []string
 
 	MajorNodeGroup   string
 	NodeGroups       map[string]NodeGroup
@@ -134,6 +135,13 @@ func (c *Client) DNSServer() (string, error) {
 	}
 
 	return c.dnsServer, nil
+}
+
+func (c *Client) DNSServers() ([]string, error) {
+	if len(c.dnsServers) == 0 {
+		return nil, errors.New("DNS servers not available")
+	}
+	return append([]string(nil), c.dnsServers...), nil
 }
 
 func randHex(n int) string {

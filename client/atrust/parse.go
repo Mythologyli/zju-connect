@@ -235,13 +235,21 @@ func (c *Client) parseResource(resource []byte) error {
 		}
 	}
 
-	if clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS != "" {
-		c.dnsServer = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption.FirstDNS
-		log.DebugPrintf("Set DNS server: %s", c.dnsServer)
-	} else if clientResource.Data.SDPPolicy.Data.ClientOption.DNSOptionV2.FirstDNS != "" {
-		c.dnsServer = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOptionV2.FirstDNS
-		log.DebugPrintf("Set DNS server: %s", c.dnsServer)
+	dnsOption := clientResource.Data.SDPPolicy.Data.ClientOption.DNSOption
+	if dnsOption.FirstDNS == "" {
+		dnsOption = clientResource.Data.SDPPolicy.Data.ClientOption.DNSOptionV2
+	}
+	c.dnsServers = c.dnsServers[:0]
+	for _, server := range []string{dnsOption.FirstDNS, dnsOption.SecondDNS} {
+		if server != "" {
+			c.dnsServers = append(c.dnsServers, server)
+		}
+	}
+	if len(c.dnsServers) > 0 {
+		c.dnsServer = c.dnsServers[0]
+		log.DebugPrintf("Set DNS servers: %v", c.dnsServers)
 	} else {
+		c.dnsServer = ""
 		log.DebugPrintf("No DNS server found")
 	}
 

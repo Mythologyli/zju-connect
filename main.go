@@ -260,6 +260,7 @@ func main() {
 
 	useRemoteDNS := !conf.DisableRemoteDNS
 	remoteDNSServer := conf.RemoteDNSServer
+	policyDNSServers, _ := vpnClient.DNSServers()
 	if useRemoteDNS && remoteDNSServer == "auto" {
 		remoteDNSServer, err = vpnClient.DNSServer()
 		if err != nil {
@@ -270,11 +271,19 @@ func main() {
 			log.Printf("Use DNS server %s provided by server", remoteDNSServer)
 		}
 	}
+	secondaryDNSServer := conf.SecondaryDNSServer
+	if secondaryDNSServer == "auto" {
+		secondaryDNSServer = "114.114.114.114"
+		if len(policyDNSServers) > 1 {
+			secondaryDNSServer = policyDNSServers[1]
+			log.Printf("Use secondary DNS server %s provided by server", secondaryDNSServer)
+		}
+	}
 
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
 		remoteDNSServer,
-		conf.SecondaryDNSServer,
+		secondaryDNSServer,
 		conf.DNSTTL,
 		domainResources,
 		dnsResource,

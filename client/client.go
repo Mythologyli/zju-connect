@@ -36,6 +36,7 @@ type Client interface {
 	DomainResources() (map[string]DomainResource, error)
 	DNSResource() (map[string][]net.IP, error)
 	DNSServer() (string, error)
+	DNSServers() ([]string, error)
 
 	CanUseTCPTunnel() bool
 	DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error)

@@ -47,6 +47,7 @@ type Client struct {
 	ipSet           *netaddr.IPSet
 	dnsResource     map[string][]net.IP
 	dnsServer       string
+	dnsServers      []string
 
 	ip        net.IP // Client IP
 	ipReverse []byte
@@ -142,6 +143,13 @@ func (c *Client) DNSServer() (string, error) {
 	}
 
 	return c.dnsServer, nil
+}
+
+func (c *Client) DNSServers() ([]string, error) {
+	if len(c.dnsServers) == 0 {
+		return nil, errors.New("DNS servers not available")
+	}
+	return append([]string(nil), c.dnsServers...), nil
 }
 
 func (c *Client) CanUseTCPTunnel() bool {
