@@ -152,8 +152,8 @@ func BenchmarkGetDataPayload(b *testing.B) {
 }
 
 func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
-	tunnel := &L3Tunnel{resourceIndex: ipresource.New(nil)}
-	conn := &L3Conn{l3Tunnel: tunnel}
+	tunnel := &L3Tunnel{resourceIndex: ipresource.New(nil), closeCh: make(chan struct{})}
+	conn := &L3Conn{l3Tunnel: tunnel, closeCh: make(chan struct{})}
 	packet := makeUDPPacket(12345, 53)
 
 	n, err := conn.Write(packet)
@@ -168,7 +168,7 @@ func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 func TestL3ConnWritesDoNotBlockUnrelatedFlows(t *testing.T) {
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
-	conn := &L3Conn{writePacket: func(packet []byte) error {
+	conn := &L3Conn{l3Tunnel: &L3Tunnel{closeCh: make(chan struct{})}, closeCh: make(chan struct{}), writePacket: func(packet []byte) error {
 		if packet[0] == 1 {
 			close(firstStarted)
 			<-releaseFirst
@@ -203,6 +203,55 @@ func TestL3ConnWritesDoNotBlockUnrelatedFlows(t *testing.T) {
 	case <-firstDone:
 	case <-time.After(time.Second):
 		t.Fatal("first write did not finish")
+	}
+}
+
+func TestL3ConnCloseUnblocksRead(t *testing.T) {
+	tunnel := &L3Tunnel{dataChan: make(chan []byte), closeCh: make(chan struct{})}
+	conn := &L3Conn{l3Tunnel: tunnel, closeCh: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Read(make([]byte, 1500))
+		done <- err
+	}()
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Read() error = %v, want net.ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not unblock Read")
+	}
+}
+
+func TestL3TunnelCloseUnblocksL3ConnRead(t *testing.T) {
+	tunnel := &L3Tunnel{
+		conns:    make(map[string]*l3TunnelConn),
+		dataChan: make(chan []byte),
+		closeCh:  make(chan struct{}),
+	}
+	conn := &L3Conn{l3Tunnel: tunnel, closeCh: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Read(make([]byte, 1500))
+		done <- err
+	}()
+
+	tunnel.Close()
+	select {
+	case err := <-done:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("Read() error = %v, want EOF", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("tunnel close did not unblock Read")
 	}
 }
 
