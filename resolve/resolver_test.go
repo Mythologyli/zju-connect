@@ -27,6 +27,28 @@ func TestMatchDomainResourcePreservesNormalizedSuffixMatching(t *testing.T) {
 	}
 }
 
+func TestDomainResourceMatchRequiresLabelBoundary(t *testing.T) {
+	index := newDomainResourceIndex(map[string]client.DomainResource{"example.com": {AppID: "vpn"}})
+	for _, host := range []string{"example.com", "service.example.com"} {
+		if _, _, ok := index.Match(host); !ok {
+			t.Fatalf("expected %s to match", host)
+		}
+	}
+	if _, _, ok := index.Match("notexample.com"); ok {
+		t.Fatal("partial label suffix matched domain resource")
+	}
+}
+
+func TestWildcardDomainResourceRequiresSubdomain(t *testing.T) {
+	index := newDomainResourceIndex(map[string]client.DomainResource{"*.example.com": {AppID: "vpn"}})
+	if _, _, ok := index.Match("service.example.com"); !ok {
+		t.Fatal("wildcard did not match subdomain")
+	}
+	if _, _, ok := index.Match("example.com"); ok {
+		t.Fatal("wildcard unexpectedly matched apex domain")
+	}
+}
+
 func BenchmarkDomainResourceMatch(b *testing.B) {
 	resources := make(map[string]client.DomainResource, 1000)
 	for i := 0; i < 1000; i++ {

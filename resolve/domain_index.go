@@ -1,6 +1,10 @@
 package resolve
 
-import "github.com/mythologyli/zju-connect/client"
+import (
+	"strings"
+
+	"github.com/mythologyli/zju-connect/client"
+)
 
 type domainResourceEntry struct {
 	domain   string
@@ -22,6 +26,9 @@ func newDomainResourceIndex(resources map[string]client.DomainResource) *domainR
 	order := 0
 	for domain, resource := range resources {
 		normalized := normalizeHostname(domain)
+		if strings.HasPrefix(normalized, "*.") {
+			normalized = normalized[1:]
+		}
 		if normalized == "" {
 			continue
 		}
@@ -56,7 +63,8 @@ func (i *domainResourceIndex) Match(host string) (string, client.DomainResource,
 		if node == nil {
 			break
 		}
-		if node.entry != nil && (best == nil || node.entry.order < best.order) {
+		boundary := pos == 0 || host[pos] == '.' || host[pos-1] == '.'
+		if node.entry != nil && boundary && (best == nil || node.entry.order < best.order) {
 			best = node.entry
 		}
 	}

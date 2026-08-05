@@ -192,7 +192,12 @@ func (c *Client) parseResource(resource []byte) error {
 					}
 
 					if isDomain {
-						c.domainResources[strings.ReplaceAll(hostStr, "*", "")] = client.DomainResource{
+						domain := normalizePolicyDomain(hostStr)
+						if domain == "" {
+							log.DebugPrintf("Ignore unsupported domain pattern: %s", hostStr)
+							continue
+						}
+						c.domainResources[domain] = client.DomainResource{
 							PortMin:     portMin,
 							PortMax:     portMax,
 							Protocol:    address.Protocol,
@@ -287,4 +292,15 @@ func (c *Client) parseResource(resource []byte) error {
 	c.resourceIndex = ipresource.New(c.ipResources)
 
 	return nil
+}
+
+func normalizePolicyDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	if strings.HasPrefix(domain, "*.") {
+		return domain[1:]
+	}
+	if strings.Contains(domain, "*") {
+		return ""
+	}
+	return domain
 }
