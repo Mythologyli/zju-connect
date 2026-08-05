@@ -94,6 +94,28 @@ func TestResolverReleasesCoordinationEntry(t *testing.T) {
 	}
 }
 
+func TestResolverRotatesConfiguredDNSAddresses(t *testing.T) {
+	first := net.ParseIP("192.0.2.1")
+	second := net.ParseIP("192.0.2.2")
+	resolver := &Resolver{
+		domainIndex: newDomainResourceIndex(nil),
+		dnsResource: map[string][]net.IP{"service.example": {first, second}},
+		dnsCache:    cache.New(time.Minute, 0),
+	}
+
+	_, gotFirst, err := resolver.Resolve(context.Background(), "service.example")
+	if err != nil {
+		t.Fatalf("first Resolve() error = %v", err)
+	}
+	_, gotSecond, err := resolver.Resolve(context.Background(), "service.example")
+	if err != nil {
+		t.Fatalf("second Resolve() error = %v", err)
+	}
+	if !gotFirst.Equal(first) || !gotSecond.Equal(second) {
+		t.Fatalf("rotated addresses = %s, %s, want %s, %s", gotFirst, gotSecond, first, second)
+	}
+}
+
 func TestResolverWaitingCallerHonorsContext(t *testing.T) {
 	started := make(chan struct{}, 1)
 	blocking := &net.Resolver{

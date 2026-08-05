@@ -35,7 +35,7 @@ type Client struct {
 	resourceIndex   *ipresource.Index
 	domainResources map[string]client.DomainResource
 	ipSet           *netaddr.IPSet
-	dnsResource     map[string]net.IP
+	dnsResource     map[string][]net.IP
 	dnsServer       string
 
 	MajorNodeGroup   string
@@ -120,7 +120,7 @@ func (c *Client) DomainResources() (map[string]client.DomainResource, error) {
 	return c.domainResources, nil
 }
 
-func (c *Client) DNSResource() (map[string]net.IP, error) {
+func (c *Client) DNSResource() (map[string][]net.IP, error) {
 	if c.dnsResource == nil {
 		return nil, errors.New("DNS resource not available")
 	}

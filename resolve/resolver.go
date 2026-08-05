@@ -23,7 +23,8 @@ type Resolver struct {
 	secondaryResolver *net.Resolver
 	ttl               uint64
 	domainIndex       *domainResourceIndex
-	dnsResource       map[string]net.IP
+	dnsResource       map[string][]net.IP
+	dnsResourceCursor sync.Map
 	useRemoteDNS      bool
 
 	dnsCache *cache.Cache
@@ -84,7 +85,10 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	}
 
 	if r.dnsResource != nil {
-		if ip, found := r.dnsResource[host]; found {
+		if ips, found := r.dnsResource[host]; found && len(ips) > 0 {
+			cursorValue, _ := r.dnsResourceCursor.LoadOrStore(host, &atomic.Uint64{})
+			cursor := cursorValue.(*atomic.Uint64)
+			ip := ips[(cursor.Add(1)-1)%uint64(len(ips))]
 			log.Printf("%s -> %s", host, ip.String())
 			if domainResourceFound {
 				err := r.IPPool.SetIPDomain(ip, host, domainResource)
@@ -287,7 +291,7 @@ func (r *Resolver) Close() {
 	})
 }
 
-func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
+func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string][]net.IP, useRemoteDNS bool) *Resolver {
 	//domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
 	//for domain := range domainResource {
 	//	_ = domainSuffixTree.AddDomainSuffix(domain, true)

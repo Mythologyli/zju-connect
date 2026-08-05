@@ -76,7 +76,7 @@ func (c *Client) parseResource(resource []byte) error {
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
 	c.domainResources = make(map[string]client.DomainResource)
-	c.dnsResource = make(map[string]net.IP)
+	c.dnsResource = make(map[string][]net.IP)
 
 	for _, app := range clientResource.Data.AppList.Data.AppInfo {
 		for _, appItem := range app.Apps {
@@ -220,10 +220,8 @@ func (c *Client) parseResource(resource []byte) error {
 							if ip != nil {
 								if ip.To4() != nil {
 									ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
-									c.dnsResource[hostStr] = ip
+									c.dnsResource[hostStr] = append(c.dnsResource[hostStr], ip)
 									log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
-
-									break // TODO: handle multiple IPs for the same domain
 								} else {
 									log.DebugPrintf("IPv6 address found: %s, skipping", ip)
 								}

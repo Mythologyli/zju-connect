@@ -72,7 +72,7 @@ func (c *Client) parseResources(resources string) error {
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
 	c.domainResources = make(map[string]client.DomainResource)
-	c.dnsResource = make(map[string]net.IP)
+	c.dnsResource = make(map[string][]net.IP)
 
 	element := doc.SelectElement("Resource").SelectElement("Rcs")
 	if element == nil {
@@ -228,7 +228,7 @@ func (c *Client) parseResources(resources string) error {
 			continue
 		}
 
-		c.dnsResource[dnsParts[1]] = ip.IPAddr().IP
+		c.dnsResource[dnsParts[1]] = append(c.dnsResource[dnsParts[1]], ip.IPAddr().IP)
 		log.DebugPrintf("Add DNS rule: %s -> %s", dnsParts[1], dnsParts[2])
 	}
 
