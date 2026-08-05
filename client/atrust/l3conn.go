@@ -1,9 +1,12 @@
 package atrust
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
+
+	"github.com/mythologyli/zju-connect/internal/zctcpip"
 )
 
 type L3Conn struct {
@@ -42,7 +45,17 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 	if c.writePacket != nil {
 		err = c.writePacket(p)
 	} else {
-		err = c.l3Tunnel.processIPV4(p)
+		if len(p) == 0 {
+			return 0, io.ErrUnexpectedEOF
+		}
+		switch p[0] >> 4 {
+		case zctcpip.IPv4Version:
+			err = c.l3Tunnel.processIPV4(p)
+		case zctcpip.IPv6Version:
+			err = c.l3Tunnel.processIPv6(p)
+		default:
+			err = fmt.Errorf("unsupported IP version %d", p[0]>>4)
+		}
 	}
 	return n, err
 }

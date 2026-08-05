@@ -369,14 +369,6 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		destAddr = fmt.Sprintf("%s:%d", domain, addr.Port)
 	}
 
-	destIP := addr.IP.To4()
-	if destIP == nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("invalid IPv4 address")
-	}
-	destPort := make([]byte, 2)
-	binary.BigEndian.PutUint16(destPort, uint16(addr.Port))
-
 	msg := fmt.Sprintf(
 		`{"sid":"%s","appId":"%s","url":"tcp://%s","deviceId":"%s","connectionId":"%s","procHash":"%s","userName":"%s","rcAppliedInfo":0,"lang":"en-US","destAddr":"%s","env":{"application":{"runtime":{"process":{"name":"%s","digital_signature":"TrustAppClosed","platform":"Linux","fingerprint":"%s","description":"TrustAppClosed","path":"%s","version":"TrustAppClosed","security_env":"normal"},"process_trusted":"TRUSTED"}}},"xRequestSig":""}`,
 		c.SID, appID, destAddr, c.DeviceID, c.ConnectionID, procHash, c.Username, destAddr, procName, procHash, procPath,
@@ -402,22 +394,11 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	}
 	log.DebugDumpHex(initMsg)
 
-	var destMsg []byte
-	if domain == "" {
-		destHeader := []byte{0x05, 0x01, 0x01, 0x01}
-		destMsg = append(destHeader, destIP...)
-	} else {
-		destHeader := []byte{0x05, 0x01, 0x01, 0x03}
-		// For domain, we need to send the length of the domain name
-		domainLen := len(domain)
-		if domainLen > 255 {
-			_ = conn.Close()
-			return nil, fmt.Errorf("domain name too long: %s", domain)
-		}
-		destHeader = append(destHeader, byte(domainLen))
-		destMsg = append(destHeader, []byte(domain)...)
+	destMsg, err := buildTCPDestination(domain, addr.IP, addr.Port)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
-	destMsg = append(destMsg, destPort...)
 	if _, err := conn.Write(destMsg); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to send dest address: %w", err)
@@ -433,4 +414,26 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, err
 	}
 	return tunnelConn, nil
+}
+
+func buildTCPDestination(domain string, ip net.IP, port int) ([]byte, error) {
+	destMsg := []byte{0x05, 0x01, 0x01}
+	if domain != "" {
+		if len(domain) > 255 {
+			return nil, fmt.Errorf("domain name too long: %s", domain)
+		}
+		destMsg = append(destMsg, 0x03, byte(len(domain)))
+		destMsg = append(destMsg, domain...)
+	} else if ip4 := ip.To4(); ip4 != nil {
+		destMsg = append(destMsg, 0x01)
+		destMsg = append(destMsg, ip4...)
+	} else if ip6 := ip.To16(); ip6 != nil {
+		destMsg = append(destMsg, 0x04)
+		destMsg = append(destMsg, ip6...)
+	} else {
+		return nil, fmt.Errorf("invalid destination IP address")
+	}
+	var destPort [2]byte
+	binary.BigEndian.PutUint16(destPort[:], uint16(port))
+	return append(destMsg, destPort[:]...), nil
 }

@@ -223,3 +223,16 @@ func TestMatchTCPIPResourceUsesLastMatchingRule(t *testing.T) {
 		t.Fatalf("matched AppID = %q, want last matching rule", resource.AppID)
 	}
 }
+
+func TestBuildTCPDestinationSupportsIPv6(t *testing.T) {
+	ip := net.ParseIP("2001:db8::42")
+	got, err := buildTCPDestination("", ip, 443)
+	if err != nil {
+		t.Fatalf("buildTCPDestination() error = %v", err)
+	}
+	want := append([]byte{0x05, 0x01, 0x01, 0x04}, ip.To16()...)
+	want = append(want, 0x01, 0xbb)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("IPv6 destination = % X, want % X", got, want)
+	}
+}

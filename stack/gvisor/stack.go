@@ -16,6 +16,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -144,7 +145,7 @@ func NewStack(client client.Client) (*Stack, error) {
 	s := &Stack{}
 
 	s.gvisorStack = stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 		HandleLocal:        true,
 	})
@@ -215,7 +216,11 @@ func (s *Stack) Run() {
 		log.DebugDumpHex(buf[:n])
 
 		packetBuffer := makeInboundPacketBuffer(buf, n)
-		s.endpoint.dispatcher.DeliverNetworkPacket(header.IPv4ProtocolNumber, packetBuffer)
+		protocol := header.IPv4ProtocolNumber
+		if n > 0 && buf[0]>>4 == 6 {
+			protocol = header.IPv6ProtocolNumber
+		}
+		s.endpoint.dispatcher.DeliverNetworkPacket(protocol, packetBuffer)
 		packetBuffer.DecRef()
 	}
 }

@@ -120,34 +120,26 @@ func (c *Client) parseResource(resource []byte) error {
 					if ip == nil {
 						// Try to parse as CIDR notation (e.g. 10.13.0.0/16)
 						if _, ipNet, cidrErr := net.ParseCIDR(hostStr); cidrErr == nil {
-							ip4 := ipNet.IP.To4()
-							if ip4 != nil {
-								ipMax4 := make(net.IP, len(ip4))
-								for i := range ip4 {
-									ipMax4[i] = ip4[i] | ^ipNet.Mask[i]
-								}
-								ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(hostStr))
-
-								c.ipResources = append(c.ipResources, client.IPResource{
-									IPMin:       ip4.To16(),
-									IPMax:       ipMax4.To16(),
-									PortMin:     portMin,
-									PortMax:     portMax,
-									Protocol:    address.Protocol,
-									AppID:       appItem.ID,
-									NodeGroupID: appItem.NodeGroupID,
-								})
-
-								log.DebugPrintf("Add CIDR: %s (%s ~ %s), Port range: %d ~ %d, [%s]", hostStr, ip4, ipMax4, portMin, portMax, address.Protocol)
-							} else {
-								log.DebugPrintf("IPv6 CIDR found: %s, skipping", hostStr)
+							ipMin := ipNet.IP
+							if ipMin.To4() != nil {
+								ipMin = ipMin.To4()
 							}
+							ipMax := make(net.IP, len(ipMin))
+							for i := range ipMin {
+								ipMax[i] = ipMin[i] | ^ipNet.Mask[i]
+							}
+							ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(hostStr))
+							c.ipResources = append(c.ipResources, client.IPResource{
+								IPMin: ipMin, IPMax: ipMax, PortMin: portMin, PortMax: portMax,
+								Protocol: address.Protocol, AppID: appItem.ID, NodeGroupID: appItem.NodeGroupID,
+							})
+							log.DebugPrintf("Add CIDR: %s (%s ~ %s), Port range: %d ~ %d, [%s]", hostStr, ipMin, ipMax, portMin, portMax, address.Protocol)
 						} else if ipParts := strings.Split(hostStr, "-"); len(ipParts) == 2 {
 							ipMin := net.ParseIP(ipParts[0])
 							ipMax := net.ParseIP(ipParts[1])
 							if ipMin != nil && ipMax != nil {
 								// It's a range of IP addresses
-								if ipMin.To4() != nil {
+								if (ipMin.To4() != nil) == (ipMax.To4() != nil) {
 									ipSetBuilder.AddRange(netaddr.IPRangeFrom(netaddr.MustParseIP(ipMin.String()), netaddr.MustParseIP(ipMax.String())))
 
 									c.ipResources = append(c.ipResources, client.IPResource{
@@ -161,8 +153,6 @@ func (c *Client) parseResource(resource []byte) error {
 									})
 
 									log.DebugPrintf("Add IP range: %s ~ %s, Port range: %d ~ %d, [%s]", ipMin, ipMax, portMin, portMax, address.Protocol)
-								} else {
-									log.DebugPrintf("IPv6 address range found: %s ~ %s, skipping", ipMin, ipMax)
 								}
 							} else {
 								isDomain = true
@@ -172,23 +162,14 @@ func (c *Client) parseResource(resource []byte) error {
 						}
 					} else {
 						// It's an IP address
-						if ip.To4() != nil {
-							ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
+						ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
 
-							c.ipResources = append(c.ipResources, client.IPResource{
-								IPMin:       ip,
-								IPMax:       ip,
-								PortMin:     portMin,
-								PortMax:     portMax,
-								Protocol:    address.Protocol,
-								AppID:       appItem.ID,
-								NodeGroupID: appItem.NodeGroupID,
-							})
+						c.ipResources = append(c.ipResources, client.IPResource{
+							IPMin: ip, IPMax: ip, PortMin: portMin, PortMax: portMax,
+							Protocol: address.Protocol, AppID: appItem.ID, NodeGroupID: appItem.NodeGroupID,
+						})
 
-							log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", ip, portMin, portMax, address.Protocol)
-						} else {
-							log.DebugPrintf("IPv6 address found: %s, skipping", ip)
-						}
+						log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", ip, portMin, portMax, address.Protocol)
 					}
 
 					if isDomain {
@@ -218,13 +199,10 @@ func (c *Client) parseResource(resource []byte) error {
 						for _, ipStr := range address.IP {
 							ip := net.ParseIP(ipStr)
 							if ip != nil {
-								if ip.To4() != nil {
-									ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
-									c.dnsResource[hostStr] = append(c.dnsResource[hostStr], ip)
-									log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
-								} else {
-									log.DebugPrintf("IPv6 address found: %s, skipping", ip)
-								}
+								ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
+								c.dnsResource[hostStr] = append(c.dnsResource[hostStr], ip)
+								log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
+								break
 							} else {
 								log.DebugPrintf("Invalid IP: %s", ipStr)
 							}

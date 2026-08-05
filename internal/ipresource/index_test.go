@@ -43,6 +43,19 @@ func TestNilIndexDoesNotMatch(t *testing.T) {
 	}
 }
 
+func TestIndexMatchesIPv6Resources(t *testing.T) {
+	index := New([]client.IPResource{
+		{IPMin: net.ParseIP("2001:db8::"), IPMax: net.ParseIP("2001:db8::ffff"), PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "v6"},
+	})
+	resource, ok := index.Match(net.ParseIP("2001:db8::42"), "tcp", 443)
+	if !ok || resource.AppID != "v6" {
+		t.Fatalf("IPv6 match = %+v, %v, want AppID v6", resource, ok)
+	}
+	if _, ok := index.Match(net.ParseIP("2001:db8:1::42"), "tcp", 443); ok {
+		t.Fatal("out-of-range IPv6 address matched")
+	}
+}
+
 func BenchmarkIndexMatch(b *testing.B) {
 	for _, resourceCount := range []int{10, 100, 1000} {
 		b.Run(fmt.Sprintf("rules_%d", resourceCount), func(b *testing.B) {

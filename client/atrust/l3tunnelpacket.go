@@ -45,7 +45,10 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 		return err
 	}
 	meta.key = connTrackKey(meta)
+	return t.writePacketWithMeta(packet, meta, appID, nodeGroupID)
+}
 
+func (t *L3Tunnel) writePacketWithMeta(packet []byte, meta packetMeta, appID, nodeGroupID string) error {
 	conn, err := t.getConn(nodeGroupID)
 	if err != nil {
 		if isClosedConnErr(err) {
@@ -102,11 +105,27 @@ func isAuthTimeoutErr(err error) bool {
 }
 
 func packetClosesConntrack(packet []byte) bool {
-	ipPacket := zctcpip.IPv4Packet(packet)
-	if !ipPacket.Valid() || ipPacket.Protocol() != zctcpip.TCP {
+	if len(packet) == 0 {
 		return false
 	}
-	tcpPacket := zctcpip.TCPPacket(ipPacket.Payload())
+	var payload []byte
+	switch packet[0] >> 4 {
+	case zctcpip.IPv4Version:
+		ipPacket := zctcpip.IPv4Packet(packet)
+		if !ipPacket.Valid() || ipPacket.Protocol() != zctcpip.TCP {
+			return false
+		}
+		payload = ipPacket.Payload()
+	case zctcpip.IPv6Version:
+		protocol, transport, err := zctcpip.IPv6Packet(packet).TransportPayload()
+		if err != nil || protocol != zctcpip.TCP {
+			return false
+		}
+		payload = transport
+	default:
+		return false
+	}
+	tcpPacket := zctcpip.TCPPacket(payload)
 	if !tcpPacket.Valid() {
 		return false
 	}

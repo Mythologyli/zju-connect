@@ -104,7 +104,7 @@ func (s *Stack) Run() {
 			}
 		}
 
-		if n < zctcpip.IPv4PacketMinLength {
+		if n <= tun.PacketOffset {
 			continue
 		}
 
@@ -113,6 +113,8 @@ func (s *Stack) Run() {
 		switch ipVersion := packet[0] >> 4; ipVersion {
 		case zctcpip.IPv4Version:
 			err = s.processIPV4(packet)
+		case zctcpip.IPv6Version:
+			err = s.processIPv6(packet)
 		default:
 			err = fmt.Errorf("unsupport IP version %d", ipVersion)
 		}
@@ -122,6 +124,49 @@ func (s *Stack) Run() {
 		}
 
 	}
+}
+
+func (s *Stack) processIPv6(packet zctcpip.IPv6Packet) error {
+	protocolNumber, payload, err := packet.TransportPayload()
+	if err != nil {
+		return err
+	}
+	protocol := ""
+	port := -1
+	switch protocolNumber {
+	case zctcpip.TCP:
+		tcpPacket := zctcpip.TCPPacket(payload)
+		if !tcpPacket.Valid() {
+			return fmt.Errorf("invalid IPv6 TCP packet")
+		}
+		protocol = "tcp"
+		port = int(tcpPacket.DestinationPort())
+	case zctcpip.UDP:
+		udpPacket := zctcpip.UDPPacket(payload)
+		if !udpPacket.Valid() {
+			return fmt.Errorf("invalid IPv6 UDP packet")
+		}
+		protocol = "udp"
+		port = int(udpPacket.DestinationPort())
+	case zctcpip.ICMPv6:
+		protocol = "icmp"
+	default:
+		return fmt.Errorf("IPv6 protocol %d not supported, skip", protocolNumber)
+	}
+	s.ensureResourceIndex()
+	if _, ok := s.resourceIndex.Match(packet.DestinationIP(), protocol, port); !ok {
+		return fmt.Errorf("no VPN resources found for %s:%d, [%s], skip", packet.DestinationIP(), port, protocol)
+	}
+	if !packet.DestinationIP().IsGlobalUnicast() {
+		return s.endpoint.Write(packet)
+	}
+	n, err := s.l3Conn.Write(packet)
+	if err != nil {
+		return err
+	}
+	log.DebugPrintf("Send IPv6: wrote %d bytes", n)
+	log.DebugDumpHex(packet[:n])
+	return nil
 }
 
 func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
@@ -192,10 +237,7 @@ func (s *Stack) matchesStaticResource(destination net.IP, protocol string, port 
 	if !ok {
 		return false
 	}
-	s.resourceIndexOnce.Do(func() {
-		s.resourceIndex = ipresource.New(s.ipResources)
-		s.resourceCache = newResourceDecisionCache()
-	})
+	s.ensureResourceIndex()
 	key := resourceDecisionKey{ip: ip, protocol: protocol, port: port}
 	if decision, ok := s.resourceCache.get(key); ok {
 		return decision
@@ -203,6 +245,13 @@ func (s *Stack) matchesStaticResource(destination net.IP, protocol string, port 
 	_, decision := s.resourceIndex.Match(destination, protocol, port)
 	s.resourceCache.set(key, decision)
 	return decision
+}
+
+func (s *Stack) ensureResourceIndex() {
+	s.resourceIndexOnce.Do(func() {
+		s.resourceIndex = ipresource.New(s.ipResources)
+		s.resourceCache = newResourceDecisionCache()
+	})
 }
 
 func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPPacket) error {
