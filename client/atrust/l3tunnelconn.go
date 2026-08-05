@@ -168,7 +168,7 @@ type frame struct {
 }
 
 func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
-	tlsConn, err := dialTLS(ctx, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	tlsConn, err := dialTLS(ctx, "tcp", addr, tunnelTLSConfig())
 	if err != nil {
 		return nil, err
 	}
