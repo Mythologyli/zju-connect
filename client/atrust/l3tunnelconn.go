@@ -541,9 +541,16 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 
 	if err == nil {
 		if atomic.CompareAndSwapUint32(&c.vipRequested, 0, 1) {
-			//_ = c.writeFrame([]byte{l3Version, cmdSecondVipReq}) // TODO: figure out when should we request second VIP
+			if writeErr := c.writeFrame(secondVIPRequestFrame()); writeErr != nil {
+				log.DebugPrintf("l3-tunnel second vip request failed: %v", writeErr)
+				_ = c.Close()
+			}
 		}
 	}
+}
+
+func secondVIPRequestFrame() []byte {
+	return []byte{l3Version, cmdSecondVipReq}
 }
 
 func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {

@@ -204,6 +204,13 @@ func TestPooledDataPayloadPreservesWireFormat(t *testing.T) {
 	putDataPayload(next)
 }
 
+func TestSecondVIPRequestWireFormat(t *testing.T) {
+	want := []byte{l3Version, cmdSecondVipReq}
+	if got := secondVIPRequestFrame(); !bytes.Equal(got, want) {
+		t.Fatalf("second VIP request = % X, want % X", got, want)
+	}
+}
+
 func BenchmarkGetDataPayload(b *testing.B) {
 	packet := make([]byte, 1400)
 	b.ReportAllocs()
@@ -489,11 +496,11 @@ func TestPendingPacketsFlushInOrderAfterAuthentication(t *testing.T) {
 	}
 	conn.handleAuthResp(0, response)
 
-	if len(frames) != 3 {
-		t.Fatalf("frame count = %d, want auth plus two data frames", len(frames))
+	if len(frames) != 4 {
+		t.Fatalf("frame count = %d, want auth, two data frames, and second VIP request", len(frames))
 	}
-	if frames[0][1] != cmdAuthReq || frames[1][1] != cmdDataReq || frames[2][1] != cmdDataReq {
-		t.Fatalf("frame commands = %02x %02x %02x", frames[0][1], frames[1][1], frames[2][1])
+	if frames[0][1] != cmdAuthReq || frames[1][1] != cmdDataReq || frames[2][1] != cmdDataReq || frames[3][1] != cmdSecondVipReq {
+		t.Fatalf("frame commands = %02x %02x %02x %02x", frames[0][1], frames[1][1], frames[2][1], frames[3][1])
 	}
 	firstPackets, err := parseDataPayload(frames[1][2:])
 	if err != nil || len(firstPackets) != 1 || !bytes.Equal(firstPackets[0], wantFirst) {
