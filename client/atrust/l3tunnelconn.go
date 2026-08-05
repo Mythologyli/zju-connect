@@ -251,18 +251,11 @@ func (c *l3TunnelConn) readLoop() {
 
 func (c *l3TunnelConn) deliverIncoming(packet []byte) bool {
 	select {
-	case <-c.closeCh:
-		return false
-	default:
-	}
-	select {
 	case c.incoming <- packet:
+		return true
 	case <-c.closeCh:
 		return false
-	default:
-		log.DebugPrintf("l3-tunnel incoming queue full, dropping packet len=%d", len(packet))
 	}
-	return true
 }
 
 func (c *l3TunnelConn) heartbeatLoop() {

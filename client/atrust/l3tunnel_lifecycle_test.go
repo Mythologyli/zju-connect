@@ -92,7 +92,7 @@ func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
 	}
 }
 
-func TestReadLoopDropsDataWhenIncomingQueueIsFull(t *testing.T) {
+func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	frameData := []byte{l3Version, cmdDataResp, 0x00, 0x01, 0x45}
 	conn := &l3TunnelConn{
@@ -103,15 +103,51 @@ func TestReadLoopDropsDataWhenIncomingQueueIsFull(t *testing.T) {
 		conntrackMgr: newConntrackMgr(),
 	}
 	conn.incoming <- []byte("already queued")
-	go conn.readLoop()
+	done := make(chan struct{})
+	go func() {
+		conn.readLoop()
+		close(done)
+	}()
 
 	select {
-	case <-conn.closeCh:
-	case <-time.After(time.Second):
-		t.Fatal("read loop stopped consuming frames when data queue was full")
+	case <-done:
+		t.Fatal("read loop discarded the packet instead of applying backpressure")
+	case <-time.After(50 * time.Millisecond):
 	}
-	if got := len(conn.incoming); got != 1 {
-		t.Fatalf("incoming queue length = %d, want 1", got)
+
+	<-conn.incoming
+	select {
+	case packet := <-conn.incoming:
+		if !bytes.Equal(packet, []byte{0x45}) {
+			t.Fatalf("queued packet = % X, want 45", packet)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked packet was not delivered after queue space became available")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("read loop did not resume after backpressure was released")
+	}
+}
+
+func TestIncomingBackpressureStopsOnClose(t *testing.T) {
+	conn := &l3TunnelConn{
+		incoming: make(chan []byte, 1),
+		closeCh:  make(chan struct{}),
+	}
+	conn.incoming <- []byte("full")
+	done := make(chan bool, 1)
+	go func() { done <- conn.deliverIncoming([]byte("blocked")) }()
+
+	close(conn.closeCh)
+	select {
+	case delivered := <-done:
+		if delivered {
+			t.Fatal("packet was reported delivered after close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("close did not release incoming backpressure")
 	}
 }
 
