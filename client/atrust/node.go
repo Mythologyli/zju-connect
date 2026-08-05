@@ -85,28 +85,36 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext func(cont
 				<-ch
 			}
 
-			bestLatency := int64(0)
+			bestScore := time.Duration(0)
 			bestNode := ""
 			for i, tcping := range pingList {
 				result := tcping.Result()
-				if result.SuccessCounter == pingNum {
-					latency := result.Avg().Milliseconds()
-
-					if bestLatency == 0 || latency < bestLatency {
-						bestNode = nodes[i]
-						bestLatency = latency
-					}
+				score, reachable := nodeProbeScore(result)
+				if reachable && (bestScore == 0 || score < bestScore) {
+					bestNode = nodes[i]
+					bestScore = score
 				}
 			}
 
 			if bestNode != "" {
 				bestNodes[group] = bestNode
-				log.Printf("Best node in group %s: %s with latency %d ms", group, bestNode, bestLatency)
+				log.Printf("Best node in group %s: %s with quality score %d ms", group, bestNode, bestScore.Milliseconds())
 			}
 		}
 	}
 
 	return bestNodes
+}
+
+func nodeProbeScore(result *ping.Result) (time.Duration, bool) {
+	if result == nil || result.SuccessCounter == 0 {
+		return 0, false
+	}
+	penalty := time.Second
+	if result.Target != nil && result.Target.Timeout > 0 {
+		penalty = result.Target.Timeout
+	}
+	return result.Avg() + time.Duration(result.Failed())*penalty, true
 }
 
 func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval int) {
