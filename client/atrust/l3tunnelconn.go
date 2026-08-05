@@ -36,6 +36,9 @@ const (
 
 	defaultHeartbeatInterval = 25 * time.Second
 	defaultHeartbeatTimeout  = 75 * time.Second
+	defaultAuthTimeout       = 8 * time.Second
+	defaultAuthScanInterval  = 250 * time.Millisecond
+	defaultAuthBatchSize     = 64
 )
 
 var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
@@ -73,6 +76,8 @@ type l3TunnelConn struct {
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
 	lastHeartbeatResp int64
+	authWake          chan struct{}
+	writeFrameHook    func([]byte) error
 }
 
 type authIP struct {
@@ -186,6 +191,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 		onVIP:             onVIP,
 		heartbeatInterval: defaultHeartbeatInterval,
 		heartbeatTimeout:  defaultHeartbeatTimeout,
+		authWake:          make(chan struct{}, 1),
 	}
 	atomic.StoreInt64(&c.lastHeartbeatResp, time.Now().UnixNano())
 
@@ -194,6 +200,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 		return nil, err
 	}
 
+	go c.authLoop()
 	go c.readLoop()
 	go c.heartbeatLoop()
 	return c, nil
@@ -396,10 +403,30 @@ func (c *l3TunnelConn) ReadPacket() ([]byte, error) {
 
 func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, pkt []byte) error {
 	ct := c.conntrackMgr.getOrCreate(meta.key, appID, nodeGroupID)
-	if err := c.ensureAuth(ct, meta); err != nil {
+	ct.sendMu.Lock()
+	defer ct.sendMu.Unlock()
+
+	token, authErr, authenticated := c.conntrackMgr.authResult(ct)
+	if authenticated {
+		if authErr != nil {
+			return authErr
+		}
+		return c.writeAuthenticatedPacket(ct, meta, appID, nodeGroupID, token, pkt)
+	}
+
+	_, err := c.conntrackMgr.cachePacket(ct, meta, pkt)
+	if errors.Is(err, errPendingPacketCacheFull) {
+		log.DebugPrintf("l3-tunnel pending packet cache full for %s; dropping packet", ct.key)
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	token := ct.connectToken
+	c.notifyAuth()
+	return nil
+}
+
+func (c *l3TunnelConn) writeAuthenticatedPacket(ct *conntrack, meta packetMeta, appID, nodeGroupID, token string, pkt []byte) error {
 	if token == "" {
 		return fmt.Errorf("l3-tunnel missing connect token for %s", ct.key)
 	}
@@ -419,25 +446,49 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 	return err
 }
 
-func (c *l3TunnelConn) ensureAuth(ct *conntrack, meta packetMeta) error {
+func (c *l3TunnelConn) notifyAuth() {
 	select {
-	case <-ct.authCh:
-		return ct.authErr
+	case c.authWake <- struct{}{}:
 	default:
 	}
+}
 
-	if atomic.CompareAndSwapUint32(&ct.authStarted, 0, 1) {
-		if err := c.sendAuthRequest(ct, meta); err != nil {
-			c.conntrackMgr.markAuth(ct.authID, "", err)
-			return err
+func (c *l3TunnelConn) authLoop() {
+	ticker := time.NewTicker(defaultAuthScanInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.authWake:
+			if !c.dispatchPendingAuth() {
+				return
+			}
+		case now := <-ticker.C:
+			if expired := c.conntrackMgr.expireAuth(now, errL3TunnelAuthTimeout); expired > 0 {
+				log.DebugPrintf("l3-tunnel expired %d pending authentications", expired)
+			}
+			if !c.dispatchPendingAuth() {
+				return
+			}
+		case <-c.closeCh:
+			return
 		}
 	}
+}
 
-	select {
-	case <-ct.authCh:
-		return ct.authErr
-	case <-time.After(8 * time.Second):
-		return fmt.Errorf("%w for %s", errL3TunnelAuthTimeout, ct.key)
+func (c *l3TunnelConn) dispatchPendingAuth() bool {
+	for {
+		jobs, more := c.conntrackMgr.nextAuthBatch(defaultAuthBatchSize)
+		for _, job := range jobs {
+			if err := c.sendAuthRequest(job.conntrack, job.meta); err != nil {
+				c.conntrackMgr.markAuth(job.conntrack.authID, "", err)
+				_ = c.Close()
+				return false
+			}
+			c.conntrackMgr.markAuthSent(job.conntrack.authID, time.Now().Add(defaultAuthTimeout))
+		}
+		if !more {
+			return true
+		}
 	}
 }
 
@@ -486,7 +537,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 		err = fmt.Errorf("missing connect token")
 	}
 	log.DebugPrintf("l3-tunnel auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
-	c.conntrackMgr.markAuth(resp.Data.ConntrackHash, token, err)
+	c.completeAuthentication(resp.Data.ConntrackHash, token, err)
 
 	if err == nil {
 		if atomic.CompareAndSwapUint32(&c.vipRequested, 0, 1) {
@@ -512,11 +563,34 @@ func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {
 func (c *l3TunnelConn) markAuthErrorFromPayload(payload []byte, err error) {
 	var resp authResponseIP
 	if json.Unmarshal(payload, &resp) == nil && resp.Data.ConntrackHash != 0 {
-		c.conntrackMgr.markAuth(resp.Data.ConntrackHash, "", err)
+		c.completeAuthentication(resp.Data.ConntrackHash, "", err)
+	}
+}
+
+func (c *l3TunnelConn) completeAuthentication(authID uint64, token string, authErr error) {
+	ct := c.conntrackMgr.getByID(authID)
+	if ct == nil {
+		return
+	}
+	ct.sendMu.Lock()
+	defer ct.sendMu.Unlock()
+	_, packets := c.conntrackMgr.completeAuth(authID, token, authErr)
+	if authErr != nil {
+		return
+	}
+	for _, packet := range packets {
+		if err := c.writeAuthenticatedPacket(ct, ct.authMeta, ct.appID, ct.nodeGroupID, token, packet); err != nil {
+			log.DebugPrintf("l3-tunnel flush authenticated packet failed: %v", err)
+			_ = c.Close()
+			return
+		}
 	}
 }
 
 func (c *l3TunnelConn) writeFrame(data []byte) error {
+	if c.writeFrameHook != nil {
+		return c.writeFrameHook(data)
+	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	logFrame("send", data)

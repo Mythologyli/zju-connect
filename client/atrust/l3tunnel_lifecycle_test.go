@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -421,6 +422,155 @@ func TestConntrackExpiryRemovesBothIndexes(t *testing.T) {
 	}
 	if manager.getByKey(second.key) != second || manager.getByID(second.authID) != second {
 		t.Fatal("active conntrack was removed")
+	}
+}
+
+func TestPendingPacketsFlushInOrderAfterAuthentication(t *testing.T) {
+	manager := newConntrackMgr()
+	frames := make([][]byte, 0, 3)
+	conn := &l3TunnelConn{
+		closeCh:      make(chan struct{}),
+		authWake:     make(chan struct{}, 1),
+		conntrackMgr: manager,
+		writeFrameHook: func(frame []byte) error {
+			frames = append(frames, append([]byte(nil), frame...))
+			return nil
+		},
+	}
+	meta := packetMeta{
+		atype: 4, proto: 17,
+		srcIP: net.IPv4(192, 0, 2, 1), dstIP: net.IPv4(198, 51, 100, 1),
+		srcPort: 12345, dstPort: 53, key: "flow",
+	}
+	first := makeUDPPacket(12345, 53)
+	wantFirst := append([]byte(nil), first...)
+	second := makeUDPPacket(12345, 54)
+	if err := conn.WritePacket(meta, "app", "group", first); err != nil {
+		t.Fatalf("first WritePacket() error = %v", err)
+	}
+	if err := conn.WritePacket(meta, "app", "group", second); err != nil {
+		t.Fatalf("second WritePacket() error = %v", err)
+	}
+	first[0] = 0
+	if len(frames) != 0 {
+		t.Fatalf("wrote %d frames before authentication, want 0", len(frames))
+	}
+
+	jobs, more := manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 1 || more {
+		t.Fatalf("auth batch = %d, more=%t, want 1, false", len(jobs), more)
+	}
+	if err := conn.sendAuthRequest(jobs[0].conntrack, jobs[0].meta); err != nil {
+		t.Fatalf("sendAuthRequest() error = %v", err)
+	}
+	manager.markAuthSent(jobs[0].conntrack.authID, time.Now().Add(defaultAuthTimeout))
+	response, err := json.Marshal(authResponseIP{
+		Data: authResponseIPData{ConntrackHash: jobs[0].conntrack.authID, ConnectToken: "token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.handleAuthResp(0, response)
+
+	if len(frames) != 3 {
+		t.Fatalf("frame count = %d, want auth plus two data frames", len(frames))
+	}
+	if frames[0][1] != cmdAuthReq || frames[1][1] != cmdDataReq || frames[2][1] != cmdDataReq {
+		t.Fatalf("frame commands = %02x %02x %02x", frames[0][1], frames[1][1], frames[2][1])
+	}
+	firstPackets, err := parseDataPayload(frames[1][2:])
+	if err != nil || len(firstPackets) != 1 || !bytes.Equal(firstPackets[0], wantFirst) {
+		t.Fatalf("first flushed packet was not the cached copy: packets=%v err=%v", firstPackets, err)
+	}
+	secondPackets, err := parseDataPayload(frames[2][2:])
+	if err != nil || len(secondPackets) != 1 || !bytes.Equal(secondPackets[0], second) {
+		t.Fatalf("second flushed packet mismatch: packets=%v err=%v", secondPackets, err)
+	}
+}
+
+func TestAuthSchedulerCollectsFlowsWithoutPerFlowWorkers(t *testing.T) {
+	manager := newConntrackMgr()
+	for i := 0; i < 3; i++ {
+		key := stringKey(i)
+		ct := manager.getOrCreate(key, "app", "group")
+		meta := packetMeta{key: key}
+		if _, err := manager.cachePacket(ct, meta, []byte{byte(i)}); err != nil {
+			t.Fatalf("cachePacket(%d) error = %v", i, err)
+		}
+	}
+	jobs, more := manager.nextAuthBatch(2)
+	if len(jobs) != 2 || !more {
+		t.Fatalf("first auth batch = %d, more=%t, want 2, true", len(jobs), more)
+	}
+	jobs, more = manager.nextAuthBatch(2)
+	if len(jobs) != 1 || more {
+		t.Fatalf("second auth batch = %d, more=%t, want 1, false", len(jobs), more)
+	}
+	jobs, more = manager.nextAuthBatch(2)
+	if len(jobs) != 0 || more {
+		t.Fatalf("duplicate auth batch = %d, more=%t, want 0, false", len(jobs), more)
+	}
+}
+
+func TestAuthFailureClearsOnlyFailedConntrack(t *testing.T) {
+	manager := newConntrackMgr()
+	conn := &l3TunnelConn{closeCh: make(chan struct{}), conntrackMgr: manager}
+	failed := manager.getOrCreate("failed", "app", "group")
+	other := manager.getOrCreate("other", "app", "group")
+	if _, err := manager.cachePacket(failed, packetMeta{key: failed.key}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(authResponseIP{
+		Code: 1, Message: "denied", Data: authResponseIPData{ConntrackHash: failed.authID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.handleAuthResp(0, response)
+
+	if manager.getByKey(failed.key) != nil {
+		t.Fatal("failed conntrack was not removed")
+	}
+	if manager.getByKey(other.key) != other {
+		t.Fatal("unrelated conntrack was removed")
+	}
+	select {
+	case <-conn.closeCh:
+		t.Fatal("per-flow authentication failure closed the tunnel")
+	default:
+	}
+}
+
+func TestPendingPacketCacheIsBoundedAndAuthTimeoutIsIsolated(t *testing.T) {
+	manager := newConntrackMgr()
+	ct := manager.getOrCreate("flow", "app", "group")
+	meta := packetMeta{key: ct.key}
+	for i := 0; i < defaultPendingPacketLimit; i++ {
+		if _, err := manager.cachePacket(ct, meta, []byte{byte(i)}); err != nil {
+			t.Fatalf("cachePacket(%d) error = %v", i, err)
+		}
+	}
+	if _, err := manager.cachePacket(ct, meta, []byte{0xff}); !errors.Is(err, errPendingPacketCacheFull) {
+		t.Fatalf("cachePacket() error = %v, want cache full", err)
+	}
+	conn := &l3TunnelConn{conntrackMgr: manager}
+	if err := conn.WritePacket(meta, "app", "group", []byte{0xff}); err != nil {
+		t.Fatalf("WritePacket() returned fatal cache-full error: %v", err)
+	}
+	other := manager.getOrCreate("other", "app", "group")
+	jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 1 {
+		t.Fatalf("auth jobs = %d, want 1", len(jobs))
+	}
+	manager.markAuthSent(ct.authID, time.Unix(100, 0))
+	if expired := manager.expireAuth(time.Unix(100, 0), errL3TunnelAuthTimeout); expired != 1 {
+		t.Fatalf("expired auth count = %d, want 1", expired)
+	}
+	if manager.getByKey(ct.key) != nil {
+		t.Fatal("timed out conntrack was not removed")
+	}
+	if manager.getByKey(other.key) != other {
+		t.Fatal("auth timeout removed an unrelated conntrack")
 	}
 }
 

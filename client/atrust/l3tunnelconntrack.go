@@ -11,9 +11,17 @@ import (
 const (
 	defaultConntrackTTL        = 10 * time.Minute
 	defaultConntrackMaxEntries = 16384
+	defaultPendingPacketLimit  = 64
+	defaultPendingByteLimit    = 256 * 1024
 )
 
 var errConntrackEvicted = errors.New("l3-tunnel conntrack evicted")
+var errPendingPacketCacheFull = errors.New("l3-tunnel pending packet cache full")
+
+type conntrackAuthJob struct {
+	conntrack *conntrack
+	meta      packetMeta
+}
 
 type conntrack struct {
 	key          string
@@ -24,6 +32,11 @@ type conntrack struct {
 	authCh       chan struct{}
 	authErr      error
 	authStarted  uint32
+	authMeta     packetMeta
+	authDeadline time.Time
+	sendMu       sync.Mutex
+	pending      [][]byte
+	pendingBytes int
 	lastSeen     time.Time
 	lruElement   *list.Element
 }
@@ -96,22 +109,119 @@ func (m *conntrackMgr) getOrCreate(key, appID, nodeGroupID string) *conntrack {
 }
 
 func (m *conntrackMgr) markAuth(authID uint64, token string, err error) {
+	m.completeAuth(authID, token, err)
+}
+
+func (m *conntrackMgr) completeAuth(authID uint64, token string, err error) (*conntrack, [][]byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ct := m.byID[authID]
 	if ct == nil {
-		return
+		return nil, nil
 	}
 	select {
 	case <-ct.authCh:
-		return
+		return nil, nil
 	default:
 	}
+	packets := ct.pending
+	ct.pending = nil
+	ct.pendingBytes = 0
 	if token != "" {
 		ct.connectToken = token
 	}
 	ct.authErr = err
 	close(ct.authCh)
+	if err != nil {
+		m.removeIndexesLocked(ct)
+		return ct, nil
+	}
+	return ct, packets
+}
+
+func (m *conntrackMgr) cachePacket(ct *conntrack, meta packetMeta, packet []byte) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.byKey[ct.key] != ct {
+		select {
+		case <-ct.authCh:
+			return false, ct.authErr
+		default:
+			return false, errConntrackEvicted
+		}
+	}
+	select {
+	case <-ct.authCh:
+		return false, ct.authErr
+	default:
+	}
+	if len(ct.pending) >= defaultPendingPacketLimit || ct.pendingBytes+len(packet) > defaultPendingByteLimit {
+		return false, errPendingPacketCacheFull
+	}
+	ct.authMeta = meta
+	copyOfPacket := append([]byte(nil), packet...)
+	ct.pending = append(ct.pending, copyOfPacket)
+	ct.pendingBytes += len(copyOfPacket)
+	return true, nil
+}
+
+func (m *conntrackMgr) authResult(ct *conntrack) (string, error, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	select {
+	case <-ct.authCh:
+		return ct.connectToken, ct.authErr, true
+	default:
+		return "", nil, false
+	}
+}
+
+func (m *conntrackMgr) nextAuthBatch(limit int) ([]conntrackAuthJob, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	jobs := make([]conntrackAuthJob, 0, limit)
+	more := false
+	for element := m.lru.Front(); element != nil; element = element.Next() {
+		ct := element.Value.(*conntrack)
+		if ct.authStarted != 0 || len(ct.pending) == 0 {
+			continue
+		}
+		if len(jobs) >= limit {
+			more = true
+			break
+		}
+		ct.authStarted = 1
+		jobs = append(jobs, conntrackAuthJob{conntrack: ct, meta: ct.authMeta})
+	}
+	return jobs, more
+}
+
+func (m *conntrackMgr) markAuthSent(authID uint64, deadline time.Time) {
+	m.mu.Lock()
+	if ct := m.byID[authID]; ct != nil {
+		select {
+		case <-ct.authCh:
+		default:
+			ct.authDeadline = deadline
+		}
+	}
+	m.mu.Unlock()
+}
+
+func (m *conntrackMgr) expireAuth(now time.Time, err error) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	expired := 0
+	for element := m.lru.Front(); element != nil; {
+		next := element.Next()
+		ct := element.Value.(*conntrack)
+		if !ct.authDeadline.IsZero() && !now.Before(ct.authDeadline) {
+			m.removeLocked(ct, err)
+			expired++
+		}
+		element = next
+	}
+	return expired
 }
 
 func (m *conntrackMgr) remove(key string) {
@@ -149,6 +259,18 @@ func (m *conntrackMgr) removeOldestLocked() {
 }
 
 func (m *conntrackMgr) removeLocked(ct *conntrack, err error) {
+	m.removeIndexesLocked(ct)
+	ct.pending = nil
+	ct.pendingBytes = 0
+	select {
+	case <-ct.authCh:
+	default:
+		ct.authErr = err
+		close(ct.authCh)
+	}
+}
+
+func (m *conntrackMgr) removeIndexesLocked(ct *conntrack) {
 	if m.byKey[ct.key] == ct {
 		delete(m.byKey, ct.key)
 	}
@@ -158,12 +280,6 @@ func (m *conntrackMgr) removeLocked(ct *conntrack, err error) {
 	if ct.lruElement != nil {
 		m.lru.Remove(ct.lruElement)
 		ct.lruElement = nil
-	}
-	select {
-	case <-ct.authCh:
-	default:
-		ct.authErr = err
-		close(ct.authCh)
 	}
 }
 
