@@ -2,6 +2,7 @@ package ping
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
@@ -106,7 +107,17 @@ func (tcping TCPing) ping() (time.Duration, net.Addr, error) {
 			return err
 		}
 		remoteAddr = conn.RemoteAddr()
-		conn.Close()
+		defer conn.Close()
+
+		tlsConn := tls.Client(conn, &tls.Config{
+			ServerName:         tcping.target.Host,
+			InsecureSkipVerify: true,
+		})
+		err = tlsConn.HandshakeContext(ctx)
+		tlsConn.Close()
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 	if errIfce != nil {
