@@ -342,6 +342,9 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		appID = resource.AppID
 		nodeGroupID = resource.NodeGroupID
 	}
+	if appID == "" {
+		return nil, fmt.Errorf("host:%s port:%d is not resource: %w", addr.IP, addr.Port, client.ErrResourceNotFound)
+	}
 
 	c.BestNodesRWMutex.RLock()
 	nodeAddr := c.BestNodes[nodeGroupID]

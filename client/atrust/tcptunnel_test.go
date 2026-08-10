@@ -223,3 +223,14 @@ func TestMatchTCPIPResourceUsesLastMatchingRule(t *testing.T) {
 		t.Fatalf("matched AppID = %q, want last matching rule", resource.AppID)
 	}
 }
+
+func TestDialTCPRejectsDestinationWithoutTCPResource(t *testing.T) {
+	atrustClient := &Client{resourceIndex: ipresource.New(nil)}
+	_, err := atrustClient.DialTCP(context.Background(), &net.TCPAddr{
+		IP:   net.IPv4(223, 5, 5, 5),
+		Port: 53,
+	})
+	if !errors.Is(err, client.ErrResourceNotFound) {
+		t.Fatalf("DialTCP() error = %v, want client.ErrResourceNotFound", err)
+	}
+}
