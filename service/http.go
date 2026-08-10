@@ -21,6 +21,8 @@ const (
 	httpProxyMaxConnsPerHost     = 50
 	httpProxyIdleConnTimeout     = 90 * time.Second
 	httpProxyResponseTimeout     = 30 * time.Second
+	httpProxyReadHeaderTimeout   = 10 * time.Second
+	httpProxyServerIdleTimeout   = 90 * time.Second
 )
 
 // The MIT License (MIT)
@@ -196,12 +198,21 @@ func (p *httpProxy) close() {
 	p.client.CloseIdleConnections()
 }
 
+func newHTTPServer(bindAddr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              bindAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpProxyReadHeaderTimeout,
+		IdleTimeout:       httpProxyServerIdleTimeout,
+	}
+}
+
 func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 	proxy := newHTTPProxy(dialer)
 
 	log.Printf("HTTP server listening on %s", bindAddr)
 
-	server := &http.Server{Addr: bindAddr, Handler: proxy}
+	server := newHTTPServer(bindAddr, proxy)
 
 	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(ctx context.Context) error {
 		log.Println("Closing HTTP listener...")

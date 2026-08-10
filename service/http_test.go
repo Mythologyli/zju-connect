@@ -70,6 +70,16 @@ func TestHTTPProxyTransportHasBoundedPool(t *testing.T) {
 	}
 }
 
+func TestHTTPServerBoundsInboundIdleConnections(t *testing.T) {
+	server := newHTTPServer("127.0.0.1:0", http.NotFoundHandler())
+	if server.ReadHeaderTimeout <= 0 {
+		t.Fatal("ReadHeaderTimeout is not configured")
+	}
+	if server.IdleTimeout <= 0 {
+		t.Fatal("IdleTimeout is not configured")
+	}
+}
+
 func TestHTTPConnectClosesTargetWhenClientDisconnects(t *testing.T) {
 	targetListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
