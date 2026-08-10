@@ -182,6 +182,74 @@ func TestResolverWaitingCallerHonorsContext(t *testing.T) {
 	}
 }
 
+func TestResolverLeaderCancellationDoesNotCancelWaiter(t *testing.T) {
+	resolver := &Resolver{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	want := net.ParseIP("192.0.2.20")
+	lookup := func(ctx context.Context) (net.IP, error) {
+		close(started)
+		select {
+		case <-release:
+			return want, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderResult := make(chan error, 1)
+	go func() {
+		_, err := resolver.resolveCoordinated(leaderCtx, "shared.example", lookup)
+		leaderResult <- err
+	}()
+	<-started
+
+	waiterResult := make(chan struct {
+		ip  net.IP
+		err error
+	}, 1)
+	unexpectedLookup := make(chan struct{}, 1)
+	go func() {
+		ip, err := resolver.resolveCoordinated(context.Background(), "shared.example", func(context.Context) (net.IP, error) {
+			unexpectedLookup <- struct{}{}
+			return nil, errors.New("waiter unexpectedly started a second lookup")
+		})
+		waiterResult <- struct {
+			ip  net.IP
+			err error
+		}{ip: ip, err: err}
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		resolver.resolutionMu.Lock()
+		waiters := resolver.resolutions["shared.example"].waiters
+		resolver.resolutionMu.Unlock()
+		if waiters == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waiter did not join the shared lookup")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancelLeader()
+	if err := <-leaderResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader error = %v, want context.Canceled", err)
+	}
+	close(release)
+	result := <-waiterResult
+	if result.err != nil || !result.ip.Equal(want) {
+		t.Fatalf("waiter result = %s, %v, want %s, nil", result.ip, result.err, want)
+	}
+	select {
+	case <-unexpectedLookup:
+		t.Fatal("waiter unexpectedly started a second lookup")
+	default:
+	}
+}
+
 func TestLookupIPWithTCPFallbackHedgesSlowUDP(t *testing.T) {
 	want := net.ParseIP("192.0.2.10")
 	udpCanceled := make(chan struct{})

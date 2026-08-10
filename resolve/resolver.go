@@ -14,7 +14,6 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
 	"github.com/patrickmn/go-cache"
-	"golang.org/x/sync/singleflight"
 )
 
 type Resolver struct {
@@ -35,7 +34,9 @@ type Resolver struct {
 	useTCP bool
 	// check to use tcp resolver or udp resolver
 	tcpLock           sync.RWMutex
-	resolveGroup      singleflight.Group
+	resolutionMu      sync.Mutex
+	resolutions       map[string]*sharedResolution
+	resolutionClosed  bool
 	activeResolutions atomic.Int64
 
 	closeOnce sync.Once
@@ -48,6 +49,15 @@ type lookupIPFunc func(context.Context, string, string) ([]net.IP, error)
 type dnsLookupResult struct {
 	ips []net.IP
 	err error
+}
+
+type sharedResolution struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+	waiters int
+	ip      net.IP
+	err     error
 }
 
 func (r *Resolver) coordinationEntryCount() int {
@@ -109,26 +119,74 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	}
 
 	if r.useRemoteDNS {
-		resultCh := r.resolveGroup.DoChan(host, func() (any, error) {
-			r.activeResolutions.Add(1)
-			defer r.activeResolutions.Add(-1)
-			return r.resolveRemote(ctx, host)
+		ip, err := r.resolveCoordinated(ctx, host, func(lookupCtx context.Context) (net.IP, error) {
+			return r.resolveRemote(lookupCtx, host)
 		})
-		select {
-		case <-ctx.Done():
-			return ctx, nil, ctx.Err()
-		case result := <-resultCh:
-			if result.Err != nil {
-				log.Printf("Resolve IPv4 addr failed using remote DNS: %s, using secondary DNS instead", host)
-				return r.ResolveWithSecondaryDNS(ctx, host)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx, nil, ctx.Err()
 			}
-			ip := result.Val.(net.IP)
-			log.Printf("%s -> %s", host, ip.String())
-			return ctx, ip, nil
+			log.Printf("Resolve IPv4 addr failed using remote DNS: %s, using secondary DNS instead", host)
+			return r.ResolveWithSecondaryDNS(ctx, host)
 		}
+		log.Printf("%s -> %s", host, ip.String())
+		return ctx, ip, nil
 	} else {
 		return r.ResolveWithSecondaryDNS(ctx, host)
 	}
+}
+
+func (r *Resolver) resolveCoordinated(ctx context.Context, host string, lookup func(context.Context) (net.IP, error)) (net.IP, error) {
+	r.resolutionMu.Lock()
+	if r.resolutionClosed {
+		r.resolutionMu.Unlock()
+		return nil, net.ErrClosed
+	}
+	call := r.resolutions[host]
+	if call == nil {
+		lookupCtx, cancel := context.WithCancel(context.Background())
+		call = &sharedResolution{ctx: lookupCtx, cancel: cancel, done: make(chan struct{})}
+		if r.resolutions == nil {
+			r.resolutions = make(map[string]*sharedResolution)
+		}
+		r.resolutions[host] = call
+		r.activeResolutions.Add(1)
+		go r.runResolution(host, call, lookup)
+	}
+	call.waiters++
+	r.resolutionMu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		r.releaseResolutionWaiter(host, call)
+		return nil, ctx.Err()
+	case <-call.done:
+		return call.ip, call.err
+	}
+}
+
+func (r *Resolver) runResolution(host string, call *sharedResolution, lookup func(context.Context) (net.IP, error)) {
+	call.ip, call.err = lookup(call.ctx)
+	r.resolutionMu.Lock()
+	if r.resolutions[host] == call {
+		delete(r.resolutions, host)
+	}
+	r.resolutionMu.Unlock()
+	call.cancel()
+	r.activeResolutions.Add(-1)
+	close(call.done)
+}
+
+func (r *Resolver) releaseResolutionWaiter(host string, call *sharedResolution) {
+	r.resolutionMu.Lock()
+	if r.resolutions[host] == call {
+		call.waiters--
+		if call.waiters == 0 {
+			delete(r.resolutions, host)
+			call.cancel()
+		}
+	}
+	r.resolutionMu.Unlock()
 }
 
 func matchDomainResource(index *domainResourceIndex, host string) (string, client.DomainResource, bool) {
@@ -282,6 +340,13 @@ func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (co
 
 func (r *Resolver) Close() {
 	r.closeOnce.Do(func() {
+		r.resolutionMu.Lock()
+		r.resolutionClosed = true
+		for host, call := range r.resolutions {
+			delete(r.resolutions, host)
+			call.cancel()
+		}
+		r.resolutionMu.Unlock()
 		r.tcpLock.Lock()
 		if r.timer != nil {
 			r.timer.Stop()

@@ -18,7 +18,6 @@ require (
 	github.com/things-go/go-socks5 v0.1.1
 	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
-	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.45.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 	golang.zx2c4.com/wireguard/windows v1.0.1
