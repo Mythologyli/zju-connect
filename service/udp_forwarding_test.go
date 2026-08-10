@@ -222,23 +222,24 @@ func TestUDPForwardEvictsLeastRecentlyActiveConnectionAtCapacity(t *testing.T) {
 	secondCtx, secondCancel := context.WithCancel(ctx)
 	first := &UDPConnection{ctx: firstCtx, cancel: firstCancel, send: make(chan udpDatagram, 1)}
 	second := &UDPConnection{ctx: secondCtx, cancel: secondCancel, send: make(chan udpDatagram, 1)}
-	first.lastActive.Store(1)
-	second.lastActive.Store(2)
 	firstKey := netip.MustParseAddrPort("127.0.0.1:10001")
 	secondKey := netip.MustParseAddrPort("127.0.0.1:10002")
 	forward := &UDPForward{
 		connections:    map[netip.AddrPort]*UDPConnection{firstKey: first, secondKey: second},
 		maxConnections: 2,
 	}
+	forward.markConnectionActiveLocked(firstKey, first)
+	forward.markConnectionActiveLocked(secondKey, second)
+	forward.markConnectionActiveLocked(firstKey, first)
 
 	evicted := forward.makeRoomForConnectionLocked()
-	if evicted != first {
-		t.Fatalf("evicted connection = %p, want oldest %p", evicted, first)
+	if evicted != second {
+		t.Fatalf("evicted connection = %p, want oldest %p", evicted, second)
 	}
-	if _, ok := forward.connections[firstKey]; ok {
+	if _, ok := forward.connections[secondKey]; ok {
 		t.Fatal("oldest connection remained in the map")
 	}
-	if _, ok := forward.connections[secondKey]; !ok {
+	if _, ok := forward.connections[firstKey]; !ok {
 		t.Fatal("newer connection was removed")
 	}
 }
@@ -276,6 +277,7 @@ func BenchmarkUDPForwardHandle(b *testing.B) {
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+	forward.markConnectionActiveLocked(addr.AddrPort(), conn)
 	forward.bufferPool.New = func() any { return new(udpBuffer) }
 	payload := make([]byte, 1200)
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ type UDPForward struct {
 
 	connections      map[netip.AddrPort]*UDPConnection
 	connectionsMutex *sync.RWMutex
+	connectionLRU    list.List
 
 	connectCallback    func(addr string)
 	disconnectCallback func(addr string)
@@ -59,6 +61,7 @@ type UDPConnection struct {
 	udp   net.Conn
 
 	lastActive atomic.Int64
+	lruElement *list.Element
 	closeOnce  sync.Once
 }
 
@@ -169,6 +172,7 @@ func (u *UDPForward) getOrCreateConnection(addr *net.UDPAddr) *UDPConnection {
 	key := addr.AddrPort()
 	u.connectionsMutex.Lock()
 	if conn := u.connections[key]; conn != nil {
+		u.markConnectionActiveLocked(key, conn)
 		u.connectionsMutex.Unlock()
 		return conn
 	}
@@ -179,8 +183,8 @@ func (u *UDPForward) getOrCreateConnection(addr *net.UDPAddr) *UDPConnection {
 		cancel: cancel,
 		send:   make(chan udpDatagram, udpForwardQueueSize),
 	}
-	conn.touch()
 	u.connections[key] = conn
+	u.markConnectionActiveLocked(key, conn)
 	u.wg.Add(1)
 	go func() {
 		defer u.wg.Done()
@@ -197,17 +201,15 @@ func (u *UDPForward) makeRoomForConnectionLocked() *UDPConnection {
 	if u.maxConnections <= 0 || len(u.connections) < u.maxConnections {
 		return nil
 	}
-	var oldestKey netip.AddrPort
-	var oldest *UDPConnection
-	for key, conn := range u.connections {
-		if oldest == nil || conn.lastActive.Load() < oldest.lastActive.Load() {
-			oldestKey = key
-			oldest = conn
-		}
+	oldestElement := u.connectionLRU.Front()
+	if oldestElement == nil {
+		return nil
 	}
-	if oldest != nil {
-		delete(u.connections, oldestKey)
-	}
+	oldestKey := oldestElement.Value.(netip.AddrPort)
+	oldest := u.connections[oldestKey]
+	delete(u.connections, oldestKey)
+	u.connectionLRU.Remove(oldestElement)
+	oldest.lruElement = nil
 	return oldest
 }
 
@@ -244,7 +246,7 @@ func (u *UDPForward) runConnection(key netip.AddrPort, clientAddr *net.UDPAddr, 
 
 	readDone := make(chan error, 1)
 	go func() {
-		readDone <- u.forwardResponses(conn, udpConn, clientAddr)
+		readDone <- u.forwardResponses(key, conn, udpConn, clientAddr)
 	}()
 	readFinished := false
 	defer func() {
@@ -265,7 +267,6 @@ func (u *UDPForward) runConnection(key netip.AddrPort, clientAddr *net.UDPAddr, 
 				}
 				return
 			}
-			conn.touch()
 		case err := <-readDone:
 			readFinished = true
 			if err != nil && conn.ctx.Err() == nil {
@@ -278,7 +279,7 @@ func (u *UDPForward) runConnection(key netip.AddrPort, clientAddr *net.UDPAddr, 
 	}
 }
 
-func (u *UDPForward) forwardResponses(conn *UDPConnection, udpConn net.Conn, clientAddr *net.UDPAddr) error {
+func (u *UDPForward) forwardResponses(key netip.AddrPort, conn *UDPConnection, udpConn net.Conn, clientAddr *net.UDPAddr) error {
 	buf := u.getBuffer()
 	defer u.putBuffer(buf)
 	for {
@@ -286,7 +287,7 @@ func (u *UDPForward) forwardResponses(conn *UDPConnection, udpConn net.Conn, cli
 		if err != nil {
 			return err
 		}
-		conn.touch()
+		u.markConnectionActive(key, conn)
 		if _, err := u.listenerConn.WriteToUDP(buf[:n], clientAddr); err != nil {
 			return err
 		}
@@ -297,8 +298,29 @@ func (u *UDPForward) removeConnection(key netip.AddrPort, conn *UDPConnection) {
 	u.connectionsMutex.Lock()
 	if u.connections[key] == conn {
 		delete(u.connections, key)
+		if conn.lruElement != nil {
+			u.connectionLRU.Remove(conn.lruElement)
+			conn.lruElement = nil
+		}
 	}
 	u.connectionsMutex.Unlock()
+}
+
+func (u *UDPForward) markConnectionActive(key netip.AddrPort, conn *UDPConnection) {
+	u.connectionsMutex.Lock()
+	if u.connections[key] == conn {
+		u.markConnectionActiveLocked(key, conn)
+	}
+	u.connectionsMutex.Unlock()
+}
+
+func (u *UDPForward) markConnectionActiveLocked(key netip.AddrPort, conn *UDPConnection) {
+	conn.touch()
+	if conn.lruElement == nil {
+		conn.lruElement = u.connectionLRU.PushBack(key)
+		return
+	}
+	u.connectionLRU.MoveToBack(conn.lruElement)
 }
 
 func (u *UDPForward) janitor() {
