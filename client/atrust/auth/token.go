@@ -35,13 +35,14 @@ func (s *Session) completeTOTP() (authStep, error) {
 	}
 
 	token, skipSecondaryAuth := parseTokenInput(token)
-	return s.submitToken(map[string]interface{}{
-		"username":          s.username,
+	payload := map[string]interface{}{
 		"action":            "auth",
 		"totpToken":         token,
 		"isPrevEffect":      false,
 		"skipSecondaryAuth": skipSecondaryAuth,
-	})
+	}
+	s.addUsername(payload)
+	return s.submitToken(payload)
 }
 
 func (s *Session) completeRadius(service string) (authStep, error) {
@@ -52,11 +53,18 @@ func (s *Session) completeRadius(service string) (authStep, error) {
 	}
 
 	token, skipSecondaryAuth := parseTokenInput(token)
-	return s.submitTokenAt(service, map[string]interface{}{
-		"username":          s.username,
+	payload := map[string]interface{}{
 		"radiusToken":       token,
 		"skipSecondaryAuth": skipSecondaryAuth,
-	})
+	}
+	s.addUsername(payload)
+	return s.submitTokenAt(service, payload)
+}
+
+func (s *Session) addUsername(payload map[string]interface{}) {
+	if s.username != "" {
+		payload["username"] = s.username
+	}
 }
 
 func parseTokenInput(input string) (string, int) {
@@ -72,9 +80,6 @@ func (s *Session) submitToken(payload map[string]interface{}) (authStep, error) 
 }
 
 func (s *Session) submitTokenAt(service string, payload map[string]interface{}) (authStep, error) {
-	if s.username == "" {
-		return authStep{}, fmt.Errorf("username is empty for token authentication")
-	}
 	if service != "auth/token" && service != "auth/challenge" {
 		return authStep{}, fmt.Errorf("unsupported token authentication service: %s", service)
 	}

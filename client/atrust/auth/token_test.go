@@ -75,6 +75,39 @@ func TestSubmitTOTPToken(t *testing.T) {
 	}
 }
 
+func TestSubmitTokenAllowsSessionBoundIdentity(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if _, found := payload["username"]; found {
+			t.Errorf("session-bound token request unexpectedly included username: %+v", payload)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{}}`)
+	}))
+	defer server.Close()
+
+	session := newTLSTestSession(server)
+	payload := map[string]interface{}{"totpToken": "123456"}
+	session.addUsername(payload)
+	if _, err := session.submitToken(payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSMSUsernameIsAvailableToTokenStep(t *testing.T) {
+	session := &Session{}
+	method := SMSLogin{Phone: "13800138000", Domain: "example"}
+	session.username = smsUsername(method.Phone, method.Domain)
+
+	payload := make(map[string]interface{})
+	session.addUsername(payload)
+	if got := payload["username"]; got != "13800138000@example" {
+		t.Fatalf("SMS token username = %v, want 13800138000@example", got)
+	}
+}
+
 func TestAccessCheck(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/passport/v1/auth/accessCheck" {

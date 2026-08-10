@@ -25,7 +25,15 @@ func (m SMSLogin) LoginDomain() string {
 }
 
 func (m SMSLogin) login(s *Session, _ AuthInfo) error {
-	return s.loginAuthSmsCheckCode(m.Phone, m.Domain, m.GraphCodeFile)
+	if err := s.loginAuthSmsCheckCode(m.Phone, m.Domain, m.GraphCodeFile); err != nil {
+		return err
+	}
+	s.username = smsUsername(m.Phone, m.Domain)
+	return nil
+}
+
+func smsUsername(phone, domain string) string {
+	return phone + "@" + domain
 }
 
 func (s *Session) loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile string) error {
