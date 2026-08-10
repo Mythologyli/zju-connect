@@ -3,6 +3,9 @@ package atrust
 import (
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/mythologyli/zju-connect/internal/ping"
 )
 
 func TestParseResourceSeparatesWANAndLANNodes(t *testing.T) {
@@ -37,6 +40,26 @@ func TestParseResourceSeparatesWANAndLANNodes(t *testing.T) {
 	}
 	if got, want := client.NodeGroups["group"].LAN, []string{"lan.example.com:441"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("LAN nodes = %v, want %v", got, want)
+	}
+}
+
+func TestNodeProbeScoreAcceptsPartialReachabilityWithLossPenalty(t *testing.T) {
+	target := &ping.Target{Counter: 3, Timeout: time.Second}
+	partial := &ping.Result{Counter: 3, SuccessCounter: 2, TotalDuration: 40 * time.Millisecond, Target: target}
+	stable := &ping.Result{Counter: 3, SuccessCounter: 3, TotalDuration: 150 * time.Millisecond, Target: target}
+	partialScore, reachable := nodeProbeScore(partial)
+	if !reachable {
+		t.Fatal("partially reachable node was rejected")
+	}
+	stableScore, reachable := nodeProbeScore(stable)
+	if !reachable {
+		t.Fatal("stable node was rejected")
+	}
+	if partialScore <= stableScore {
+		t.Fatalf("partial score %s should be worse than stable score %s", partialScore, stableScore)
+	}
+	if _, reachable := nodeProbeScore(&ping.Result{Counter: 3, Target: target}); reachable {
+		t.Fatal("unreachable node was accepted")
 	}
 }
 

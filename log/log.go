@@ -5,20 +5,25 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync/atomic"
 )
 
-var debug bool
+var debug atomic.Bool
 
 func Init() {
 	log.SetOutput(os.Stdout)
 }
 
 func EnableDebug() {
-	debug = true
+	debug.Store(true)
 }
 
 func DisableDebug() {
-	debug = false
+	debug.Store(false)
+}
+
+func DebugEnabled() bool {
+	return debug.Load()
 }
 
 func Print(v ...any) {
@@ -26,7 +31,7 @@ func Print(v ...any) {
 }
 
 func DebugPrint(v ...any) {
-	if debug {
+	if debug.Load() {
 		log.Print(v...)
 	}
 }
@@ -36,7 +41,7 @@ func Println(v ...any) {
 }
 
 func DebugPrintln(v ...any) {
-	if debug {
+	if debug.Load() {
 		log.Println(v...)
 	}
 }
@@ -46,7 +51,7 @@ func Printf(format string, v ...any) {
 }
 
 func DebugPrintf(format string, v ...any) {
-	if debug {
+	if debug.Load() {
 		log.Printf(format, v...)
 	}
 }
@@ -68,7 +73,7 @@ func DumpHex(buf []byte) {
 }
 
 func DebugDumpHex(buf []byte) {
-	if debug {
+	if debug.Load() {
 		stdoutDumper := hex.Dumper(os.Stdout)
 		defer func(stdoutDumper io.WriteCloser) {
 			_ = stdoutDumper.Close()

@@ -26,8 +26,8 @@ func (s *Stack) Run() {
 	}
 	// Read from VPN server and send to TUN stack
 	go func() {
+		buf := make([]byte, MTU)
 		for {
-			buf := make([]byte, MTU)
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
 				log.Printf("Error occurred while reading from VPN server: %v", err)
@@ -45,8 +45,8 @@ func (s *Stack) Run() {
 	}()
 
 	// Read from TUN stack and send to VPN server
+	buf := make([]byte, MTU)
 	for {
-		buf := make([]byte, MTU)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
 			log.Printf("Error occurred while reading from TUN stack: %v", err)

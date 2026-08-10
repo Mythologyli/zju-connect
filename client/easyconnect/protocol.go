@@ -50,9 +50,9 @@ func (e *fakeHeartBeatExtension) Read(b []byte) (n int, err error) {
 }
 
 // Create a special TLS connection to the VPN server
-func (c *Client) tlsConn() (*tls.UConn, error) {
+func (c *Client) tlsConn(ctx context.Context) (*tls.UConn, error) {
 	// Dial the VPN server
-	dialConn, err := c.dialContext(context.Background(), "tcp", c.server)
+	dialConn, err := c.dialContext(ctx, "tcp", c.server)
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +71,16 @@ func (c *Client) tlsConn() (*tls.UConn, error) {
 	conn.HandshakeState.Hello.CompressionMethods = []uint8{0}
 	conn.HandshakeState.Hello.SessionId = []byte{'L', '3', 'I', 'P', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	conn.Extensions = []tls.TLSExtension{&fakeHeartBeatExtension{}}
+	clearDeadline, err := armConnectionContext(ctx, conn)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	defer clearDeadline()
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 
 	log.Println("TLS: connected to:", conn.RemoteAddr())
 
@@ -83,10 +93,23 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 		return nil, errors.New("token is nil")
 	}
 
-	conn, err := c.tlsConn()
+	ctx, cancel := c.rawRequestContext()
+	defer cancel()
+	conn, err := c.tlsConn(ctx)
 	if err != nil {
 		return nil, err
 	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = conn.Close()
+		}
+	}()
+	clearDeadline, err := armConnectionContext(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	defer clearDeadline()
 
 	// RECV STREAM START
 	message := []byte{0x06, 0x00, 0x00, 0x00}
@@ -113,6 +136,7 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 		return nil, errors.New("unexpected recv handshake reply")
 	}
 
+	succeeded = true
 	return conn, nil
 }
 
@@ -137,10 +161,23 @@ func (c *Client) SendConn() (*tls.UConn, error) {
 		return nil, errors.New("token is nil")
 	}
 
-	conn, err := c.tlsConn()
+	ctx, cancel := c.rawRequestContext()
+	defer cancel()
+	conn, err := c.tlsConn(ctx)
 	if err != nil {
 		return nil, err
 	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = conn.Close()
+		}
+	}()
+	clearDeadline, err := armConnectionContext(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	defer clearDeadline()
 
 	// SEND STREAM START
 	message := []byte{0x05, 0x00, 0x00, 0x00}
@@ -167,6 +204,7 @@ func (c *Client) SendConn() (*tls.UConn, error) {
 
 	switch reply[0] {
 	case 0x02:
+		succeeded = true
 		return conn, nil
 	case 0x08:
 		_ = conn.Close()

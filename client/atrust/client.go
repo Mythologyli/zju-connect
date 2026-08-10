@@ -16,24 +16,28 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
 
 type Client struct {
-	Username     string
-	SID          string
-	DeviceID     string
-	ConnectionID string
-	SignKey      string
+	Username         string
+	SID              string
+	DeviceID         string
+	ConnectionID     string
+	SignKey          string
+	ServerCertSHA256 string
 
 	serverAddress   string
 	ipResources     []client.IPResource
+	resourceIndex   *ipresource.Index
 	domainResources map[string]client.DomainResource
 	ipSet           *netaddr.IPSet
-	dnsResource     map[string]net.IP
+	dnsResource     map[string][]net.IP
 	dnsServer       string
+	dnsServers      []string
 
 	MajorNodeGroup   string
 	NodeGroups       map[string]NodeGroup
@@ -55,6 +59,10 @@ type Client struct {
 
 func (c *Client) SetSkipTCPTunnelWait(skip bool) {
 	c.skipTCPTunnelWait = skip
+}
+
+func (c *Client) SetServerCertSHA256(fingerprint string) {
+	c.ServerCertSHA256 = fingerprint
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -113,7 +121,7 @@ func (c *Client) DomainResources() (map[string]client.DomainResource, error) {
 	return c.domainResources, nil
 }
 
-func (c *Client) DNSResource() (map[string]net.IP, error) {
+func (c *Client) DNSResource() (map[string][]net.IP, error) {
 	if c.dnsResource == nil {
 		return nil, errors.New("DNS resource not available")
 	}
@@ -127,6 +135,13 @@ func (c *Client) DNSServer() (string, error) {
 	}
 
 	return c.dnsServer, nil
+}
+
+func (c *Client) DNSServers() ([]string, error) {
+	if len(c.dnsServers) == 0 {
+		return nil, errors.New("DNS servers not available")
+	}
+	return append([]string(nil), c.dnsServers...), nil
 }
 
 func randHex(n int) string {
@@ -186,12 +201,16 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
+		ServerCertSHA256: clientAuthData.ServerCertSHA256,
+	}, dialer.DialContext)
 
-	sess.Login(nil, auth.LoginOptions{
+	if _, err := sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
 		Cookies:  clientAuthData.Cookies,
-	})
+	}); err != nil {
+		return err
+	}
 	result, err := sess.QueryDevice()
 	if err != nil {
 		return err
@@ -212,7 +231,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
 	c.serverAddress = serverAddress
 	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
 	c.underlayDialer = newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
@@ -255,7 +274,13 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		} else {
 			authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 		}
-		sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
+		certificateHash := c.ServerCertSHA256
+		if certificateHash == "" {
+			certificateHash = clientAuthData.ServerCertSHA256
+		}
+		sess := auth.NewSessionWithOptions(authServerHost, auth.SessionOptions{
+			ServerCertSHA256: certificateHash,
+		}, c.underlayDialer.DialContext)
 
 		var err error
 		var loginMethod auth.LoginMethod
@@ -290,8 +315,9 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		}
 
 		loginResult, err := sess.Login(loginMethod, auth.LoginOptions{
-			DeviceID: c.DeviceID,
-			Cookies:  clientAuthData.Cookies,
+			DeviceID:   c.DeviceID,
+			Cookies:    clientAuthData.Cookies,
+			TOTPSecret: totpSecret,
 		})
 		if err != nil {
 			log.Println("Login error:", err)
@@ -300,6 +326,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.Username = loginResult.Username
 		c.SID = loginResult.SID
 		clientAuthData.Cookies = loginResult.Cookies
+		clientAuthData.ServerCertSHA256 = sess.ServerCertificateSHA256()
 
 		resourceData, err = sess.ClientResource()
 		if err != nil {

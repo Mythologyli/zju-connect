@@ -3,17 +3,19 @@
 package tun
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"sync"
 
 	"github.com/miekg/dns"
 	tun "github.com/mythologyli/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/ippool"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
@@ -32,6 +34,9 @@ type Stack struct {
 	l3Conn              io.ReadWriteCloser
 	resolve             zcdns.LocalServer
 	ipResources         []client.IPResource
+	resourceIndexOnce   sync.Once
+	resourceIndex       *ipresource.Index
+	resourceCache       *resourceDecisionCache
 	ipPool              *ippool.IPPool[client.DomainResource]
 	fakeIP              bool
 }
@@ -62,8 +67,8 @@ func (s *Stack) Run() {
 
 	// Read from VPN server and send to TUN stack
 	go func() {
+		buf := make([]byte, MTU+tun.PacketOffset)
 		for {
-			buf := make([]byte, MTU+tun.PacketOffset)
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
 				if hook_func.IsTerminal() {
@@ -87,8 +92,8 @@ func (s *Stack) Run() {
 	}()
 
 	// Read from TUN stack and send to VPN server
+	buf := make([]byte, MTU+tun.PacketOffset)
 	for {
-		buf := make([]byte, MTU+tun.PacketOffset)
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
 			if hook_func.IsTerminal() {
@@ -164,21 +169,14 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 		}
 	}
 
-	for _, resource := range s.ipResources {
-		if bytes.Compare(packet.DestinationIP(), resource.IPMin) >= 0 && bytes.Compare(packet.DestinationIP(), resource.IPMax) <= 0 {
-			if resource.Protocol == protocol || resource.Protocol == "all" {
-				if protocol == "icmp" {
-					return s.processIPV4ICMP(packet, packet.Payload())
-				}
-
-				if resource.PortMin <= port && port <= resource.PortMax {
-					if protocol == "tcp" {
-						return s.processIPV4TCP(packet, packet.Payload())
-					} else {
-						return s.processIPV4UDP(packet, packet.Payload())
-					}
-				}
-			}
+	if s.matchesStaticResource(packet.DestinationIP(), protocol, port) {
+		if protocol == "icmp" {
+			return s.processIPV4ICMP(packet, packet.Payload())
+		}
+		if protocol == "tcp" {
+			return s.processIPV4TCP(packet, packet.Payload())
+		} else {
+			return s.processIPV4UDP(packet, packet.Payload())
 		}
 	}
 
@@ -187,6 +185,24 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 	} else {
 		return fmt.Errorf("no VPN resources found for %s, [%s], skip", packet.DestinationIP(), protocol)
 	}
+}
+
+func (s *Stack) matchesStaticResource(destination net.IP, protocol string, port int) bool {
+	ip, ok := ipresource.IPv4Uint32(destination)
+	if !ok {
+		return false
+	}
+	s.resourceIndexOnce.Do(func() {
+		s.resourceIndex = ipresource.New(s.ipResources)
+		s.resourceCache = newResourceDecisionCache()
+	})
+	key := resourceDecisionKey{ip: ip, protocol: protocol, port: port}
+	if decision, ok := s.resourceCache.get(key); ok {
+		return decision
+	}
+	_, decision := s.resourceIndex.Match(destination, protocol, port)
+	s.resourceCache.set(key, decision)
+	return decision
 }
 
 func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPPacket) error {
@@ -200,6 +216,7 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 		pkt := gvisorstack.NewPacketBuffer(gvisorstack.PacketBufferOptions{
 			Payload: buffer.MakeWithData(packet),
 		})
+		defer pkt.DecRef()
 		s.tcpListenerEndpoint.dispatcher.DeliverNetworkPacket(ipv4.ProtocolNumber, pkt)
 		return nil
 	}

@@ -72,7 +72,7 @@ func (c *Client) parseResources(resources string) error {
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
 	c.domainResources = make(map[string]client.DomainResource)
-	c.dnsResource = make(map[string]net.IP)
+	c.dnsResource = make(map[string][]net.IP)
 
 	element := doc.SelectElement("Resource").SelectElement("Rcs")
 	if element == nil {
@@ -228,7 +228,7 @@ func (c *Client) parseResources(resources string) error {
 			continue
 		}
 
-		c.dnsResource[dnsParts[1]] = ip.IPAddr().IP
+		c.dnsResource[dnsParts[1]] = append(c.dnsResource[dnsParts[1]], ip.IPAddr().IP)
 		log.DebugPrintf("Add DNS rule: %s -> %s", dnsParts[1], dnsParts[2])
 	}
 
@@ -242,7 +242,15 @@ func (c *Client) parseResources(resources string) error {
 		return errors.New("no Dns dnsserver attribute found")
 	}
 
-	c.dnsServer = strings.Split(dnsServerStr.Value, ";")[0]
+	c.dnsServers = c.dnsServers[:0]
+	for _, server := range strings.Split(dnsServerStr.Value, ";") {
+		if server != "" {
+			c.dnsServers = append(c.dnsServers, server)
+		}
+	}
+	if len(c.dnsServers) > 0 {
+		c.dnsServer = c.dnsServers[0]
+	}
 
 	if c.dnsServer == "0.0.0.0" {
 		c.dnsServer = ""

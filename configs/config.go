@@ -58,6 +58,7 @@ type (
 		ResourceFile            string
 		UpdateBestNodesInterval int
 		SkipTCPTunnelWait       bool
+		ATrustServerCertSHA256  string
 	}
 
 	SinglePortForwarding struct {
@@ -122,6 +123,7 @@ type (
 		ResourceFile            *string                    `toml:"resource_file"`
 		UpdateBestNodesInterval *int                       `toml:"update_best_nodes_interval"`
 		SkipTCPTunnelWait       *bool                      `toml:"skip_tcp_tunnel_wait"`
+		ATrustServerCertSHA256  *string                    `toml:"atrust_server_cert_sha256"`
 		BindInterface           *string                    `toml:"bind_interface"`
 		AutoDetectInterface     *bool                      `toml:"auto_detect_interface"`
 	}

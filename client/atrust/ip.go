@@ -27,7 +27,7 @@ func (c *Client) getIP() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", addr, tunnelTLSConfig())
 	if err != nil {
 		return err
 	}

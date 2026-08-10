@@ -2,14 +2,80 @@ package atrust
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 )
+
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
+}
+
+func TestPooledTCPTunnelFramePreservesWireFormat(t *testing.T) {
+	payload := []byte{0x10, 0x20, 0x30}
+	want := []byte{0x01, 0x00, 0x00, 0x03, 0x10, 0x20, 0x30}
+	frame := getTCPTunnelFrame(payload)
+	if !bytes.Equal(frame.payload, want) {
+		t.Fatalf("frame = % X, want % X", frame.payload, want)
+	}
+	putTCPTunnelFrame(frame)
+
+	reused := getTCPTunnelFrame([]byte{0x40})
+	wantReused := []byte{0x01, 0x00, 0x00, 0x01, 0x40}
+	if !bytes.Equal(reused.payload, wantReused) {
+		t.Fatalf("reused frame = % X, want % X", reused.payload, wantReused)
+	}
+	putTCPTunnelFrame(reused)
+}
+
+func TestWriteTCPTunnelFrameRejectsShortWrite(t *testing.T) {
+	if err := writeTCPTunnelFrame(shortWriter{}, []byte{1, 2, 3}); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("writeTCPTunnelFrame() error = %v, want io.ErrShortWrite", err)
+	}
+}
+
+func TestTCPTunnelReadPreservesFrameAcrossBufferSizes(t *testing.T) {
+	for _, bufferSize := range []int{2, 5, 16} {
+		t.Run(fmt.Sprintf("buffer_%d", bufferSize), func(t *testing.T) {
+			payload := []byte("hello")
+			frame := append([]byte{0x01, 0x00, 0x00, byte(len(payload))}, payload...)
+			conn := &tcpTunnelConn{reader: bufio.NewReader(bytes.NewReader(frame))}
+			var got []byte
+			buf := make([]byte, bufferSize)
+			for len(got) < len(payload) {
+				n, err := conn.Read(buf)
+				if err != nil {
+					t.Fatalf("Read() error = %v", err)
+				}
+				got = append(got, buf[:n]...)
+			}
+			if !bytes.Equal(got, payload) {
+				t.Fatalf("Read() payload = %q, want %q", got, payload)
+			}
+		})
+	}
+}
+
+func BenchmarkGetTCPTunnelFrame(b *testing.B) {
+	payload := make([]byte, 1200)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(payload)))
+	for i := 0; i < b.N; i++ {
+		frame := getTCPTunnelFrame(payload)
+		putTCPTunnelFrame(frame)
+	}
+}
 
 func runTCPConnectExchange(t *testing.T, status byte) (error, []byte) {
 	t.Helper()
@@ -141,5 +207,19 @@ func TestClientWaitForTCPConnectCanBeSkipped(t *testing.T) {
 	err := client.waitForTCPConnect(context.Background(), clientConn, bufio.NewReader(clientConn))
 	if err != nil {
 		t.Fatalf("waitForTCPConnect() error = %v", err)
+	}
+}
+
+func TestMatchTCPIPResourceUsesLastMatchingRule(t *testing.T) {
+	resources := []client.IPResource{
+		{IPMin: net.IPv4(10, 0, 0, 1), IPMax: net.IPv4(10, 0, 0, 10), PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "first"},
+		{IPMin: net.IPv4(10, 0, 0, 1), IPMax: net.IPv4(10, 0, 0, 10), PortMin: 1, PortMax: 65535, Protocol: "all", AppID: "last"},
+	}
+	resource, ok := matchTCPIPResource(ipresource.New(resources), &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 443})
+	if !ok {
+		t.Fatal("matchTCPIPResource() did not find matching resource")
+	}
+	if resource.AppID != "last" {
+		t.Fatalf("matched AppID = %q, want last matching rule", resource.AppID)
 	}
 }

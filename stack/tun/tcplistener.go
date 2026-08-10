@@ -73,9 +73,15 @@ func (ep *TCPListenerEndpoint) SetOnCloseAction(func()) {}
 
 func (ep *TCPListenerEndpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
 	for _, packetBuffer := range list.AsSlice() {
-		var buf []byte
-		for _, t := range packetBuffer.AsSlices() {
-			buf = append(buf, t...)
+		slices := packetBuffer.AsSlices()
+		total := 0
+		for _, slice := range slices {
+			total += len(slice)
+		}
+		buf := make([]byte, total)
+		offset := 0
+		for _, slice := range slices {
+			offset += copy(buf[offset:], slice)
 		}
 
 		if ep.tunEndpoint != nil {

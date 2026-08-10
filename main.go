@@ -109,6 +109,7 @@ func main() {
 
 		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey)
 		vpnClient.(*atrustclient.Client).SetSkipTCPTunnelWait(conf.SkipTCPTunnelWait)
+		vpnClient.(*atrustclient.Client).SetServerCertSHA256(conf.ATrustServerCertSHA256)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(
@@ -122,6 +123,7 @@ func main() {
 			conf.GraphCodeFile,
 			conf.CasTicket,
 			conf.OAuth2Code,
+			conf.TOTPSecret,
 			clientData,
 			resourceData,
 			conf.UpdateBestNodesInterval,
@@ -258,6 +260,7 @@ func main() {
 
 	useRemoteDNS := !conf.DisableRemoteDNS
 	remoteDNSServer := conf.RemoteDNSServer
+	policyDNSServers, _ := vpnClient.DNSServers()
 	if useRemoteDNS && remoteDNSServer == "auto" {
 		remoteDNSServer, err = vpnClient.DNSServer()
 		if err != nil {
@@ -268,11 +271,19 @@ func main() {
 			log.Printf("Use DNS server %s provided by server", remoteDNSServer)
 		}
 	}
+	secondaryDNSServer := conf.SecondaryDNSServer
+	if secondaryDNSServer == "auto" {
+		secondaryDNSServer = "114.114.114.114"
+		if len(policyDNSServers) > 1 {
+			secondaryDNSServer = policyDNSServers[1]
+			log.Printf("Use secondary DNS server %s provided by server", secondaryDNSServer)
+		}
+	}
 
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
 		remoteDNSServer,
-		conf.SecondaryDNSServer,
+		secondaryDNSServer,
 		conf.DNSTTL,
 		domainResources,
 		dnsResource,

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
+	"github.com/mythologyli/zju-connect/log"
 )
 
 type L3Tunnel struct {
@@ -15,7 +17,7 @@ type L3Tunnel struct {
 
 	ip net.IP
 
-	ipResources []client.IPResource
+	resourceIndex *ipresource.Index
 
 	conns   map[string]*l3TunnelConn
 	connsMu sync.Mutex
@@ -23,7 +25,9 @@ type L3Tunnel struct {
 	vipMu   sync.Mutex
 	vipList []net.IP
 
-	dataChan chan []byte
+	dataChan  chan []byte
+	closeCh   chan struct{}
+	closeOnce sync.Once
 }
 
 func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
@@ -31,13 +35,14 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 		client:   aTrustClient,
 		conns:    make(map[string]*l3TunnelConn),
 		dataChan: make(chan []byte, 4096),
+		closeCh:  make(chan struct{}),
 	}
 
 	ipResources, err := aTrustClient.IPResources()
 	if ipResources == nil {
 		ipResources = []client.IPResource{}
 	}
-	t.ipResources = ipResources
+	t.resourceIndex = ipresource.New(ipResources)
 
 	ip, err := aTrustClient.IP()
 	if err != nil {
@@ -55,17 +60,22 @@ func (t *L3Tunnel) updateVIP(ips []net.IP) {
 }
 
 func (t *L3Tunnel) Close() {
-	t.connsMu.Lock()
-	conns := make([]*l3TunnelConn, 0, len(t.conns))
-	for _, conn := range t.conns {
-		conns = append(conns, conn)
-	}
-	t.conns = make(map[string]*l3TunnelConn)
-	t.connsMu.Unlock()
+	t.closeOnce.Do(func() {
+		if t.closeCh != nil {
+			close(t.closeCh)
+		}
+		t.connsMu.Lock()
+		conns := make([]*l3TunnelConn, 0, len(t.conns))
+		for _, conn := range t.conns {
+			conns = append(conns, conn)
+		}
+		t.conns = make(map[string]*l3TunnelConn)
+		t.connsMu.Unlock()
 
-	for _, conn := range conns {
-		_ = conn.Close()
-	}
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	})
 }
 
 func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
@@ -100,6 +110,11 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 	}
 
 	t.connsMu.Lock()
+	if existing := t.conns[nodeGroupID]; existing != nil {
+		t.connsMu.Unlock()
+		_ = conn.Close()
+		return existing, nil
+	}
 	t.conns[nodeGroupID] = conn
 	t.connsMu.Unlock()
 
@@ -110,9 +125,35 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 
 func (t *L3Tunnel) evictConn(nodeGroupID string, conn *l3TunnelConn) {
 	t.connsMu.Lock()
-	defer t.connsMu.Unlock()
+	removed := false
 	if existing := t.conns[nodeGroupID]; existing == conn {
 		delete(t.conns, nodeGroupID)
+		removed = true
+	}
+	t.connsMu.Unlock()
+	if removed {
+		_ = conn.Close()
+	}
+}
+
+func (t *L3Tunnel) evictStaleConns(bestNodes map[string]string, majorNodeGroup string) {
+	t.connsMu.Lock()
+	stale := make([]*l3TunnelConn, 0)
+	for group, conn := range t.conns {
+		addr := bestNodes[group]
+		if addr == "" {
+			addr = bestNodes[majorNodeGroup]
+		}
+		if addr != "" && conn.addr != addr {
+			delete(t.conns, group)
+			stale = append(stale, conn)
+		}
+	}
+	t.connsMu.Unlock()
+
+	for _, conn := range stale {
+		log.DebugPrintf("l3-tunnel best node changed, closing stale connection to %s", conn.addr)
+		_ = conn.Close()
 	}
 }
 
@@ -124,6 +165,12 @@ func (t *L3Tunnel) forwardFromConn(nodeGroupID string, conn *l3TunnelConn) {
 			return
 		}
 		logPacket("recv", pkt)
-		t.dataChan <- pkt
+		select {
+		case t.dataChan <- pkt:
+		case <-t.closeCh:
+			return
+		case <-conn.closeCh:
+			return
+		}
 	}
 }
