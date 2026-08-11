@@ -851,6 +851,43 @@ func TestConntrackKeyIncludesTransportProtocol(t *testing.T) {
 	}
 }
 
+func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.setIP(net.IPv4(192, 0, 2, 1))
+	tunnel := &L3Tunnel{client: client, ip: net.IPv4(192, 0, 2, 1)}
+	ips := []net.IP{net.ParseIP("2001:db8::1"), net.IPv4(198, 51, 100, 7)}
+
+	tunnel.updateVIP(ips)
+	ips[1][len(ips[1])-1] = 99
+
+	got, err := client.IP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := net.IPv4(198, 51, 100, 7)
+	if !got.Equal(want) || !tunnel.ip.Equal(want) {
+		t.Fatalf("active VIP client=%s tunnel=%s, want %s", got, tunnel.ip, want)
+	}
+	if len(tunnel.vipList) != 2 || !tunnel.vipList[1].Equal(want) {
+		t.Fatalf("stored VIPs = %v, want independent copy", tunnel.vipList)
+	}
+}
+
+func TestReadFrameAcceptsAsyncVIPUpdate(t *testing.T) {
+	payload := []byte(`{"data":{"vip":"198.51.100.7"}}`)
+	wire := []byte{l3Version, cmdVipUpdate, 0x00, 0x00, byte(len(payload))}
+	wire = append(wire, payload...)
+	conn := &l3TunnelConn{reader: bufio.NewReader(bytes.NewReader(wire))}
+
+	fr, err := conn.readFrame()
+	if err != nil {
+		t.Fatalf("readFrame() error = %v", err)
+	}
+	if fr.cmd != cmdVipUpdate || fr.status != 0 || !bytes.Equal(fr.payload, payload) {
+		t.Fatalf("frame = %+v, want async VIP update", fr)
+	}
+}
+
 func makeTCPPacket(flags uint16) []byte {
 	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.TCPHeaderSize)
 	packet[0] = zctcpip.IPv4Version << 4

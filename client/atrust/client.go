@@ -45,7 +45,8 @@ type Client struct {
 	BestNodes        map[string]string
 	BestNodesRWMutex sync.RWMutex
 
-	ip net.IP // Client IP
+	ipMu sync.RWMutex
+	ip   net.IP // Client IP
 
 	l3Tunnel   *L3Tunnel
 	l3TunnelMu sync.Mutex
@@ -95,11 +96,19 @@ func (c *Client) Close() {
 }
 
 func (c *Client) IP() (net.IP, error) {
+	c.ipMu.RLock()
+	defer c.ipMu.RUnlock()
 	if c.ip == nil {
 		return nil, errors.New("IP not available")
 	}
 
-	return c.ip.To4(), nil
+	return append(net.IP(nil), c.ip.To4()...), nil
+}
+
+func (c *Client) setIP(ip net.IP) {
+	c.ipMu.Lock()
+	c.ip = append(net.IP(nil), ip...)
+	c.ipMu.Unlock()
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {

@@ -83,9 +83,30 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 }
 
 func (t *L3Tunnel) updateVIP(ips []net.IP) {
+	updated := make([]net.IP, 0, len(ips))
+	var ipv4 net.IP
+	for _, ip := range ips {
+		if ip == nil {
+			continue
+		}
+		copyOfIP := append(net.IP(nil), ip...)
+		updated = append(updated, copyOfIP)
+		if ipv4 == nil && ip.To4() != nil {
+			ipv4 = append(net.IP(nil), ip.To4()...)
+		}
+	}
 	t.vipMu.Lock()
-	defer t.vipMu.Unlock()
-	t.vipList = ips
+	changed := ipv4 != nil && !t.ip.Equal(ipv4)
+	t.vipList = updated
+	if ipv4 != nil {
+		t.ip = ipv4
+	}
+	t.vipMu.Unlock()
+	if changed && t.client != nil {
+		t.client.setIP(ipv4)
+		t.client.underlayDialer.ExcludeIP(ipv4)
+		log.Printf("Updated l3-tunnel virtual IP: %s", ipv4)
+	}
 }
 
 func (t *L3Tunnel) Close() {

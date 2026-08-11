@@ -33,6 +33,7 @@ const (
 	cmdHeartbeatReq  = 0x15
 	cmdHeartbeatResp = 0x95
 	cmdSecondVipResp = 0x96
+	cmdVipUpdate     = 0x97
 
 	defaultHeartbeatInterval  = 10 * time.Second
 	defaultHeartbeatMissLimit = 3
@@ -273,8 +274,8 @@ func (c *l3TunnelConn) readLoop() {
 		case cmdAuthResp:
 			log.DebugPrintf("l3-tunnel recv auth resp status=%d payloadLen=%d", fr.status, len(fr.payload))
 			c.handleAuthResp(fr.status, fr.payload)
-		case cmdSecondVipResp:
-			log.DebugPrintf("l3-tunnel recv second vip status=%d payloadLen=%d", fr.status, len(fr.payload))
+		case cmdSecondVipResp, cmdVipUpdate:
+			log.DebugPrintf("l3-tunnel recv vip update cmd=0x%02x status=%d payloadLen=%d", fr.cmd, fr.status, len(fr.payload))
 			c.handleSecondVipResp(fr.status, fr.payload)
 		case cmdHeartbeatResp:
 			log.DebugPrintf("l3-tunnel recv heartbeat")
@@ -360,7 +361,7 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 		if header[0] == l3Version {
 			cmd := header[1]
 
-			if cmd == cmdAuthResp || cmd == cmdSecondVipResp {
+			if cmd == cmdAuthResp || cmd == cmdSecondVipResp || cmd == cmdVipUpdate {
 				statusLen := make([]byte, 3)
 				if _, err := io.ReadFull(c.reader, statusLen); err != nil {
 					return frame{}, err
