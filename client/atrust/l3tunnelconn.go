@@ -480,9 +480,6 @@ func (c *l3TunnelConn) writeAuthenticatedPacket(ct *conntrack, meta packetMeta, 
 		log.DebugPrintf("l3-tunnel send data meta=%s appID=%s group=%s authID=%d tokenLen=%d pktLen=%d payloadLen=%d", formatMeta(meta), appID, nodeGroupID, ct.authID, len(token), len(pkt), len(payload))
 	}
 	err := c.writeFrame(payload)
-	if err == nil && packetClosesConntrack(pkt) {
-		c.conntrackMgr.remove(meta.key)
-	}
 	return err
 }
 

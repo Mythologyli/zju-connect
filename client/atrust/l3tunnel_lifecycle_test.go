@@ -897,56 +897,70 @@ func TestAuthBusyMessageWithoutBusyCodeIsNotRetried(t *testing.T) {
 	}
 }
 
-func TestOnlyTCPResetImmediatelyClosesConntrack(t *testing.T) {
-	if packetClosesConntrack(makeTCPPacket(zctcpip.TCPFin)) {
-		t.Fatal("TCP FIN unexpectedly closed half-open conntrack")
-	}
-	if !packetClosesConntrack(makeTCPPacket(zctcpip.TCPRst)) {
-		t.Fatal("TCP RST did not close conntrack")
-	}
-	if packetClosesConntrack(makeTCPPacket(zctcpip.TCPAck)) {
-		t.Fatal("TCP ACK unexpectedly closed conntrack")
-	}
-}
-
 func TestTCPConntrackUsesDirectionalStateTimeouts(t *testing.T) {
 	now := time.Unix(1000, 0)
 	manager := newConntrackMgr()
 	manager.now = func() time.Time { return now }
 	ct := manager.getOrCreate("tcp", "app", "group")
 
-	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPSyn), false)
-	if got := ct.expiresAt.Sub(now); got != tcpSynTTL {
-		t.Fatalf("SYN timeout = %s, want %s", got, tcpSynTTL)
+	manager.observePacket(ct.key, makeTCPPacketWithSeq(zctcpip.TCPSyn, 100, 0), false)
+	if got := ct.expiresAt.Sub(now); got != tcpOutboundSynTTL {
+		t.Fatalf("SYN timeout = %s, want %s", got, tcpOutboundSynTTL)
 	}
-	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPSyn|zctcpip.TCPAck), true)
+	manager.observePacket(ct.key, makeTCPPacketWithSeq(zctcpip.TCPSyn|zctcpip.TCPAck, 200, 101), true)
 	if got := ct.expiresAt.Sub(now); got != tcpSynAckTTL {
 		t.Fatalf("SYN-ACK timeout = %s, want %s", got, tcpSynAckTTL)
 	}
-	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPAck), false)
+	manager.observePacket(ct.key, makeTCPPacketWithSeq(zctcpip.TCPAck, 101, 201), false)
 	if got := ct.expiresAt.Sub(now); got != tcpEstablishedTTL {
 		t.Fatalf("established timeout = %s, want %s", got, tcpEstablishedTTL)
 	}
 	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPFin|zctcpip.TCPAck), false)
-	if got := ct.expiresAt.Sub(now); got != tcpHalfClosedTTL {
-		t.Fatalf("half-close timeout = %s, want %s", got, tcpHalfClosedTTL)
+	if got := ct.expiresAt.Sub(now); got != tcpEstablishedTTL {
+		t.Fatalf("first FIN timeout = %s, want %s", got, tcpEstablishedTTL)
 	}
 	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPAck), true)
-	if got := ct.expiresAt.Sub(now); got != tcpFinAckTTL {
-		t.Fatalf("FIN ACK timeout = %s, want %s", got, tcpFinAckTTL)
+	if got := ct.expiresAt.Sub(now); got != tcpEstablishedTTL {
+		t.Fatalf("FIN ACK timeout = %s, want %s", got, tcpEstablishedTTL)
 	}
 	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPFin|zctcpip.TCPAck), true)
-	if got := ct.expiresAt.Sub(now); got != tcpClosedTTL {
-		t.Fatalf("closed timeout = %s, want %s", got, tcpClosedTTL)
+	if got := ct.expiresAt.Sub(now); got != tcpOutboundFirstClosedTTL {
+		t.Fatalf("closed timeout = %s, want %s", got, tcpOutboundFirstClosedTTL)
 	}
 }
 
-func TestIncomingTCPResetRemovesConntrack(t *testing.T) {
+func TestTCPResetUsesCleanupTimeout(t *testing.T) {
+	now := time.Unix(1000, 0)
 	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
 	ct := manager.getOrCreate("tcp", "app", "group")
 	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPRst), true)
-	if manager.getByKey(ct.key) != nil {
-		t.Fatal("incoming RST did not remove conntrack")
+	if manager.getByKey(ct.key) != ct {
+		t.Fatal("RST removed conntrack before cleanup timeout")
+	}
+	if got := ct.expiresAt.Sub(now); got != tcpResetTTL {
+		t.Fatalf("RST timeout = %s, want %s", got, tcpResetTTL)
+	}
+}
+
+func TestInboundTCPHandshakeAndCloseTimeouts(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	ct := manager.getOrCreate("tcp", "app", "group")
+
+	manager.observePacket(ct.key, makeTCPPacketWithSeq(zctcpip.TCPSyn, 300, 0), true)
+	if got := ct.expiresAt.Sub(now); got != tcpInboundSynTTL {
+		t.Fatalf("inbound SYN timeout = %s, want %s", got, tcpInboundSynTTL)
+	}
+	manager.observePacket(ct.key, makeTCPPacketWithSeq(zctcpip.TCPSyn|zctcpip.TCPAck, 400, 301), false)
+	if got := ct.expiresAt.Sub(now); got != tcpEstablishedTTL {
+		t.Fatalf("inbound established timeout = %s, want %s", got, tcpEstablishedTTL)
+	}
+	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPFin|zctcpip.TCPAck), true)
+	manager.observePacket(ct.key, makeTCPPacket(zctcpip.TCPFin|zctcpip.TCPAck), false)
+	if got := ct.expiresAt.Sub(now); got != tcpInboundFirstClosedTTL {
+		t.Fatalf("inbound-first close timeout = %s, want %s", got, tcpInboundFirstClosedTTL)
 	}
 }
 
@@ -1066,12 +1080,18 @@ func TestInitialVIPHeaderValidation(t *testing.T) {
 }
 
 func makeTCPPacket(flags uint16) []byte {
+	return makeTCPPacketWithSeq(flags, 0, 0)
+}
+
+func makeTCPPacketWithSeq(flags uint16, sequence, acknowledgment uint32) []byte {
 	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.TCPHeaderSize)
 	packet[0] = zctcpip.IPv4Version << 4
 	packet.SetHeaderLen(zctcpip.IPv4HeaderSize)
 	packet.SetTotalLength(uint16(len(packet)))
 	packet.SetProtocol(zctcpip.TCP)
 	tcpPacket := zctcpip.TCPPacket(packet.Payload())
+	binary.BigEndian.PutUint32(tcpPacket[4:8], sequence)
+	binary.BigEndian.PutUint32(tcpPacket[8:12], acknowledgment)
 	tcpPacket[13] = byte(flags)
 	return packet
 }

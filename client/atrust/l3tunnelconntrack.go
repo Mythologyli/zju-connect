@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"container/list"
+	"encoding/binary"
 	"errors"
 	"net"
 	"sync"
@@ -14,15 +15,28 @@ const (
 	defaultConntrackMaxEntries = 16384
 	defaultPendingPacketLimit  = 64
 	defaultPendingByteLimit    = 256 * 1024
-	tcpSynTTL                  = 30 * time.Second
-	tcpClosedTTL               = 30 * time.Second
+	tcpOutboundSynTTL          = 60 * time.Second
+	tcpInboundSynTTL           = 120 * time.Second
 	tcpSynAckTTL               = 60 * time.Second
-	tcpFinAckTTL               = 90 * time.Second
-	tcpHalfClosedTTL           = 120 * time.Second
+	tcpResetTTL                = 90 * time.Second
+	tcpInboundFirstClosedTTL   = 120 * time.Second
+	tcpOutboundFirstClosedTTL  = 30 * time.Second
 	tcpEstablishedTTL          = 6 * time.Hour
 	udpConntrackTTL            = 120 * time.Second
 	icmpConntrackTTL           = 30 * time.Second
 	defaultConntrackTTL        = 60 * time.Second
+)
+
+const (
+	tcpStateReset               = 0
+	tcpStateInboundSyn          = 1
+	tcpStateOutboundSyn         = 2
+	tcpStateSynAck              = 3
+	tcpStateEstablished         = 4
+	tcpStateInboundFin          = 5
+	tcpStateInboundFirstClosed  = 7
+	tcpStateOutboundFin         = 9
+	tcpStateOutboundFirstClosed = 10
 )
 
 var errConntrackEvicted = errors.New("l3-tunnel conntrack evicted")
@@ -51,7 +65,9 @@ type conntrack struct {
 	pendingBytes int
 	lastSeen     time.Time
 	expiresAt    time.Time
-	tcpFIN       [2]bool
+	tcpState     uint8
+	tcpSeq       uint32
+	tcpTTL       time.Duration
 	lruElement   *list.Element
 }
 
@@ -145,21 +161,12 @@ func (m *conntrackMgr) observePacket(key string, packet []byte, incoming bool) b
 			ct.expiresAt = now.Add(defaultConntrackTTL)
 			return true
 		}
-		flags := tcpPacket.Flags()
-		if flags&zctcpip.TCPRst != 0 {
-			if incoming {
-				m.removeLocked(ct, errConntrackEvicted)
-			}
-			return true
-		}
 		direction := 0
 		if incoming {
 			direction = 1
 		}
-		if flags&zctcpip.TCPFin != 0 {
-			ct.tcpFIN[direction] = true
-		}
-		ct.expiresAt = now.Add(tcpPacketTTL(flags, ct.tcpFIN, direction))
+		ct.observeTCP(tcpPacket, direction)
+		ct.expiresAt = now.Add(ct.tcpTTL)
 	case zctcpip.UDP:
 		ct.expiresAt = now.Add(udpConntrackTTL)
 	case zctcpip.ICMP:
@@ -170,23 +177,81 @@ func (m *conntrackMgr) observePacket(key string, packet []byte, incoming bool) b
 	return true
 }
 
-func tcpPacketTTL(flags uint16, fin [2]bool, direction int) time.Duration {
-	if fin[0] && fin[1] {
-		return tcpClosedTTL
+func (ct *conntrack) observeTCP(packet zctcpip.TCPPacket, direction int) {
+	flags := packet.Flags()
+	if flags&zctcpip.TCPRst != 0 {
+		ct.tcpState = tcpStateReset
+		ct.tcpTTL = tcpResetTTL
+		return
 	}
-	if fin[0] || fin[1] {
-		if flags&zctcpip.TCPAck != 0 && !fin[direction] {
-			return tcpFinAckTTL
+	if ct.tcpTTL == 0 {
+		ct.tcpTTL = defaultConntrackTTL
+	}
+	sequence := binary.BigEndian.Uint32(packet[4:8])
+	acknowledgment := binary.BigEndian.Uint32(packet[8:12])
+
+	switch ct.tcpState {
+	case tcpStateReset:
+		if flags&zctcpip.TCPSyn == 0 {
+			return
 		}
-		return tcpHalfClosedTTL
-	}
-	if flags&zctcpip.TCPSyn != 0 {
-		if flags&zctcpip.TCPAck != 0 {
-			return tcpSynAckTTL
+		ct.tcpSeq = sequence
+		if direction == 1 {
+			ct.tcpState = tcpStateInboundSyn
+			ct.tcpTTL = tcpInboundSynTTL
+		} else {
+			ct.tcpState = tcpStateOutboundSyn
+			ct.tcpTTL = tcpOutboundSynTTL
 		}
-		return tcpSynTTL
+	case tcpStateInboundSyn:
+		if direction != 0 || flags&zctcpip.TCPSyn == 0 {
+			return
+		}
+		if flags&zctcpip.TCPAck != 0 && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateEstablished
+			ct.tcpTTL = tcpEstablishedTTL
+			return
+		}
+		ct.tcpState = tcpStateSynAck
+		ct.tcpSeq = sequence
+		ct.tcpTTL = tcpSynAckTTL
+	case tcpStateOutboundSyn:
+		if direction == 1 && flags&(zctcpip.TCPSyn|zctcpip.TCPAck) == zctcpip.TCPSyn|zctcpip.TCPAck && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateSynAck
+			ct.tcpSeq = sequence
+			ct.tcpTTL = tcpSynAckTTL
+		}
+	case tcpStateSynAck:
+		if direction == 0 && flags&zctcpip.TCPAck != 0 && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateEstablished
+			ct.tcpTTL = tcpEstablishedTTL
+			return
+		}
+		ct.observeTCPFin(flags, direction)
+	case tcpStateEstablished:
+		ct.observeTCPFin(flags, direction)
+	case tcpStateInboundFin:
+		if direction == 0 && flags&zctcpip.TCPFin != 0 {
+			ct.tcpState = tcpStateInboundFirstClosed
+			ct.tcpTTL = tcpInboundFirstClosedTTL
+		}
+	case tcpStateOutboundFin:
+		if direction == 1 && flags&zctcpip.TCPFin != 0 {
+			ct.tcpState = tcpStateOutboundFirstClosed
+			ct.tcpTTL = tcpOutboundFirstClosedTTL
+		}
 	}
-	return tcpEstablishedTTL
+}
+
+func (ct *conntrack) observeTCPFin(flags uint16, direction int) {
+	if flags&zctcpip.TCPFin == 0 {
+		return
+	}
+	if direction == 1 {
+		ct.tcpState = tcpStateInboundFin
+	} else {
+		ct.tcpState = tcpStateOutboundFin
+	}
 }
 
 func (m *conntrackMgr) markAuth(authID uint64, token string, err error) {
