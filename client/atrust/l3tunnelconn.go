@@ -761,14 +761,14 @@ func getDataPayload(token string, packet []byte) *dataFrame {
 
 func putDataPayload(frame *dataFrame) {
 	// Avoid retaining unexpectedly large packets in the process-wide pool.
-	if cap(frame.payload) > maxDataPayload {
+	if cap(frame.payload) > maxPooledDataPayload {
 		return
 	}
 	frame.payload = frame.payload[:0]
 	dataFramePool.Put(frame)
 }
 
-const maxDataPayload = 4096
+const maxPooledDataPayload = 4096
 
 func parseDataPayload(payload []byte) ([][]byte, error) {
 	if len(payload) < 4 {
@@ -807,7 +807,14 @@ func readDataRespPayload(r *bufio.Reader) ([]byte, string, error) {
 		return nil, "", err
 	}
 	payloadLen := int(binary.BigEndian.Uint16(peek))
-	if payloadLen > 0 && payloadLen <= maxDataPayload {
+	lengthPrefixed := payloadLen > 0 && payloadLen <= maxPooledDataPayload
+	if payloadLen > maxPooledDataPayload {
+		lengthPrefixed, err = isLargeLengthPrefixedIPPacket(r, payloadLen)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	if lengthPrefixed {
 		if _, err := r.Discard(2); err != nil {
 			return nil, "", err
 		}
@@ -859,6 +866,29 @@ func readDataRespPayload(r *bufio.Reader) ([]byte, string, error) {
 		payload = append(payload, pkt...)
 	}
 	return payload, "token", nil
+}
+
+func isLargeLengthPrefixedIPPacket(r *bufio.Reader, payloadLen int) (bool, error) {
+	prefix, err := r.Peek(3)
+	if err != nil {
+		return false, err
+	}
+	switch prefix[2] >> 4 {
+	case zctcpip.IPv4Version:
+		header, err := r.Peek(6)
+		if err != nil {
+			return false, err
+		}
+		return int(binary.BigEndian.Uint16(header[4:6])) == payloadLen, nil
+	case 6:
+		header, err := r.Peek(8)
+		if err != nil {
+			return false, err
+		}
+		return int(binary.BigEndian.Uint16(header[6:8]))+40 == payloadLen, nil
+	default:
+		return false, nil
+	}
 }
 
 func parseDataMeta(payload []byte) (packetMeta, int, error) {

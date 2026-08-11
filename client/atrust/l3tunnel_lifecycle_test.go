@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -333,6 +334,37 @@ func TestPooledDataPayloadPreservesWireFormat(t *testing.T) {
 		t.Fatalf("reused payload = % X, want % X", next.payload, wantNext)
 	}
 	putDataPayload(next)
+}
+
+func TestReadDataResponseAcceptsLargeLengthPrefixedIPPacket(t *testing.T) {
+	payload := make([]byte, 5000)
+	payload[0] = zctcpip.IPv4Version << 4
+	binary.BigEndian.PutUint16(payload[2:4], uint16(len(payload)))
+	frame := make([]byte, 2+len(payload))
+	binary.BigEndian.PutUint16(frame[:2], uint16(len(payload)))
+	copy(frame[2:], payload)
+
+	got, mode, err := readDataRespPayload(bufio.NewReader(bytes.NewReader(frame)))
+	if err != nil {
+		t.Fatalf("readDataRespPayload() error = %v", err)
+	}
+	if mode != "len" || !bytes.Equal(got, payload) {
+		t.Fatalf("mode=%q len=%d, want len mode with %d bytes", mode, len(got), len(payload))
+	}
+}
+
+func TestReadDataResponseDoesNotMistakeTokenForLargeLength(t *testing.T) {
+	token := bytes.Repeat([]byte("ab"), 16)
+	frame := append([]byte{byte(len(token))}, token...)
+	frame = append(frame, 0x00, 0x00, 0x00)
+
+	got, mode, err := readDataRespPayload(bufio.NewReader(bytes.NewReader(frame)))
+	if err != nil {
+		t.Fatalf("readDataRespPayload() error = %v", err)
+	}
+	if mode != "token" || !bytes.Equal(got, frame) {
+		t.Fatalf("mode=%q payload=% X, want token mode", mode, got)
+	}
 }
 
 func BenchmarkGetDataPayload(b *testing.B) {
