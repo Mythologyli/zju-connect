@@ -835,7 +835,7 @@ func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
 	manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
 	conn := &l3TunnelConn{closeCh: make(chan struct{}), authWake: make(chan struct{}, 1), conntrackMgr: manager}
 	response, err := json.Marshal(authResponseIP{
-		Code: 1, Message: "server busy, try again", Data: authResponseIPData{ConntrackHash: ct.authID},
+		Code: authServerBusyCode, Data: authResponseIPData{ConntrackHash: ct.authID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -850,6 +850,16 @@ func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
 	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
 	if len(jobs) != 1 || jobs[0].conntrack != ct {
 		t.Fatalf("delayed retry jobs = %v, want conntrack", jobs)
+	}
+}
+
+func TestAuthBusyMessageWithoutBusyCodeIsNotRetried(t *testing.T) {
+	resp := authResponseIP{Code: 1, Message: "server busy, try again"}
+	if isRetryableAuthResponse(0, resp) {
+		t.Fatal("free-form busy message was treated as retryable")
+	}
+	if !isRetryableAuthResponse(authServerBusyCode, authResponseIP{}) {
+		t.Fatal("outer busy status was not treated as retryable")
 	}
 }
 

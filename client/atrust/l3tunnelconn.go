@@ -38,9 +38,10 @@ const (
 	defaultHeartbeatMissLimit = 3
 	defaultAuthTimeout        = 8 * time.Second
 	defaultAuthScanInterval   = 250 * time.Millisecond
-	defaultAuthRetryWait      = time.Second
+	defaultAuthRetryWait      = 10 * time.Second
 	defaultAuthMaxAttempts    = 3
 	defaultAuthBatchSize      = 64
+	authServerBusyCode        = 0x86
 )
 
 var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
@@ -554,7 +555,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 		return
 	}
 	if status != 0 {
-		if isRetryableAuthResponse(resp) {
+		if isRetryableAuthResponse(status, resp) {
 			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
 			return
 		}
@@ -564,7 +565,7 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 
 	var err error
 	if resp.Code != 0 {
-		if isRetryableAuthResponse(resp) {
+		if isRetryableAuthResponse(status, resp) {
 			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
 			return
 		}
@@ -581,9 +582,8 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 	c.completeAuthentication(resp.Data.ConntrackHash, token, err)
 }
 
-func isRetryableAuthResponse(resp authResponseIP) bool {
-	message := strings.ToLower(resp.Message)
-	return strings.Contains(message, "busy") || strings.Contains(message, "try again") || strings.Contains(message, "稍后")
+func isRetryableAuthResponse(status byte, resp authResponseIP) bool {
+	return status == authServerBusyCode || resp.Code == authServerBusyCode
 }
 
 func (c *l3TunnelConn) scheduleAuthRetry(authID uint64, delay time.Duration) {
