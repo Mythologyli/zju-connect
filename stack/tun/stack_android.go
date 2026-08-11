@@ -8,6 +8,8 @@ import (
 	"syscall"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ippool"
+	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/ipv4"
 )
@@ -102,7 +104,11 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(client client.Client) (*Stack, error) {
+func (s *Stack) SetupResolve(zcdns.LocalServer) {}
+
+func (s *Stack) SetupIPPool(*ippool.IPPool[client.DomainResource]) {}
+
+func NewStack(client client.Client, _ bool, _ bool, _ []client.IPResource) (*Stack, error) {
 	s := &Stack{}
 
 	s.endpoint = &Endpoint{
