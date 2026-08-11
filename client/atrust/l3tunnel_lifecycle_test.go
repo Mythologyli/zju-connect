@@ -138,6 +138,56 @@ func TestTunnelAuthUsesContextDeadline(t *testing.T) {
 	}
 }
 
+func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	tunnel := &L3Tunnel{
+		client:            client,
+		conns:             make(map[string]*l3TunnelConn),
+		reconnecting:      make(map[string]*l3TunnelConnectCall),
+		dataChan:          make(chan []byte, 1),
+		closeCh:           make(chan struct{}),
+		reconnectDelay:    10 * time.Millisecond,
+		reconnectAttempts: 3,
+	}
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	want := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		incoming:     make(chan []byte),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	var calls atomic.Int32
+	var firstAttempt time.Time
+	var secondAttempt time.Time
+	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
+		switch calls.Add(1) {
+		case 1:
+			firstAttempt = time.Now()
+			return nil, fmt.Errorf("dial failed: %w", net.ErrClosed)
+		default:
+			secondAttempt = time.Now()
+			return want, nil
+		}
+	}
+
+	tunnel.startReconnect("group")
+	got, err := tunnel.getConn("group")
+	if err != nil {
+		t.Fatalf("getConn() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("getConn() = %p, want %p", got, want)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("connect calls = %d, want 2", calls.Load())
+	}
+	if elapsed := secondAttempt.Sub(firstAttempt); elapsed < 15*time.Millisecond {
+		t.Fatalf("retry delay = %s, want exponential backoff", elapsed)
+	}
+	tunnel.Close()
+}
+
 func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	conn := &l3TunnelConn{
