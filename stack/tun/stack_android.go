@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -82,6 +83,7 @@ type Endpoint struct {
 
 	tcpDialer *net.Dialer
 	udpDialer *net.Dialer
+	configMu  sync.RWMutex
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
