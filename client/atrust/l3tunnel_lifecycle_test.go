@@ -1032,13 +1032,13 @@ func TestInitialVIPHeaderValidation(t *testing.T) {
 		length int
 		ok     bool
 	}{
-		{name: "IPv4", header: []byte{l3Version, 0x04, 0x00, 0x01}, length: 6, ok: true},
-		{name: "IPv6", header: []byte{l3Version, 0x04, 0x00, 0x04}, length: 18, ok: true},
-		{name: "dual stack", header: []byte{l3Version, 0x04, 0x00, 0x05}, length: 22, ok: true},
-		{name: "wrong version", header: []byte{0x04, 0x04, 0x00, 0x01}},
-		{name: "wrong command", header: []byte{l3Version, 0x05, 0x00, 0x01}},
-		{name: "failed status", header: []byte{l3Version, 0x04, 0x01, 0x01}},
-		{name: "unknown type", header: []byte{l3Version, 0x04, 0x00, 0xff}},
+		{name: "IPv4", header: []byte{l3Version, 0x00, 0x00, 0x01}, length: 6, ok: true},
+		{name: "IPv6", header: []byte{l3Version, 0x00, 0x00, 0x04}, length: 18, ok: true},
+		{name: "dual stack", header: []byte{l3Version, 0x00, 0x00, 0x05}, length: 22, ok: true},
+		{name: "wrong version", header: []byte{0x04, 0x00, 0x00, 0x01}},
+		{name: "failed status", header: []byte{l3Version, 0x05, 0x00, 0x01}},
+		{name: "invalid reserved byte", header: []byte{l3Version, 0x00, 0x01, 0x01}},
+		{name: "unknown type", header: []byte{l3Version, 0x00, 0x00, 0xff}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1005,11 +1005,14 @@ func parseInitialVIPHeader(header []byte) (int, error) {
 	if len(header) != 4 {
 		return 0, fmt.Errorf("l3-tunnel invalid vip header length %d", len(header))
 	}
-	if header[0] != l3Version || header[1] != 0x04 {
-		return 0, fmt.Errorf("l3-tunnel unexpected vip header: %02x %02x", header[0], header[1])
+	if header[0] != l3Version {
+		return 0, fmt.Errorf("l3-tunnel unexpected vip version: %02x", header[0])
+	}
+	if header[1] != 0 {
+		return 0, fmt.Errorf("l3-tunnel vip status %d", header[1])
 	}
 	if header[2] != 0 {
-		return 0, fmt.Errorf("l3-tunnel vip status %d", header[2])
+		return 0, fmt.Errorf("l3-tunnel invalid vip reserved byte %d", header[2])
 	}
 	switch header[3] {
 	case 1:
