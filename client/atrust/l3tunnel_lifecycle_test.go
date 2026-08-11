@@ -114,6 +114,30 @@ func TestGetConnCoalescesConcurrentConnects(t *testing.T) {
 	tunnel.Close()
 }
 
+func TestTunnelAuthUsesContextDeadline(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	conn := &l3TunnelConn{
+		tlsConn: tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+	}
+	wantDeadline := time.Now().Add(time.Minute)
+	ctx, cancel := context.WithDeadline(context.Background(), wantDeadline)
+	defer cancel()
+
+	if err := conn.withContextDeadline(ctx, func() error {
+		deadlines := transport.recordedDeadlines()
+		if len(deadlines) != 1 || !deadlines[0].Equal(wantDeadline) {
+			t.Fatalf("active deadlines = %v, want [%v]", deadlines, wantDeadline)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("withContextDeadline() error = %v", err)
+	}
+	deadlines := transport.recordedDeadlines()
+	if len(deadlines) != 2 || !deadlines[1].IsZero() {
+		t.Fatalf("recorded deadlines = %v, want active deadline followed by zero", deadlines)
+	}
+}
+
 func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	conn := &l3TunnelConn{
@@ -700,15 +724,28 @@ func stringKey(value int) string {
 }
 
 type trackingNetConn struct {
-	closed    chan struct{}
-	closeOnce sync.Once
+	closed     chan struct{}
+	closeOnce  sync.Once
+	deadlineMu sync.Mutex
+	deadlines  []time.Time
 }
 
-func (*trackingNetConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (c *trackingNetConn) Write(p []byte) (int, error)    { return len(p), nil }
-func (c *trackingNetConn) Close() error                   { c.closeOnce.Do(func() { close(c.closed) }); return nil }
-func (*trackingNetConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
-func (*trackingNetConn) RemoteAddr() net.Addr             { return &net.TCPAddr{} }
-func (*trackingNetConn) SetDeadline(time.Time) error      { return nil }
+func (*trackingNetConn) Read([]byte) (int, error)      { return 0, io.EOF }
+func (c *trackingNetConn) Write(p []byte) (int, error) { return len(p), nil }
+func (c *trackingNetConn) Close() error                { c.closeOnce.Do(func() { close(c.closed) }); return nil }
+func (*trackingNetConn) LocalAddr() net.Addr           { return &net.TCPAddr{} }
+func (*trackingNetConn) RemoteAddr() net.Addr          { return &net.TCPAddr{} }
+func (c *trackingNetConn) SetDeadline(deadline time.Time) error {
+	c.deadlineMu.Lock()
+	c.deadlines = append(c.deadlines, deadline)
+	c.deadlineMu.Unlock()
+	return nil
+}
 func (*trackingNetConn) SetReadDeadline(time.Time) error  { return nil }
 func (*trackingNetConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *trackingNetConn) recordedDeadlines() []time.Time {
+	c.deadlineMu.Lock()
+	defer c.deadlineMu.Unlock()
+	return append([]time.Time(nil), c.deadlines...)
+}

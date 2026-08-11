@@ -193,7 +193,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 	}
 	atomic.StoreInt64(&c.lastHeartbeatResp, time.Now().UnixNano())
 
-	if err := c.authTunnel(); err != nil {
+	if err := c.withContextDeadline(ctx, c.authTunnel); err != nil {
 		_ = c.Close()
 		return nil, err
 	}
@@ -202,6 +202,22 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 	go c.readLoop()
 	go c.heartbeatLoop()
 	return c, nil
+}
+
+func (c *l3TunnelConn) withContextDeadline(ctx context.Context, operation func() error) error {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return operation()
+	}
+	if err := c.tlsConn.SetDeadline(deadline); err != nil {
+		return err
+	}
+	operationErr := operation()
+	clearErr := c.tlsConn.SetDeadline(time.Time{})
+	if operationErr != nil {
+		return operationErr
+	}
+	return clearErr
 }
 
 func (c *l3TunnelConn) Close() error {
