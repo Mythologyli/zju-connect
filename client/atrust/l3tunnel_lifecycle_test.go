@@ -348,6 +348,34 @@ func TestHeartbeatTimeoutClosesTunnelConnection(t *testing.T) {
 	}
 }
 
+func TestHeartbeatWaitsForFirstInterval(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	written := make(chan struct{}, 1)
+	conn := &l3TunnelConn{
+		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:            make(chan struct{}),
+		conntrackMgr:       newConntrackMgr(),
+		heartbeatInterval:  50 * time.Millisecond,
+		heartbeatMissLimit: 2,
+		writeFrameHook: func([]byte) error {
+			written <- struct{}{}
+			return nil
+		},
+	}
+	go conn.heartbeatLoop()
+	select {
+	case <-written:
+		t.Fatal("heartbeat was sent before the first interval")
+	case <-time.After(15 * time.Millisecond):
+	}
+	select {
+	case <-written:
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat was not sent after the first interval")
+	}
+	_ = conn.Close()
+}
+
 func TestLogPacketDisabledAllocatesNothing(t *testing.T) {
 	zlog.DisableDebug()
 	packet := makeUDPPacket(12345, 53)

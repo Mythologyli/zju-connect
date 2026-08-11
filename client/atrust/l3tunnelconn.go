@@ -317,9 +317,6 @@ func (c *l3TunnelConn) heartbeatLoop() {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	if !c.sendHeartbeat() {
-		return
-	}
 	for {
 		select {
 		case <-ticker.C:
