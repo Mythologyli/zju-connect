@@ -80,6 +80,7 @@ type l3TunnelConn struct {
 	heartbeatMisses    int32
 	authWake           chan struct{}
 	writeFrameHook     func([]byte) error
+	dataStream         []byte
 }
 
 type authIP struct {
@@ -163,10 +164,9 @@ type packetMeta struct {
 }
 
 type frame struct {
-	cmd      byte
-	status   byte
-	payload  []byte
-	dataMode string
+	cmd     byte
+	status  byte
+	payload []byte
 }
 
 func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
@@ -243,27 +243,16 @@ func (c *l3TunnelConn) readLoop() {
 
 		switch fr.cmd {
 		case cmdDataResp:
-			if fr.dataMode == "len" {
-				if log.DebugEnabled() {
-					log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
-				}
-				c.refreshIncomingConntrack(fr.payload)
-				if !c.deliverIncoming(fr.payload) {
-					return
-				}
-				continue
-			}
-			packets, err := parseDataPayload(fr.payload)
+			c.dataStream = append(c.dataStream, fr.payload...)
+			packets, remaining, err := splitIncomingIPPackets(c.dataStream)
 			if err != nil {
-				log.DebugPrintf("l3-tunnel parse data payload failed: %v", err)
-				continue
+				log.DebugPrintf("l3-tunnel parse data stream failed: %v", err)
+				_ = c.Close()
+				return
 			}
-			tokenLen := 0
-			if len(fr.payload) > 0 {
-				tokenLen = int(fr.payload[0])
-			}
+			c.dataStream = remaining
 			if log.DebugEnabled() {
-				log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
+				log.DebugPrintf("l3-tunnel recv data packets=%d payloadLen=%d buffered=%d", len(packets), len(fr.payload), len(remaining))
 			}
 			for _, pkt := range packets {
 				c.refreshIncomingConntrack(pkt)
@@ -381,16 +370,18 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 				return frame{cmd: cmd, status: status, payload: payload}, nil
 			}
 			if cmd == cmdDataResp {
-				payload, mode, err := readDataRespPayload(c.reader)
+				payload, err := readDataRespPayload(c.reader)
 				if err != nil {
 					return frame{}, err
 				}
 				if log.DebugEnabled() {
-					raw := append(append([]byte{}, header...), payload...)
+					lenBytes := make([]byte, 2)
+					binary.BigEndian.PutUint16(lenBytes, uint16(len(payload)))
+					raw := append(append(append([]byte{}, header...), lenBytes...), payload...)
 					logFrame("recv", raw)
-					log.DebugPrintf("l3-tunnel recv data resp mode=%s payloadLen=%d", mode, len(payload))
+					log.DebugPrintf("l3-tunnel recv data resp payloadLen=%d", len(payload))
 				}
-				return frame{cmd: cmd, payload: payload, dataMode: mode}, nil
+				return frame{cmd: cmd, payload: payload}, nil
 			}
 
 			lenBytes := make([]byte, 2)
@@ -802,94 +793,53 @@ func parseDataPayload(payload []byte) ([][]byte, error) {
 	return packets, nil
 }
 
-func readDataRespPayload(r *bufio.Reader) ([]byte, string, error) {
-	peek, err := r.Peek(2)
-	if err != nil {
-		return nil, "", err
+func readDataRespPayload(r *bufio.Reader) ([]byte, error) {
+	var lenBytes [2]byte
+	if _, err := io.ReadFull(r, lenBytes[:]); err != nil {
+		return nil, err
 	}
-	payloadLen := int(binary.BigEndian.Uint16(peek))
-	lengthPrefixed := payloadLen > 0 && payloadLen <= maxPooledDataPayload
-	if payloadLen > maxPooledDataPayload {
-		lengthPrefixed, err = isLargeLengthPrefixedIPPacket(r, payloadLen)
-		if err != nil {
-			return nil, "", err
-		}
+	payload := make([]byte, int(binary.BigEndian.Uint16(lenBytes[:])))
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, err
 	}
-	if lengthPrefixed {
-		if _, err := r.Discard(2); err != nil {
-			return nil, "", err
-		}
-		payload := make([]byte, payloadLen)
-		if payloadLen > 0 {
-			if _, err := io.ReadFull(r, payload); err != nil {
-				return nil, "", err
-			}
-		}
-		return payload, "len", nil
-	}
-
-	tokenLen, err := r.ReadByte()
-	if err != nil {
-		return nil, "", err
-	}
-	payload := []byte{tokenLen}
-	if tokenLen > 0 {
-		token := make([]byte, int(tokenLen))
-		if _, err := io.ReadFull(r, token); err != nil {
-			return nil, "", err
-		}
-		payload = append(payload, token...)
-	}
-	reserved := make([]byte, 2)
-	if _, err := io.ReadFull(r, reserved); err != nil {
-		return nil, "", err
-	}
-	payload = append(payload, reserved...)
-	count, err := r.ReadByte()
-	if err != nil {
-		return nil, "", err
-	}
-	payload = append(payload, count)
-	for i := 0; i < int(count); i++ {
-		lenBytes := make([]byte, 2)
-		if _, err := io.ReadFull(r, lenBytes); err != nil {
-			return nil, "", err
-		}
-		payload = append(payload, lenBytes...)
-		plen := int(binary.BigEndian.Uint16(lenBytes))
-		if plen == 0 {
-			continue
-		}
-		pkt := make([]byte, plen)
-		if _, err := io.ReadFull(r, pkt); err != nil {
-			return nil, "", err
-		}
-		payload = append(payload, pkt...)
-	}
-	return payload, "token", nil
+	return payload, nil
 }
 
-func isLargeLengthPrefixedIPPacket(r *bufio.Reader, payloadLen int) (bool, error) {
-	prefix, err := r.Peek(3)
-	if err != nil {
-		return false, err
-	}
-	switch prefix[2] >> 4 {
-	case zctcpip.IPv4Version:
-		header, err := r.Peek(6)
-		if err != nil {
-			return false, err
+const maxIncomingIPPacketSize = 1500
+
+func splitIncomingIPPackets(stream []byte) ([][]byte, []byte, error) {
+	var packets [][]byte
+	for len(stream) > 0 {
+		var packetLen int
+		switch stream[0] >> 4 {
+		case zctcpip.IPv4Version:
+			if len(stream) < 4 {
+				return packets, stream, nil
+			}
+			headerLen := int(stream[0]&0x0f) * 4
+			packetLen = int(binary.BigEndian.Uint16(stream[2:4]))
+			if headerLen < 20 || packetLen < headerLen {
+				return nil, nil, fmt.Errorf("invalid IPv4 packet length %d with header length %d", packetLen, headerLen)
+			}
+		case 6:
+			if len(stream) < 6 {
+				return packets, stream, nil
+			}
+			packetLen = 40 + int(binary.BigEndian.Uint16(stream[4:6]))
+		default:
+			return nil, nil, fmt.Errorf("unexpected IP version %d", stream[0]>>4)
 		}
-		return int(binary.BigEndian.Uint16(header[4:6])) == payloadLen, nil
-	case 6:
-		header, err := r.Peek(8)
-		if err != nil {
-			return false, err
+		if packetLen > maxIncomingIPPacketSize {
+			return nil, nil, fmt.Errorf("IP packet length %d exceeds %d", packetLen, maxIncomingIPPacketSize)
 		}
-		return int(binary.BigEndian.Uint16(header[6:8]))+40 == payloadLen, nil
-	default:
-		return false, nil
+		if len(stream) < packetLen {
+			return packets, stream, nil
+		}
+		packet := append([]byte(nil), stream[:packetLen]...)
+		packets = append(packets, packet)
+		stream = stream[packetLen:]
 	}
+	return packets, nil, nil
 }
 
 func parseDataMeta(payload []byte) (packetMeta, int, error) {

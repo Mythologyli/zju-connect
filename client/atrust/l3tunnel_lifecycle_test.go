@@ -229,7 +229,8 @@ func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
 
 func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
-	frameData := []byte{l3Version, cmdDataResp, 0x00, 0x01, 0x45}
+	packet := makeUDPPacket(12345, 53)
+	frameData := append([]byte{l3Version, cmdDataResp, byte(len(packet) >> 8), byte(len(packet))}, packet...)
 	conn := &l3TunnelConn{
 		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
 		reader:       bufio.NewReader(bytes.NewReader(frameData)),
@@ -253,8 +254,8 @@ func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
 	<-conn.incoming
 	select {
 	case packet := <-conn.incoming:
-		if !bytes.Equal(packet, []byte{0x45}) {
-			t.Fatalf("queued packet = % X, want 45", packet)
+		if !bytes.Equal(packet, makeUDPPacket(12345, 53)) {
+			t.Fatalf("queued packet = % X, want UDP packet", packet)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("blocked packet was not delivered after queue space became available")
@@ -336,34 +337,42 @@ func TestPooledDataPayloadPreservesWireFormat(t *testing.T) {
 	putDataPayload(next)
 }
 
-func TestReadDataResponseAcceptsLargeLengthPrefixedIPPacket(t *testing.T) {
-	payload := make([]byte, 5000)
-	payload[0] = zctcpip.IPv4Version << 4
-	binary.BigEndian.PutUint16(payload[2:4], uint16(len(payload)))
+func TestReadDataResponseUsesLengthPrefix(t *testing.T) {
+	payload := makeUDPPacket(12345, 53)
 	frame := make([]byte, 2+len(payload))
 	binary.BigEndian.PutUint16(frame[:2], uint16(len(payload)))
 	copy(frame[2:], payload)
 
-	got, mode, err := readDataRespPayload(bufio.NewReader(bytes.NewReader(frame)))
+	got, err := readDataRespPayload(bufio.NewReader(bytes.NewReader(frame)))
 	if err != nil {
 		t.Fatalf("readDataRespPayload() error = %v", err)
 	}
-	if mode != "len" || !bytes.Equal(got, payload) {
-		t.Fatalf("mode=%q len=%d, want len mode with %d bytes", mode, len(got), len(payload))
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("payload=% X, want % X", got, payload)
 	}
 }
 
-func TestReadDataResponseDoesNotMistakeTokenForLargeLength(t *testing.T) {
-	token := bytes.Repeat([]byte("ab"), 16)
-	frame := append([]byte{byte(len(token))}, token...)
-	frame = append(frame, 0x00, 0x00, 0x00)
+func TestSplitIncomingIPPacketsHandlesMultipleAndPartialPackets(t *testing.T) {
+	first := makeUDPPacket(12345, 53)
+	second := makeUDPPacket(23456, 443)
+	stream := append(append([]byte{}, first...), second[:10]...)
 
-	got, mode, err := readDataRespPayload(bufio.NewReader(bytes.NewReader(frame)))
-	if err != nil {
-		t.Fatalf("readDataRespPayload() error = %v", err)
+	packets, remaining, err := splitIncomingIPPackets(stream)
+	if err != nil || len(packets) != 1 || !bytes.Equal(packets[0], first) {
+		t.Fatalf("first split packets=%d err=%v", len(packets), err)
 	}
-	if mode != "token" || !bytes.Equal(got, frame) {
-		t.Fatalf("mode=%q payload=% X, want token mode", mode, got)
+	packets, remaining, err = splitIncomingIPPackets(append(remaining, second[10:]...))
+	if err != nil || len(packets) != 1 || !bytes.Equal(packets[0], second) || len(remaining) != 0 {
+		t.Fatalf("second split packets=%d remaining=%d err=%v", len(packets), len(remaining), err)
+	}
+}
+
+func TestSplitIncomingIPPacketsRejectsOversizedPacket(t *testing.T) {
+	packet := make([]byte, maxIncomingIPPacketSize+1)
+	packet[0] = zctcpip.IPv4Version<<4 | 5
+	binary.BigEndian.PutUint16(packet[2:4], uint16(len(packet)))
+	if _, _, err := splitIncomingIPPackets(packet); err == nil {
+		t.Fatal("oversized IP packet was accepted")
 	}
 }
 
