@@ -61,6 +61,7 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 		// If the cached tunnel conn was closed by network flaps, evict it and retry.
 		log.Printf("Write packet failed with closed connection, evicting conn and retrying: %v", err)
 		t.evictConn(nodeGroupID, conn)
+		t.startReconnect(nodeGroupID)
 		retryConn, retryErr := t.getConn(nodeGroupID)
 		if retryErr != nil {
 			if isClosedConnErr(retryErr) {
@@ -79,6 +80,7 @@ func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID str
 	if isClosedConnErr(err) {
 		log.Printf("Drop packet while l3-tunnel reconnect remains unavailable: %v", err)
 		t.evictConn(nodeGroupID, conn)
+		t.startReconnect(nodeGroupID)
 		return nil
 	}
 	return err

@@ -145,7 +145,7 @@ func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
 	tunnel := &L3Tunnel{
 		client:            client,
 		conns:             make(map[string]*l3TunnelConn),
-		reconnecting:      make(map[string]*l3TunnelConnectCall),
+		connecting:        make(map[string]*l3TunnelConnectCall),
 		dataChan:          make(chan []byte, 1),
 		closeCh:           make(chan struct{}),
 		reconnectDelay:    10 * time.Millisecond,
@@ -185,6 +185,52 @@ func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
 	}
 	if elapsed := secondAttempt.Sub(firstAttempt); elapsed < 15*time.Millisecond {
 		t.Fatalf("retry delay = %s, want exponential backoff", elapsed)
+	}
+	tunnel.Close()
+}
+
+func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	tunnel := &L3Tunnel{
+		client:            client,
+		conns:             make(map[string]*l3TunnelConn),
+		connecting:        make(map[string]*l3TunnelConnectCall),
+		dataChan:          make(chan []byte, 1),
+		closeCh:           make(chan struct{}),
+		reconnectDelay:    time.Millisecond,
+		reconnectAttempts: 1,
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	want := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		incoming:     make(chan []byte),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	var calls atomic.Int32
+	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
+		calls.Add(1)
+		close(started)
+		<-release
+		return want, nil
+	}
+
+	result := make(chan *l3TunnelConn, 1)
+	go func() {
+		conn, _ := tunnel.getConn("group")
+		result <- conn
+	}()
+	<-started
+	tunnel.startReconnect("group")
+	close(release)
+	if got := <-result; got != want {
+		t.Fatalf("getConn() = %p, want %p", got, want)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("connect calls = %d, want 1", got)
 	}
 	tunnel.Close()
 }
