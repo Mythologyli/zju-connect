@@ -33,13 +33,13 @@ const (
 	cmdHeartbeatResp = 0x95
 	cmdSecondVipResp = 0x96
 
-	defaultHeartbeatInterval = 25 * time.Second
-	defaultHeartbeatTimeout  = 75 * time.Second
-	defaultAuthTimeout       = 8 * time.Second
-	defaultAuthScanInterval  = 250 * time.Millisecond
-	defaultAuthRetryWait     = time.Second
-	defaultAuthMaxAttempts   = 3
-	defaultAuthBatchSize     = 64
+	defaultHeartbeatInterval  = 10 * time.Second
+	defaultHeartbeatMissLimit = 3
+	defaultAuthTimeout        = 8 * time.Second
+	defaultAuthScanInterval   = 250 * time.Millisecond
+	defaultAuthRetryWait      = time.Second
+	defaultAuthMaxAttempts    = 3
+	defaultAuthBatchSize      = 64
 )
 
 var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
@@ -62,22 +62,22 @@ type clientInfo struct {
 }
 
 type l3TunnelConn struct {
-	addr              string
-	tlsConn           *tls.Conn
-	reader            *bufio.Reader
-	writeMu           sync.Mutex
-	incoming          chan []byte
-	closeOnce         sync.Once
-	closeCh           chan struct{}
-	conntrackMgr      *conntrackMgr
-	signKey           []byte
-	info              clientInfo
-	onVIP             func([]net.IP)
-	heartbeatInterval time.Duration
-	heartbeatTimeout  time.Duration
-	lastHeartbeatResp int64
-	authWake          chan struct{}
-	writeFrameHook    func([]byte) error
+	addr               string
+	tlsConn            *tls.Conn
+	reader             *bufio.Reader
+	writeMu            sync.Mutex
+	incoming           chan []byte
+	closeOnce          sync.Once
+	closeCh            chan struct{}
+	conntrackMgr       *conntrackMgr
+	signKey            []byte
+	info               clientInfo
+	onVIP              func([]net.IP)
+	heartbeatInterval  time.Duration
+	heartbeatMissLimit int32
+	heartbeatMisses    int32
+	authWake           chan struct{}
+	writeFrameHook     func([]byte) error
 }
 
 type authIP struct {
@@ -180,21 +180,19 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 	}
 
 	c := &l3TunnelConn{
-		addr:              addr,
-		tlsConn:           tlsConn,
-		reader:            bufio.NewReader(tlsConn),
-		incoming:          make(chan []byte, 128),
-		closeCh:           make(chan struct{}),
-		conntrackMgr:      newConntrackMgr(),
-		signKey:           signKey,
-		info:              info,
-		onVIP:             onVIP,
-		heartbeatInterval: defaultHeartbeatInterval,
-		heartbeatTimeout:  defaultHeartbeatTimeout,
-		authWake:          make(chan struct{}, 1),
+		addr:               addr,
+		tlsConn:            tlsConn,
+		reader:             bufio.NewReader(tlsConn),
+		incoming:           make(chan []byte, 128),
+		closeCh:            make(chan struct{}),
+		conntrackMgr:       newConntrackMgr(),
+		signKey:            signKey,
+		info:               info,
+		onVIP:              onVIP,
+		heartbeatInterval:  defaultHeartbeatInterval,
+		heartbeatMissLimit: defaultHeartbeatMissLimit,
+		authWake:           make(chan struct{}, 1),
 	}
-	atomic.StoreInt64(&c.lastHeartbeatResp, time.Now().UnixNano())
-
 	if err := c.withContextDeadline(ctx, c.authTunnel); err != nil {
 		_ = c.Close()
 		return nil, err
@@ -277,7 +275,7 @@ func (c *l3TunnelConn) readLoop() {
 			c.handleSecondVipResp(fr.status, fr.payload)
 		case cmdHeartbeatResp:
 			log.DebugPrintf("l3-tunnel recv heartbeat")
-			atomic.StoreInt64(&c.lastHeartbeatResp, time.Now().UnixNano())
+			atomic.StoreInt32(&c.heartbeatMisses, 0)
 		default:
 			log.DebugPrintf("l3-tunnel ignore cmd 0x%02x", fr.cmd)
 		}
@@ -298,31 +296,42 @@ func (c *l3TunnelConn) heartbeatLoop() {
 	if interval <= 0 {
 		interval = defaultHeartbeatInterval
 	}
-	timeout := c.heartbeatTimeout
-	if timeout <= 0 {
-		timeout = defaultHeartbeatTimeout
+	missLimit := c.heartbeatMissLimit
+	if missLimit <= 0 {
+		missLimit = defaultHeartbeatMissLimit
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	if !c.sendHeartbeat() {
+		return
+	}
 	for {
 		select {
-		case now := <-ticker.C:
+		case <-ticker.C:
 			c.conntrackMgr.removeExpired()
-			lastResp := time.Unix(0, atomic.LoadInt64(&c.lastHeartbeatResp))
-			if now.Sub(lastResp) >= timeout {
-				log.DebugPrintf("l3-tunnel heartbeat timed out after %s", now.Sub(lastResp))
+			misses := atomic.LoadInt32(&c.heartbeatMisses)
+			if misses >= missLimit {
+				log.DebugPrintf("l3-tunnel heartbeat timed out after %d missed responses", misses)
 				_ = c.Close()
 				return
 			}
-			if err := c.writeFrame([]byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}); err != nil {
-				log.DebugPrintf("l3-tunnel heartbeat write failed: %v", err)
-				_ = c.Close()
+			if !c.sendHeartbeat() {
 				return
 			}
 		case <-c.closeCh:
 			return
 		}
 	}
+}
+
+func (c *l3TunnelConn) sendHeartbeat() bool {
+	atomic.AddInt32(&c.heartbeatMisses, 1)
+	if err := c.writeFrame([]byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}); err != nil {
+		log.DebugPrintf("l3-tunnel heartbeat write failed: %v", err)
+		_ = c.Close()
+		return false
+	}
+	return true
 }
 
 func (c *l3TunnelConn) readFrame() (frame, error) {

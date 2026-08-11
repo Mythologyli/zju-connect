@@ -288,13 +288,13 @@ func TestIncomingBackpressureStopsOnClose(t *testing.T) {
 func TestHeartbeatTimeoutClosesTunnelConnection(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	conn := &l3TunnelConn{
-		tlsConn:           tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
-		closeCh:           make(chan struct{}),
-		conntrackMgr:      newConntrackMgr(),
-		heartbeatInterval: 5 * time.Millisecond,
-		heartbeatTimeout:  10 * time.Millisecond,
+		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:            make(chan struct{}),
+		conntrackMgr:       newConntrackMgr(),
+		heartbeatInterval:  5 * time.Millisecond,
+		heartbeatMissLimit: 2,
+		writeFrameHook:     func([]byte) error { return nil },
 	}
-	atomic.StoreInt64(&conn.lastHeartbeatResp, time.Now().Add(-time.Second).UnixNano())
 
 	go conn.heartbeatLoop()
 	select {
