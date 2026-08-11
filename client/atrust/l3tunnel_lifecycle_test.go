@@ -805,6 +805,20 @@ func TestIncomingPacketRefreshesReverseConntrack(t *testing.T) {
 	}
 }
 
+func TestConntrackKeyIncludesTransportProtocol(t *testing.T) {
+	meta := packetMeta{
+		atype: 4, proto: int(zctcpip.TCP),
+		srcIP: net.IPv4(192, 0, 2, 1), dstIP: net.IPv4(198, 51, 100, 1),
+		srcPort: 12345, dstPort: 443,
+	}
+	tcpKey := connTrackKey(meta)
+	meta.proto = int(zctcpip.UDP)
+	udpKey := connTrackKey(meta)
+	if tcpKey == udpKey {
+		t.Fatalf("TCP and UDP conntrack keys collided: %q", tcpKey)
+	}
+}
+
 func makeTCPPacket(flags uint16) []byte {
 	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.TCPHeaderSize)
 	packet[0] = zctcpip.IPv4Version << 4

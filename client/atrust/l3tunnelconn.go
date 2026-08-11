@@ -1134,5 +1134,5 @@ func firstNonEmpty(values ...string) string {
 }
 
 func connTrackKey(meta packetMeta) string {
-	return fmt.Sprintf("%d:%s:%d-%s:%d", meta.atype, meta.srcIP.String(), meta.srcPort, meta.dstIP.String(), meta.dstPort)
+	return fmt.Sprintf("%d:%d:%s:%d-%s:%d", meta.atype, meta.proto, meta.srcIP.String(), meta.srcPort, meta.dstIP.String(), meta.dstPort)
 }
