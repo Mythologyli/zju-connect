@@ -285,7 +285,7 @@ func (c *l3TunnelConn) refreshIncomingConntrack(packet []byte) {
 	}
 	meta.srcIP, meta.dstIP = meta.dstIP, meta.srcIP
 	meta.srcPort, meta.dstPort = meta.dstPort, meta.srcPort
-	c.conntrackMgr.touch(connTrackKey(meta))
+	c.conntrackMgr.observePacket(connTrackKey(meta), packet, true)
 }
 
 func (c *l3TunnelConn) deliverIncoming(packet []byte) bool {
@@ -436,6 +436,7 @@ func (c *l3TunnelConn) ReadPacket() ([]byte, error) {
 
 func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, pkt []byte) error {
 	ct := c.conntrackMgr.getOrCreate(meta.key, appID, nodeGroupID)
+	c.conntrackMgr.observePacket(meta.key, pkt, false)
 	ct.sendMu.Lock()
 	defer ct.sendMu.Unlock()
 
