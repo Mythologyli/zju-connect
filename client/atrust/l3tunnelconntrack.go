@@ -32,8 +32,10 @@ type conntrack struct {
 	authCh       chan struct{}
 	authErr      error
 	authStarted  uint32
+	authAttempts int
 	authMeta     packetMeta
 	authDeadline time.Time
+	authRetryAt  time.Time
 	sendMu       sync.Mutex
 	pending      [][]byte
 	pendingBytes int
@@ -183,7 +185,7 @@ func (m *conntrackMgr) nextAuthBatch(limit int) ([]conntrackAuthJob, bool) {
 	more := false
 	for element := m.lru.Front(); element != nil; element = element.Next() {
 		ct := element.Value.(*conntrack)
-		if ct.authStarted != 0 || len(ct.pending) == 0 {
+		if ct.authStarted != 0 || len(ct.pending) == 0 || m.now().Before(ct.authRetryAt) {
 			continue
 		}
 		if len(jobs) >= limit {
@@ -203,6 +205,7 @@ func (m *conntrackMgr) markAuthSent(authID uint64, deadline time.Time) {
 		case <-ct.authCh:
 		default:
 			ct.authDeadline = deadline
+			ct.authAttempts++
 		}
 	}
 	m.mu.Unlock()
@@ -216,12 +219,36 @@ func (m *conntrackMgr) expireAuth(now time.Time, err error) int {
 		next := element.Next()
 		ct := element.Value.(*conntrack)
 		if !ct.authDeadline.IsZero() && !now.Before(ct.authDeadline) {
-			m.removeLocked(ct, err)
-			expired++
+			if ct.authAttempts < defaultAuthMaxAttempts {
+				ct.authStarted = 0
+				ct.authDeadline = time.Time{}
+				ct.authRetryAt = now
+			} else {
+				m.removeLocked(ct, err)
+				expired++
+			}
 		}
 		element = next
 	}
 	return expired
+}
+
+func (m *conntrackMgr) retryAuth(authID uint64, delay time.Duration) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ct := m.byID[authID]
+	if ct == nil || ct.authAttempts >= defaultAuthMaxAttempts {
+		return false
+	}
+	select {
+	case <-ct.authCh:
+		return false
+	default:
+	}
+	ct.authStarted = 0
+	ct.authDeadline = time.Time{}
+	ct.authRetryAt = m.now().Add(delay)
+	return true
 }
 
 func (m *conntrackMgr) remove(key string) {

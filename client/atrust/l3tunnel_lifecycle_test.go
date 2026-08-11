@@ -639,7 +639,7 @@ func TestAuthFailureClearsOnlyFailedConntrack(t *testing.T) {
 	}
 }
 
-func TestPendingPacketCacheIsBoundedAndAuthTimeoutIsIsolated(t *testing.T) {
+func TestPendingPacketCacheIsBoundedAndAuthTimeoutRetries(t *testing.T) {
 	manager := newConntrackMgr()
 	ct := manager.getOrCreate("flow", "app", "group")
 	meta := packetMeta{key: ct.key}
@@ -660,15 +660,59 @@ func TestPendingPacketCacheIsBoundedAndAuthTimeoutIsIsolated(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatalf("auth jobs = %d, want 1", len(jobs))
 	}
-	manager.markAuthSent(ct.authID, time.Unix(100, 0))
-	if expired := manager.expireAuth(time.Unix(100, 0), errL3TunnelAuthTimeout); expired != 1 {
-		t.Fatalf("expired auth count = %d, want 1", expired)
+	deadline := time.Unix(100, 0)
+	for attempt := 1; attempt < defaultAuthMaxAttempts; attempt++ {
+		manager.markAuthSent(ct.authID, deadline)
+		if expired := manager.expireAuth(deadline, errL3TunnelAuthTimeout); expired != 0 {
+			t.Fatalf("attempt %d expired auth count = %d, want 0", attempt, expired)
+		}
+		if manager.getByKey(ct.key) != ct {
+			t.Fatalf("attempt %d removed retryable conntrack", attempt)
+		}
+		jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
+		if len(jobs) != 1 || jobs[0].conntrack != ct {
+			t.Fatalf("attempt %d retry jobs = %v, want conntrack", attempt, jobs)
+		}
+	}
+	manager.markAuthSent(ct.authID, deadline)
+	if expired := manager.expireAuth(deadline, errL3TunnelAuthTimeout); expired != 1 {
+		t.Fatalf("final expired auth count = %d, want 1", expired)
 	}
 	if manager.getByKey(ct.key) != nil {
 		t.Fatal("timed out conntrack was not removed")
 	}
 	if manager.getByKey(other.key) != other {
 		t.Fatal("auth timeout removed an unrelated conntrack")
+	}
+}
+
+func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	ct := manager.getOrCreate("flow", "app", "group")
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+	manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
+	conn := &l3TunnelConn{closeCh: make(chan struct{}), authWake: make(chan struct{}, 1), conntrackMgr: manager}
+	response, err := json.Marshal(authResponseIP{
+		Code: 1, Message: "server busy, try again", Data: authResponseIPData{ConntrackHash: ct.authID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.handleAuthResp(0, response)
+
+	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 0 {
+		t.Fatalf("immediate retry jobs = %d, want 0", len(jobs))
+	}
+	now = now.Add(defaultAuthRetryWait)
+	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 1 || jobs[0].conntrack != ct {
+		t.Fatalf("delayed retry jobs = %v, want conntrack", jobs)
 	}
 }
 

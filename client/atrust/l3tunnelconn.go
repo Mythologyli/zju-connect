@@ -37,6 +37,8 @@ const (
 	defaultHeartbeatTimeout  = 75 * time.Second
 	defaultAuthTimeout       = 8 * time.Second
 	defaultAuthScanInterval  = 250 * time.Millisecond
+	defaultAuthRetryWait     = time.Second
+	defaultAuthMaxAttempts   = 3
 	defaultAuthBatchSize     = 64
 )
 
@@ -478,7 +480,7 @@ func (c *l3TunnelConn) authLoop() {
 			}
 		case now := <-ticker.C:
 			if expired := c.conntrackMgr.expireAuth(now, errL3TunnelAuthTimeout); expired > 0 {
-				log.DebugPrintf("l3-tunnel expired %d pending authentications", expired)
+				log.DebugPrintf("l3-tunnel exhausted retries for %d pending authentications", expired)
 			}
 			if !c.dispatchPendingAuth() {
 				return
@@ -524,11 +526,6 @@ func (c *l3TunnelConn) sendAuthRequest(ct *conntrack, meta packetMeta) error {
 }
 
 func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
-	if status != 0 {
-		c.markAuthErrorFromPayload(payload, fmt.Errorf("auth status %d", status))
-		return
-	}
-
 	var resp authResponseIP
 	if err := json.Unmarshal(payload, &resp); err != nil {
 		c.markAuthErrorFromPayload(payload, err)
@@ -538,9 +535,21 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 		c.markAuthErrorFromPayload(payload, fmt.Errorf("missing conntrack hash"))
 		return
 	}
+	if status != 0 {
+		if isRetryableAuthResponse(resp) {
+			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
+			return
+		}
+		c.completeAuthentication(resp.Data.ConntrackHash, "", fmt.Errorf("auth status %d: %s", status, resp.Message))
+		return
+	}
 
 	var err error
 	if resp.Code != 0 {
+		if isRetryableAuthResponse(resp) {
+			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
+			return
+		}
 		err = fmt.Errorf("auth failed: %d %s", resp.Code, resp.Message)
 	}
 	token := strings.TrimSpace(resp.Data.ConnectToken)
@@ -552,6 +561,18 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 	}
 	log.DebugPrintf("l3-tunnel auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
 	c.completeAuthentication(resp.Data.ConntrackHash, token, err)
+}
+
+func isRetryableAuthResponse(resp authResponseIP) bool {
+	message := strings.ToLower(resp.Message)
+	return strings.Contains(message, "busy") || strings.Contains(message, "try again") || strings.Contains(message, "稍后")
+}
+
+func (c *l3TunnelConn) scheduleAuthRetry(authID uint64, delay time.Duration) {
+	if c.conntrackMgr.retryAuth(authID, delay) {
+		log.DebugPrintf("l3-tunnel auth retry scheduled authID=%d delay=%s", authID, delay)
+		c.notifyAuth()
+	}
 }
 
 func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {
