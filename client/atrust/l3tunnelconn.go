@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -245,6 +246,7 @@ func (c *l3TunnelConn) readLoop() {
 				if log.DebugEnabled() {
 					log.DebugPrintf("l3-tunnel recv data packet len=%d", len(fr.payload))
 				}
+				c.refreshIncomingConntrack(fr.payload)
 				if !c.deliverIncoming(fr.payload) {
 					return
 				}
@@ -263,6 +265,7 @@ func (c *l3TunnelConn) readLoop() {
 				log.DebugPrintf("l3-tunnel recv data tokenLen=%d packets=%d payloadLen=%d", tokenLen, len(packets), len(fr.payload))
 			}
 			for _, pkt := range packets {
+				c.refreshIncomingConntrack(pkt)
 				if !c.deliverIncoming(pkt) {
 					return
 				}
@@ -280,6 +283,20 @@ func (c *l3TunnelConn) readLoop() {
 			log.DebugPrintf("l3-tunnel ignore cmd 0x%02x", fr.cmd)
 		}
 	}
+}
+
+func (c *l3TunnelConn) refreshIncomingConntrack(packet []byte) {
+	ipPacket := zctcpip.IPv4Packet(packet)
+	if !ipPacket.Valid() {
+		return
+	}
+	meta, err := buildPacketMeta(ipPacket)
+	if err != nil {
+		return
+	}
+	meta.srcIP, meta.dstIP = meta.dstIP, meta.srcIP
+	meta.srcPort, meta.dstPort = meta.dstPort, meta.srcPort
+	c.conntrackMgr.touch(connTrackKey(meta))
 }
 
 func (c *l3TunnelConn) deliverIncoming(packet []byte) bool {

@@ -77,6 +77,18 @@ func (m *conntrackMgr) getByID(authID uint64) *conntrack {
 	return m.byID[authID]
 }
 
+func (m *conntrackMgr) touch(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ct := m.byKey[key]
+	if ct == nil {
+		return false
+	}
+	ct.lastSeen = m.now()
+	m.lru.MoveToBack(ct.lruElement)
+	return true
+}
+
 func (m *conntrackMgr) getOrCreate(key, appID, nodeGroupID string) *conntrack {
 	m.mu.Lock()
 	defer m.mu.Unlock()

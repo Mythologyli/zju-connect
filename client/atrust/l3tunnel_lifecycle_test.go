@@ -766,15 +766,42 @@ func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
 	}
 }
 
-func TestTCPFinAndResetCloseConntrack(t *testing.T) {
-	for _, flag := range []uint16{zctcpip.TCPFin, zctcpip.TCPRst} {
-		packet := makeTCPPacket(flag)
-		if !packetClosesConntrack(packet) {
-			t.Fatalf("TCP flag 0x%x did not close conntrack", flag)
-		}
+func TestOnlyTCPResetImmediatelyClosesConntrack(t *testing.T) {
+	if packetClosesConntrack(makeTCPPacket(zctcpip.TCPFin)) {
+		t.Fatal("TCP FIN unexpectedly closed half-open conntrack")
+	}
+	if !packetClosesConntrack(makeTCPPacket(zctcpip.TCPRst)) {
+		t.Fatal("TCP RST did not close conntrack")
 	}
 	if packetClosesConntrack(makeTCPPacket(zctcpip.TCPAck)) {
 		t.Fatal("TCP ACK unexpectedly closed conntrack")
+	}
+}
+
+func TestIncomingPacketRefreshesReverseConntrack(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	outgoing := makeUDPPacket(12345, 53)
+	meta, err := buildPacketMeta(outgoing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.key = connTrackKey(meta)
+	ct := manager.getOrCreate(meta.key, "app", "group")
+	now = now.Add(time.Minute)
+
+	incoming := zctcpip.IPv4Packet(makeUDPPacket(53, 12345))
+	incoming.SetSourceIP(meta.dstIP)
+	incoming.SetDestinationIP(meta.srcIP)
+	conn := &l3TunnelConn{conntrackMgr: manager}
+	conn.refreshIncomingConntrack(incoming)
+
+	manager.mu.Lock()
+	lastSeen := ct.lastSeen
+	manager.mu.Unlock()
+	if !lastSeen.Equal(now) {
+		t.Fatalf("lastSeen = %v, want %v", lastSeen, now)
 	}
 }
 

@@ -111,7 +111,7 @@ func packetClosesConntrack(packet []byte) bool {
 		return false
 	}
 	flags := tcpPacket.Flags()
-	return flags&zctcpip.TCPFin != 0 || flags&zctcpip.TCPRst != 0
+	return flags&zctcpip.TCPRst != 0
 }
 
 func buildPacketMeta(packet zctcpip.IPv4Packet) (packetMeta, error) {
