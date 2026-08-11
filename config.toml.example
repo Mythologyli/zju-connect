@@ -58,6 +58,7 @@ auth_type = "auth/psw"
 login_domain = "Radius"
 client_data_file = "client_data.json"
 atrust_server_cert_sha256 = "" # SHA-256 fingerprint; required on first connection when the authentication server uses a private or self-signed certificate.
+insecure_skip_verify = false # Skip all authentication server certificate verification. Insecure; use only for troubleshooting.
 graph_code_file = "" # Optional: captcha image will open in browser if this left empty. If set, the program will save the captcha image to this file and ask user to input the code in terminal.
 cas_ticket = ""
 oauth2_code = ""

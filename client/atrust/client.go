@@ -23,12 +23,13 @@ import (
 )
 
 type Client struct {
-	Username         string
-	SID              string
-	DeviceID         string
-	ConnectionID     string
-	SignKey          string
-	ServerCertSHA256 string
+	Username           string
+	SID                string
+	DeviceID           string
+	ConnectionID       string
+	SignKey            string
+	ServerCertSHA256   string
+	InsecureSkipVerify bool
 
 	serverAddress   string
 	ipResources     []client.IPResource
@@ -63,6 +64,10 @@ func (c *Client) SetSkipTCPTunnelWait(skip bool) {
 
 func (c *Client) SetServerCertSHA256(fingerprint string) {
 	c.ServerCertSHA256 = fingerprint
+}
+
+func (c *Client) SetInsecureSkipVerify(skip bool) {
+	c.InsecureSkipVerify = skip
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -154,6 +159,15 @@ func randHex(n int) string {
 }
 
 func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool) ([]auth.AuthInfo, error) {
+	return GetAuthInfoListWithTLSOptions(serverAddress, serverPort, bindInterface, autoDetectInterface, TLSOptions{})
+}
+
+type TLSOptions struct {
+	ServerCertSHA256   string
+	InsecureSkipVerify bool
+}
+
+func GetAuthInfoListWithTLSOptions(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, tlsOptions TLSOptions) ([]auth.AuthInfo, error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
@@ -161,7 +175,10 @@ func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string,
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
+		ServerCertSHA256:   tlsOptions.ServerCertSHA256,
+		InsecureSkipVerify: tlsOptions.InsecureSkipVerify,
+	}, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
 
@@ -180,6 +197,10 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 }
 
 func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool) error {
+	return SetTrustedWithTLSOptions(serverAddress, serverPort, authData, trusted, bindInterface, autoDetectInterface, TLSOptions{})
+}
+
+func SetTrustedWithTLSOptions(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, tlsOptions TLSOptions) error {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -201,8 +222,13 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
+	certificateHash := tlsOptions.ServerCertSHA256
+	if certificateHash == "" {
+		certificateHash = clientAuthData.ServerCertSHA256
+	}
 	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
-		ServerCertSHA256: clientAuthData.ServerCertSHA256,
+		ServerCertSHA256:   certificateHash,
+		InsecureSkipVerify: tlsOptions.InsecureSkipVerify,
 	}, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
@@ -279,7 +305,8 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			certificateHash = clientAuthData.ServerCertSHA256
 		}
 		sess := auth.NewSessionWithOptions(authServerHost, auth.SessionOptions{
-			ServerCertSHA256: certificateHash,
+			ServerCertSHA256:   certificateHash,
+			InsecureSkipVerify: c.InsecureSkipVerify,
 		}, c.underlayDialer.DialContext)
 
 		var err error

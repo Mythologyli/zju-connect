@@ -91,7 +91,8 @@ func NewSession(server string, dialContext ...func(context.Context, string, stri
 }
 
 type SessionOptions struct {
-	ServerCertSHA256 string
+	ServerCertSHA256   string
+	InsecureSkipVerify bool
 }
 
 func NewSessionWithOptions(server string, opts SessionOptions, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
@@ -105,14 +106,14 @@ func NewSessionWithOptions(server string, opts SessionOptions, dialContext ...fu
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: expectedCertificateHash != "",
+			InsecureSkipVerify: opts.InsecureSkipVerify || expectedCertificateHash != "",
 			VerifyConnection: func(state tls.ConnectionState) error {
 				if len(state.PeerCertificates) == 0 {
 					return fmt.Errorf("TLS peer did not provide a certificate")
 				}
 				digest := sha256.Sum256(state.PeerCertificates[0].Raw)
 				actual := hex.EncodeToString(digest[:])
-				if expectedCertificateHash != "" {
+				if !opts.InsecureSkipVerify && expectedCertificateHash != "" {
 					expected, err := hex.DecodeString(expectedCertificateHash)
 					if err != nil || len(expected) != sha256.Size {
 						return fmt.Errorf("invalid server certificate SHA-256 fingerprint")

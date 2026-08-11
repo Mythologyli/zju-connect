@@ -200,6 +200,8 @@
 
 + `atrust-server-cert-sha256`: aTrust 鉴权服务器证书的 SHA-256 指纹，支持 64 位十六进制字符串或冒号分隔格式。默认为空，此时使用系统 CA 和服务器主机名验证证书；私有或自签证书首次连接时需要显式设置此参数。成功登录后，证书指纹会保存到 `client-data-file`，后续连接将校验该指纹。配置文件中的键名为 `atrust_server_cert_sha256`
 
++ `insecure-skip-verify`: 跳过 aTrust 鉴权服务器的全部证书验证，包括系统 CA、主机名和证书指纹校验。仅建议临时排查问题时使用。配置文件中的键名为 `insecure_skip_verify`，默认为 `false`
+
 + `cas-ticket`: CAS 验证票据，默认为空，此时进入交互式验证
 
 + `phone`: 短信验证码登录时使用的手机号
