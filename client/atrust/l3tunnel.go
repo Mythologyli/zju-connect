@@ -96,11 +96,15 @@ func (t *L3Tunnel) updateVIP(ips []net.IP) {
 	t.vipMu.Lock()
 	changed := ipv4 != nil && !t.ip.Equal(ipv4)
 	t.vipList = updated
-	if ipv4 != nil {
-		t.ip = ipv4
-	}
 	t.vipMu.Unlock()
 	if changed && t.client != nil {
+		if err := t.client.applyIPUpdate(ipv4); err != nil {
+			log.Printf("Failed to apply updated l3-tunnel virtual IP %s: %v", ipv4, err)
+			return
+		}
+		t.vipMu.Lock()
+		t.ip = append(net.IP(nil), ipv4...)
+		t.vipMu.Unlock()
 		t.client.setIP(ipv4)
 		t.client.underlayDialer.ExcludeIP(ipv4)
 		log.Printf("Updated l3-tunnel virtual IP: %s", ipv4)

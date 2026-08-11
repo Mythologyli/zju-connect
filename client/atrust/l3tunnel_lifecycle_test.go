@@ -909,6 +909,11 @@ func TestConntrackKeyIncludesTransportProtocol(t *testing.T) {
 func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
 	client := NewClient("user", "sid", "device", "")
 	client.setIP(net.IPv4(192, 0, 2, 1))
+	var applied net.IP
+	client.SetIPUpdateHandler(func(ip net.IP) error {
+		applied = append(net.IP(nil), ip...)
+		return nil
+	})
 	tunnel := &L3Tunnel{client: client, ip: net.IPv4(192, 0, 2, 1)}
 	ips := []net.IP{net.ParseIP("2001:db8::1"), net.IPv4(198, 51, 100, 7)}
 
@@ -920,7 +925,7 @@ func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := net.IPv4(198, 51, 100, 7)
-	if !got.Equal(want) || !tunnel.ip.Equal(want) {
+	if !got.Equal(want) || !tunnel.ip.Equal(want) || !applied.Equal(want) {
 		t.Fatalf("active VIP client=%s tunnel=%s, want %s", got, tunnel.ip, want)
 	}
 	if len(tunnel.vipList) != 2 || !tunnel.vipList[1].Equal(want) {
@@ -928,18 +933,25 @@ func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
 	}
 }
 
-func TestReadFrameAcceptsAsyncVIPUpdate(t *testing.T) {
-	payload := []byte(`{"data":{"vip":"198.51.100.7"}}`)
-	wire := []byte{l3Version, cmdVipUpdate, 0x00, 0x00, byte(len(payload))}
-	wire = append(wire, payload...)
-	conn := &l3TunnelConn{reader: bufio.NewReader(bytes.NewReader(wire))}
+func TestUpdateVIPKeepsOldAddressWhenStackRejectsUpdate(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	oldIP := net.IPv4(192, 0, 2, 1)
+	client.setIP(oldIP)
+	client.SetIPUpdateHandler(func(net.IP) error { return errors.New("apply failed") })
+	tunnel := &L3Tunnel{client: client, ip: oldIP}
 
-	fr, err := conn.readFrame()
-	if err != nil {
-		t.Fatalf("readFrame() error = %v", err)
+	tunnel.updateVIP([]net.IP{net.IPv4(198, 51, 100, 7)})
+	got, err := client.IP()
+	if err != nil || !got.Equal(oldIP) || !tunnel.ip.Equal(oldIP) {
+		t.Fatalf("rejected update changed client=%s tunnel=%s err=%v", got, tunnel.ip, err)
 	}
-	if fr.cmd != cmdVipUpdate || fr.status != 0 || !bytes.Equal(fr.payload, payload) {
-		t.Fatalf("frame = %+v, want async VIP update", fr)
+}
+
+func TestExtractVIPsUsesOnlyProtocolFields(t *testing.T) {
+	payload := []byte(`{"code":0,"data":{"vip":"198.51.100.7","vip6":"2001:db8::7","gateway":"203.0.113.1"}}`)
+	ips := extractVIPs(payload)
+	if len(ips) != 2 || !ips[0].Equal(net.IPv4(198, 51, 100, 7)) || !ips[1].Equal(net.ParseIP("2001:db8::7")) {
+		t.Fatalf("extractVIPs() = %v", ips)
 	}
 }
 

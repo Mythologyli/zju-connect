@@ -48,6 +48,9 @@ type Client struct {
 	ipMu sync.RWMutex
 	ip   net.IP // Client IP
 
+	ipUpdateMu      sync.RWMutex
+	ipUpdateHandler func(net.IP) error
+
 	l3Tunnel   *L3Tunnel
 	l3TunnelMu sync.Mutex
 
@@ -109,6 +112,22 @@ func (c *Client) setIP(ip net.IP) {
 	c.ipMu.Lock()
 	c.ip = append(net.IP(nil), ip...)
 	c.ipMu.Unlock()
+}
+
+func (c *Client) SetIPUpdateHandler(handler func(net.IP) error) {
+	c.ipUpdateMu.Lock()
+	c.ipUpdateHandler = handler
+	c.ipUpdateMu.Unlock()
+}
+
+func (c *Client) applyIPUpdate(ip net.IP) error {
+	c.ipUpdateMu.RLock()
+	handler := c.ipUpdateHandler
+	c.ipUpdateMu.RUnlock()
+	if handler == nil {
+		return errors.New("network stack does not support virtual IP updates")
+	}
+	return handler(append(net.IP(nil), ip...))
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {

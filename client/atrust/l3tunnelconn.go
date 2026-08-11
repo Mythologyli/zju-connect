@@ -33,7 +33,6 @@ const (
 	cmdHeartbeatReq  = 0x15
 	cmdHeartbeatResp = 0x95
 	cmdSecondVipResp = 0x96
-	cmdVipUpdate     = 0x97
 
 	defaultHeartbeatInterval  = 10 * time.Second
 	defaultHeartbeatMissLimit = 3
@@ -263,7 +262,7 @@ func (c *l3TunnelConn) readLoop() {
 		case cmdAuthResp:
 			log.DebugPrintf("l3-tunnel recv auth resp status=%d payloadLen=%d", fr.status, len(fr.payload))
 			c.handleAuthResp(fr.status, fr.payload)
-		case cmdSecondVipResp, cmdVipUpdate:
+		case cmdSecondVipResp:
 			log.DebugPrintf("l3-tunnel recv vip update cmd=0x%02x status=%d payloadLen=%d", fr.cmd, fr.status, len(fr.payload))
 			c.handleSecondVipResp(fr.status, fr.payload)
 		case cmdHeartbeatResp:
@@ -350,7 +349,7 @@ func (c *l3TunnelConn) readFrame() (frame, error) {
 		if header[0] == l3Version {
 			cmd := header[1]
 
-			if cmd == cmdAuthResp || cmd == cmdSecondVipResp || cmd == cmdVipUpdate {
+			if cmd == cmdAuthResp || cmd == cmdSecondVipResp {
 				statusLen := make([]byte, 3)
 				if _, err := io.ReadFull(c.reader, statusLen); err != nil {
 					return frame{}, err
@@ -1029,34 +1028,31 @@ func parseVirtualIPData(data []byte) []net.IP {
 }
 
 func extractVIPs(payload []byte) []net.IP {
-	var data interface{}
-	if err := json.Unmarshal(payload, &data); err != nil {
+	type virtualIPs struct {
+		VIP      string `json:"vip"`
+		VIP6     string `json:"vip6"`
+		VIPType  any    `json:"vip_type"`
+		VIP6Type any    `json:"vip6_type"`
+	}
+	var resp struct {
+		virtualIPs
+		Data virtualIPs `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &resp); err != nil {
 		return nil
 	}
-
-	ips := make([]net.IP, 0)
-	visitJSONValues(data, func(val string) {
-		ip := net.ParseIP(val)
-		if ip != nil {
-			ips = append(ips, ip)
-		}
-	})
-	return ips
-}
-
-func visitJSONValues(v interface{}, visit func(string)) {
-	switch value := v.(type) {
-	case map[string]interface{}:
-		for _, item := range value {
-			visitJSONValues(item, visit)
-		}
-	case []interface{}:
-		for _, item := range value {
-			visitJSONValues(item, visit)
-		}
-	case string:
-		visit(value)
+	values := resp.virtualIPs
+	if values.VIP == "" && values.VIP6 == "" {
+		values = resp.Data
 	}
+	ips := make([]net.IP, 0, 2)
+	if ip := net.ParseIP(values.VIP); ip != nil && ip.To4() != nil {
+		ips = append(ips, ip.To4())
+	}
+	if ip := net.ParseIP(values.VIP6); ip != nil && ip.To4() == nil {
+		ips = append(ips, ip.To16())
+	}
+	return ips
 }
 
 func protoName(proto int) string {
