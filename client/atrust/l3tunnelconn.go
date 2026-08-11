@@ -31,7 +31,6 @@ const (
 	cmdDataResp      = 0x94
 	cmdHeartbeatReq  = 0x15
 	cmdHeartbeatResp = 0x95
-	cmdSecondVipReq  = 0x16
 	cmdSecondVipResp = 0x96
 
 	defaultHeartbeatInterval = 25 * time.Second
@@ -72,7 +71,6 @@ type l3TunnelConn struct {
 	signKey           []byte
 	info              clientInfo
 	onVIP             func([]net.IP)
-	vipRequested      uint32
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
 	lastHeartbeatResp int64
@@ -538,19 +536,6 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 	}
 	log.DebugPrintf("l3-tunnel auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
 	c.completeAuthentication(resp.Data.ConntrackHash, token, err)
-
-	if err == nil {
-		if atomic.CompareAndSwapUint32(&c.vipRequested, 0, 1) {
-			if writeErr := c.writeFrame(secondVIPRequestFrame()); writeErr != nil {
-				log.DebugPrintf("l3-tunnel second vip request failed: %v", writeErr)
-				_ = c.Close()
-			}
-		}
-	}
-}
-
-func secondVIPRequestFrame() []byte {
-	return []byte{l3Version, cmdSecondVipReq}
 }
 
 func (c *l3TunnelConn) handleSecondVipResp(status byte, payload []byte) {
