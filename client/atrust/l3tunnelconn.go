@@ -973,14 +973,9 @@ func (c *l3TunnelConn) authTunnel() error {
 	}
 	log.DebugPrintf("l3-tunnel recv tunnel vip header len=%d", len(vipHeader))
 	log.DebugDumpHex(vipHeader)
-	if vipHeader[0] != l3Version {
-		return nil
-	}
-
-	addrType := vipHeader[3]
-	dataLen := vipPayloadLength(addrType)
-	if dataLen == 0 {
-		return nil
+	dataLen, err := parseInitialVIPHeader(vipHeader)
+	if err != nil {
+		return err
 	}
 	vipData := make([]byte, dataLen)
 	if _, err := io.ReadFull(c.reader, vipData); err != nil {
@@ -1009,16 +1004,25 @@ func wrapAuthReqData(payload []byte, addrType byte) []byte {
 	return buf
 }
 
-func vipPayloadLength(addrType byte) int {
-	switch addrType {
+func parseInitialVIPHeader(header []byte) (int, error) {
+	if len(header) != 4 {
+		return 0, fmt.Errorf("l3-tunnel invalid vip header length %d", len(header))
+	}
+	if header[0] != l3Version || header[1] != 0x04 {
+		return 0, fmt.Errorf("l3-tunnel unexpected vip header: %02x %02x", header[0], header[1])
+	}
+	if header[2] != 0 {
+		return 0, fmt.Errorf("l3-tunnel vip status %d", header[2])
+	}
+	switch header[3] {
 	case 1:
-		return 6
+		return 6, nil
 	case 4:
-		return 18
+		return 18, nil
 	case 5:
-		return 22
+		return 22, nil
 	default:
-		return 4
+		return 0, fmt.Errorf("l3-tunnel unsupported vip address type %d", header[3])
 	}
 }
 

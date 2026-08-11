@@ -997,6 +997,31 @@ func TestExtractVIPsUsesOnlyProtocolFields(t *testing.T) {
 	}
 }
 
+func TestInitialVIPHeaderValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		header []byte
+		length int
+		ok     bool
+	}{
+		{name: "IPv4", header: []byte{l3Version, 0x04, 0x00, 0x01}, length: 6, ok: true},
+		{name: "IPv6", header: []byte{l3Version, 0x04, 0x00, 0x04}, length: 18, ok: true},
+		{name: "dual stack", header: []byte{l3Version, 0x04, 0x00, 0x05}, length: 22, ok: true},
+		{name: "wrong version", header: []byte{0x04, 0x04, 0x00, 0x01}},
+		{name: "wrong command", header: []byte{l3Version, 0x05, 0x00, 0x01}},
+		{name: "failed status", header: []byte{l3Version, 0x04, 0x01, 0x01}},
+		{name: "unknown type", header: []byte{l3Version, 0x04, 0x00, 0xff}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			length, err := parseInitialVIPHeader(tt.header)
+			if (err == nil) != tt.ok || length != tt.length {
+				t.Fatalf("parseInitialVIPHeader() = %d, %v", length, err)
+			}
+		})
+	}
+}
+
 func makeTCPPacket(flags uint16) []byte {
 	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.TCPHeaderSize)
 	packet[0] = zctcpip.IPv4Version << 4
