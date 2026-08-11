@@ -291,10 +291,18 @@ func (c *l3TunnelConn) refreshIncomingConntrack(packet []byte) {
 
 func (c *l3TunnelConn) deliverIncoming(packet []byte) bool {
 	select {
+	case <-c.closeCh:
+		return false
+	default:
+	}
+	select {
 	case c.incoming <- packet:
 		return true
 	case <-c.closeCh:
 		return false
+	default:
+		log.DebugPrintf("l3-tunnel incoming packet queue full; dropping packet len=%d", len(packet))
+		return true
 	}
 }
 

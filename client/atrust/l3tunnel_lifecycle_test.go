@@ -273,10 +273,11 @@ func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {
 	}
 }
 
-func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
+func TestReadLoopProcessesControlFramesWhenIncomingQueueIsFull(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	packet := makeUDPPacket(12345, 53)
 	frameData := append([]byte{l3Version, cmdDataResp, byte(len(packet) >> 8), byte(len(packet))}, packet...)
+	frameData = append(frameData, l3Version, cmdHeartbeatResp, 0x00, 0x00)
 	conn := &l3TunnelConn{
 		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
 		reader:       bufio.NewReader(bytes.NewReader(frameData)),
@@ -284,6 +285,7 @@ func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
 		closeCh:      make(chan struct{}),
 		conntrackMgr: newConntrackMgr(),
 	}
+	atomic.StoreInt32(&conn.heartbeatMisses, 2)
 	conn.incoming <- []byte("already queued")
 	done := make(chan struct{})
 	go func() {
@@ -293,43 +295,32 @@ func TestReadLoopAppliesBackpressureWhenIncomingQueueIsFull(t *testing.T) {
 
 	select {
 	case <-done:
-		t.Fatal("read loop discarded the packet instead of applying backpressure")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	<-conn.incoming
-	select {
-	case packet := <-conn.incoming:
-		if !bytes.Equal(packet, makeUDPPacket(12345, 53)) {
-			t.Fatalf("queued packet = % X, want UDP packet", packet)
-		}
 	case <-time.After(time.Second):
-		t.Fatal("blocked packet was not delivered after queue space became available")
+		t.Fatal("read loop remained blocked by full incoming queue")
 	}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("read loop did not resume after backpressure was released")
+	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
+		t.Fatalf("heartbeat misses = %d, want control response processed", misses)
+	}
+	if got := <-conn.incoming; !bytes.Equal(got, []byte("already queued")) {
+		t.Fatalf("full queue content changed to % X", got)
 	}
 }
 
-func TestIncomingBackpressureStopsOnClose(t *testing.T) {
+func TestIncomingFullQueueDropsPacket(t *testing.T) {
 	conn := &l3TunnelConn{
 		incoming: make(chan []byte, 1),
 		closeCh:  make(chan struct{}),
 	}
 	conn.incoming <- []byte("full")
-	done := make(chan bool, 1)
-	go func() { done <- conn.deliverIncoming([]byte("blocked")) }()
-
+	if !conn.deliverIncoming([]byte("dropped")) {
+		t.Fatal("full queue was treated as a closed connection")
+	}
+	if got := <-conn.incoming; !bytes.Equal(got, []byte("full")) {
+		t.Fatalf("queued packet = %q, want original packet", got)
+	}
 	close(conn.closeCh)
-	select {
-	case delivered := <-done:
-		if delivered {
-			t.Fatal("packet was reported delivered after close")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("close did not release incoming backpressure")
+	if conn.deliverIncoming([]byte("closed")) {
+		t.Fatal("packet was accepted after close")
 	}
 }
 
