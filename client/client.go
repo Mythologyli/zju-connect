@@ -42,3 +42,15 @@ type Client interface {
 	DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error)
 	NewL3Conn() (io.ReadWriteCloser, error)
 }
+
+type IPUpdateHandlerSetter interface {
+	SetIPUpdateHandler(func(net.IP) error)
+}
+
+func RegisterIPUpdateHandler(c Client, handler func(net.IP) error) bool {
+	setter, ok := c.(IPUpdateHandlerSetter)
+	if ok {
+		setter.SetIPUpdateHandler(handler)
+	}
+	return ok
+}

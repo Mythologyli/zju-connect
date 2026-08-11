@@ -26,6 +26,7 @@ type Endpoint struct {
 	ifceIndex int
 	readLock  sync.Mutex
 	writeLock sync.Mutex
+	configMu  sync.RWMutex
 	ip        net.IP
 
 	ipSetBuilder netaddr.IPSetBuilder
@@ -85,17 +86,17 @@ func (s *Stack) AddDnsServer(dnsServer string, targetHost string) error {
 	return nil
 }
 
-func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
+func NewStack(vpnClient client.Client, dnsHijack, fakeIP bool, ipResources []client.IPResource) (*Stack, error) {
 	var err error
 	s := &Stack{}
 	s.ipResources = ipResources
 	s.fakeIP = fakeIP
 	s.endpoint = &Endpoint{
-		client: client,
+		client: vpnClient,
 	}
 	s.endpoint.ipSetBuilder = netaddr.IPSetBuilder{}
 
-	s.endpoint.ip, err = client.IP()
+	s.endpoint.ip, err = vpnClient.IP()
 	if err != nil {
 		return nil, err
 	}
@@ -171,5 +172,32 @@ func NewStack(client client.Client, dnsHijack, fakeIP bool, ipResources []client
 			}
 		}
 	}
+	client.RegisterIPUpdateHandler(vpnClient, s.updateIP)
 	return s, nil
+}
+
+func (s *Stack) updateIP(ip net.IP) error {
+	newIP := ip.To4()
+	if newIP == nil {
+		return fmt.Errorf("virtual IP update is not IPv4")
+	}
+	s.endpoint.configMu.Lock()
+	defer s.endpoint.configMu.Unlock()
+	oldIP := append(net.IP(nil), s.endpoint.ip...)
+	if oldIP.Equal(newIP) {
+		return nil
+	}
+	add := exec.Command("ifconfig", s.endpoint.ifceName, "inet", newIP.String(), newIP.String(), "netmask", "255.255.255.255", "alias")
+	if output, err := add.CombinedOutput(); err != nil {
+		return fmt.Errorf("add virtual IP: %w: %s", err, output)
+	}
+	del := exec.Command("ifconfig", s.endpoint.ifceName, "inet", oldIP.String(), "-alias")
+	if output, err := del.CombinedOutput(); err != nil {
+		_ = exec.Command("ifconfig", s.endpoint.ifceName, "inet", newIP.String(), "-alias").Run()
+		return fmt.Errorf("remove old virtual IP: %w: %s", err, output)
+	}
+	s.endpoint.ip = append(net.IP(nil), newIP...)
+	s.endpoint.tcpDialer.LocalAddr = &net.TCPAddr{IP: append(net.IP(nil), newIP...)}
+	s.endpoint.udpDialer.LocalAddr = &net.UDPAddr{IP: append(net.IP(nil), newIP...)}
+	return nil
 }
