@@ -3,6 +3,7 @@ package atrust
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -55,6 +56,62 @@ func TestForwardFromConnPreservesPacket(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("forwarder did not stop after connection close")
 	}
+}
+
+func TestGetConnCoalescesConcurrentConnects(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	tunnel := &L3Tunnel{
+		client:     client,
+		conns:      make(map[string]*l3TunnelConn),
+		connecting: make(map[string]*l3TunnelConnectCall),
+		dataChan:   make(chan []byte, 1),
+		closeCh:    make(chan struct{}),
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	want := &l3TunnelConn{
+		tlsConn:      tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		incoming:     make(chan []byte),
+		closeCh:      make(chan struct{}),
+		conntrackMgr: newConntrackMgr(),
+	}
+	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return want, nil
+	}
+
+	const callers = 16
+	results := make(chan *l3TunnelConn, callers)
+	errs := make(chan error, callers)
+	for range callers {
+		go func() {
+			conn, err := tunnel.getConn("group")
+			results <- conn
+			errs <- err
+		}()
+	}
+	<-started
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+
+	for range callers {
+		if err := <-errs; err != nil {
+			t.Fatalf("getConn() error = %v", err)
+		}
+		if got := <-results; got != want {
+			t.Fatalf("getConn() = %p, want %p", got, want)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("connect calls = %d, want 1", got)
+	}
+	tunnel.Close()
 }
 
 func TestForwardFromConnStopsWhenTunnelClosesWithFullQueue(t *testing.T) {

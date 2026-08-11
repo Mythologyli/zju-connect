@@ -19,8 +19,10 @@ type L3Tunnel struct {
 
 	resourceIndex *ipresource.Index
 
-	conns   map[string]*l3TunnelConn
-	connsMu sync.Mutex
+	conns      map[string]*l3TunnelConn
+	connsMu    sync.Mutex
+	connecting map[string]*l3TunnelConnectCall
+	connect    func(context.Context, string) (*l3TunnelConn, error)
 
 	vipMu   sync.Mutex
 	vipList []net.IP
@@ -30,12 +32,28 @@ type L3Tunnel struct {
 	closeOnce sync.Once
 }
 
+type l3TunnelConnectCall struct {
+	done chan struct{}
+	conn *l3TunnelConn
+	err  error
+}
+
 func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 	t := &L3Tunnel{
-		client:   aTrustClient,
-		conns:    make(map[string]*l3TunnelConn),
-		dataChan: make(chan []byte, 4096),
-		closeCh:  make(chan struct{}),
+		client:     aTrustClient,
+		conns:      make(map[string]*l3TunnelConn),
+		connecting: make(map[string]*l3TunnelConnectCall),
+		dataChan:   make(chan []byte, 4096),
+		closeCh:    make(chan struct{}),
+	}
+	t.connect = func(ctx context.Context, addr string) (*l3TunnelConn, error) {
+		info := clientInfo{
+			sid:          aTrustClient.SID,
+			deviceID:     aTrustClient.DeviceID,
+			connectionID: aTrustClient.ConnectionID,
+			username:     aTrustClient.Username,
+		}
+		return newL3TunnelConn(ctx, aTrustClient.underlayDialer.DialTLSContext, addr, info, aTrustClient.SignKey, t.updateVIP)
 	}
 
 	ipResources, err := aTrustClient.IPResources()
@@ -84,8 +102,53 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 		t.connsMu.Unlock()
 		return conn, nil
 	}
+	if call := t.connecting[nodeGroupID]; call != nil {
+		t.connsMu.Unlock()
+		select {
+		case <-call.done:
+			return call.conn, call.err
+		case <-t.closeCh:
+			return nil, net.ErrClosed
+		}
+	}
+	call := &l3TunnelConnectCall{done: make(chan struct{})}
+	if t.connecting == nil {
+		t.connecting = make(map[string]*l3TunnelConnectCall)
+	}
+	t.connecting[nodeGroupID] = call
 	t.connsMu.Unlock()
 
+	conn, err := t.connectConn(nodeGroupID)
+
+	t.connsMu.Lock()
+	delete(t.connecting, nodeGroupID)
+	closed := false
+	select {
+	case <-t.closeCh:
+		closed = true
+	default:
+	}
+	if err == nil && !closed {
+		t.conns[nodeGroupID] = conn
+	} else if err == nil {
+		err = net.ErrClosed
+	}
+	call.conn = conn
+	call.err = err
+	close(call.done)
+	t.connsMu.Unlock()
+
+	if err != nil {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, err
+	}
+	go t.forwardFromConn(nodeGroupID, conn)
+	return conn, nil
+}
+
+func (t *L3Tunnel) connectConn(nodeGroupID string) (*l3TunnelConn, error) {
 	t.client.BestNodesRWMutex.RLock()
 	addr := t.client.BestNodes[nodeGroupID]
 	if addr == "" {
@@ -96,31 +159,9 @@ func (t *L3Tunnel) getConn(nodeGroupID string) (*l3TunnelConn, error) {
 		return nil, fmt.Errorf("no available node for group %s", nodeGroupID)
 	}
 
-	info := clientInfo{
-		sid:          t.client.SID,
-		deviceID:     t.client.DeviceID,
-		connectionID: t.client.ConnectionID,
-		username:     t.client.Username,
-	}
 	ctx, cancel := context.WithTimeout(t.client.lifecycleCtx, 10*time.Second)
 	defer cancel()
-	conn, err := newL3TunnelConn(ctx, t.client.underlayDialer.DialTLSContext, addr, info, t.client.SignKey, t.updateVIP)
-	if err != nil {
-		return nil, err
-	}
-
-	t.connsMu.Lock()
-	if existing := t.conns[nodeGroupID]; existing != nil {
-		t.connsMu.Unlock()
-		_ = conn.Close()
-		return existing, nil
-	}
-	t.conns[nodeGroupID] = conn
-	t.connsMu.Unlock()
-
-	go t.forwardFromConn(nodeGroupID, conn)
-
-	return conn, nil
+	return t.connect(ctx, addr)
 }
 
 func (t *L3Tunnel) evictConn(nodeGroupID string, conn *l3TunnelConn) {
