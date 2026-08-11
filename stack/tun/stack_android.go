@@ -12,6 +12,7 @@ import (
 )
 
 const MTU uint32 = 1400
+const maxInboundPacketSize = 1500
 
 type Stack struct {
 	endpoint *Endpoint
@@ -26,7 +27,7 @@ func (s *Stack) Run() {
 	}
 	// Read from VPN server and send to TUN stack
 	go func() {
-		buf := make([]byte, MTU)
+		buf := make([]byte, maxInboundPacketSize)
 		for {
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {

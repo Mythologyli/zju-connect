@@ -465,6 +465,21 @@ func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 	}
 }
 
+func TestL3ConnReadRejectsShortBuffer(t *testing.T) {
+	packet := make([]byte, maxIncomingIPPacketSize)
+	tunnel := &L3Tunnel{
+		dataChan: make(chan []byte, 1),
+		closeCh:  make(chan struct{}),
+	}
+	tunnel.dataChan <- packet
+	conn := &L3Conn{l3Tunnel: tunnel, closeCh: make(chan struct{})}
+
+	n, err := conn.Read(make([]byte, 1400))
+	if n != 0 || !errors.Is(err, io.ErrShortBuffer) {
+		t.Fatalf("Read() = (%d, %v), want (0, io.ErrShortBuffer)", n, err)
+	}
+}
+
 func TestClosedTunnelErrorsIncludeEOF(t *testing.T) {
 	for _, err := range []error{
 		io.EOF,

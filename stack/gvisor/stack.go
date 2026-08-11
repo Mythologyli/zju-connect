@@ -35,6 +35,7 @@ type Stack struct {
 
 const NICID tcpip.NICID = 1
 const MTU uint32 = 1400
+const maxInboundPacketSize = 1500
 
 type Endpoint struct {
 	client clientpkg.Client
@@ -233,7 +234,7 @@ func (s *Stack) Run() {
 		panic(connErr)
 	}
 	// Read from VPN server and send to gVisor stack
-	buf := make([]byte, MTU)
+	buf := make([]byte, maxInboundPacketSize)
 	for {
 		n, err := s.endpoint.l3Conn.Read(buf)
 		if err != nil {
