@@ -4,14 +4,18 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ippool"
+	"github.com/mythologyli/zju-connect/internal/zcdns"
 	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/ipv4"
 )
 
 const MTU uint32 = 1400
+const maxInboundPacketSize = 1500
 
 type Stack struct {
 	endpoint *Endpoint
@@ -26,7 +30,7 @@ func (s *Stack) Run() {
 	}
 	// Read from VPN server and send to TUN stack
 	go func() {
-		buf := make([]byte, MTU)
+		buf := make([]byte, maxInboundPacketSize)
 		for {
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
@@ -81,6 +85,7 @@ type Endpoint struct {
 
 	tcpDialer *net.Dialer
 	udpDialer *net.Dialer
+	configMu  sync.RWMutex
 }
 
 func (ep *Endpoint) Write(buf []byte) error {
@@ -99,7 +104,11 @@ func (s *Stack) AddRoute(target string) error {
 	return nil
 }
 
-func NewStack(client client.Client) (*Stack, error) {
+func (s *Stack) SetupResolve(zcdns.LocalServer) {}
+
+func (s *Stack) SetupIPPool(*ippool.IPPool[[]client.DomainResource]) {}
+
+func NewStack(client client.Client, _ bool, _ bool, _ []client.IPResource) (*Stack, error) {
 	s := &Stack{}
 
 	s.endpoint = &Endpoint{

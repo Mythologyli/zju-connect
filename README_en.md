@@ -190,8 +190,6 @@
 + `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is empty (try to skip auth).
 + `login-domain`: Login domain, default is `Radius`.
 + `client-data-file`: Client data file path, used to save login status to avoid repeated verification.
-+ `atrust-server-cert-sha256`: SHA-256 fingerprint of the aTrust authentication server certificate. Accepts either 64 hexadecimal characters or a colon-separated fingerprint. When empty, the certificate is verified using the system CA store and server hostname. Set this explicitly for the first connection to a server using a private or self-signed certificate. After a successful login, the fingerprint is stored in `client-data-file` and checked on subsequent connections. The configuration-file key is `atrust_server_cert_sha256`.
-+ `insecure-skip-verify`: Skip all aTrust authentication server certificate verification, including the system CA, hostname, and pinned fingerprint checks. Use only temporarily for troubleshooting. The configuration-file key is `insecure_skip_verify`; the default is `false`.
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
 + `phone`: Phone number used for SMS verification code login.
 + `update-best-nodes-interval`: Interval for updating the optimal line automatically, in seconds, default is `300`. Set to `0` to disable automatic optimal line selection.

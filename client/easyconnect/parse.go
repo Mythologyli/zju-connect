@@ -71,7 +71,7 @@ func (c *Client) parseResources(resources string) error {
 
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
-	c.domainResources = make(map[string]client.DomainResource)
+	c.domainResources = make(client.DomainResources)
 	c.dnsResource = make(map[string][]net.IP)
 
 	element := doc.SelectElement("Resource").SelectElement("Rcs")
@@ -185,11 +185,11 @@ func (c *Client) parseResources(resources string) error {
 				}
 
 				if isDomain {
-					c.domainResources[host] = client.DomainResource{
+					c.domainResources[host] = append(c.domainResources[host], client.DomainResource{
 						PortMin:  portMin,
 						PortMax:  portMax,
 						Protocol: protocol,
-					}
+					})
 				} else {
 					c.ipResources = append(c.ipResources, client.IPResource{
 						IPMin:    ipMin,

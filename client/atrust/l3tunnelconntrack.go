@@ -2,17 +2,41 @@ package atrust
 
 import (
 	"container/list"
+	"encoding/binary"
 	"errors"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/mythologyli/zju-connect/internal/zctcpip"
 )
 
 const (
-	defaultConntrackTTL        = 10 * time.Minute
 	defaultConntrackMaxEntries = 16384
 	defaultPendingPacketLimit  = 64
 	defaultPendingByteLimit    = 256 * 1024
+	tcpOutboundSynTTL          = 60 * time.Second
+	tcpInboundSynTTL           = 120 * time.Second
+	tcpSynAckTTL               = 60 * time.Second
+	tcpResetTTL                = 90 * time.Second
+	tcpInboundFirstClosedTTL   = 120 * time.Second
+	tcpOutboundFirstClosedTTL  = 30 * time.Second
+	tcpEstablishedTTL          = 6 * time.Hour
+	udpConntrackTTL            = 120 * time.Second
+	icmpConntrackTTL           = 30 * time.Second
+	defaultConntrackTTL        = 60 * time.Second
+)
+
+const (
+	tcpStateReset               = 0
+	tcpStateInboundSyn          = 1
+	tcpStateOutboundSyn         = 2
+	tcpStateSynAck              = 3
+	tcpStateEstablished         = 4
+	tcpStateInboundFin          = 5
+	tcpStateInboundFirstClosed  = 7
+	tcpStateOutboundFin         = 9
+	tcpStateOutboundFirstClosed = 10
 )
 
 var errConntrackEvicted = errors.New("l3-tunnel conntrack evicted")
@@ -32,12 +56,18 @@ type conntrack struct {
 	authCh       chan struct{}
 	authErr      error
 	authStarted  uint32
+	authAttempts int
 	authMeta     packetMeta
 	authDeadline time.Time
+	authRetryAt  time.Time
 	sendMu       sync.Mutex
 	pending      [][]byte
 	pendingBytes int
 	lastSeen     time.Time
+	expiresAt    time.Time
+	tcpState     uint8
+	tcpSeq       uint32
+	tcpTTL       time.Duration
 	lruElement   *list.Element
 }
 
@@ -57,7 +87,6 @@ func newConntrackMgr() *conntrackMgr {
 	return &conntrackMgr{
 		byKey:      make(map[string]*conntrack),
 		byID:       make(map[uint64]*conntrack),
-		ttl:        defaultConntrackTTL,
 		maxEntries: defaultConntrackMaxEntries,
 		now:        time.Now,
 	}
@@ -93,6 +122,7 @@ func (m *conntrackMgr) getOrCreate(key, appID, nodeGroupID string) *conntrack {
 		nodeGroupID: nodeGroupID,
 		authCh:      make(chan struct{}),
 		lastSeen:    now,
+		expiresAt:   now.Add(defaultConntrackTTL),
 	}
 	if m.closed {
 		ct.authErr = net.ErrClosed
@@ -106,6 +136,122 @@ func (m *conntrackMgr) getOrCreate(key, appID, nodeGroupID string) *conntrack {
 	m.byKey[key] = ct
 	m.byID[ct.authID] = ct
 	return ct
+}
+
+func (m *conntrackMgr) observePacket(key string, packet []byte, incoming bool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ct := m.byKey[key]
+	if ct == nil {
+		return false
+	}
+	now := m.now()
+	ct.lastSeen = now
+	m.lru.MoveToBack(ct.lruElement)
+	ipPacket := zctcpip.IPv4Packet(packet)
+	if !ipPacket.Valid() {
+		ct.expiresAt = now.Add(defaultConntrackTTL)
+		return true
+	}
+	ct.authMeta.proto = int(ipPacket.Protocol())
+	switch ipPacket.Protocol() {
+	case zctcpip.TCP:
+		tcpPacket := zctcpip.TCPPacket(ipPacket.Payload())
+		if !tcpPacket.Valid() {
+			ct.expiresAt = now.Add(defaultConntrackTTL)
+			return true
+		}
+		direction := 0
+		if incoming {
+			direction = 1
+		}
+		ct.observeTCP(tcpPacket, direction)
+		ct.expiresAt = now.Add(ct.tcpTTL)
+	case zctcpip.UDP:
+		ct.expiresAt = now.Add(udpConntrackTTL)
+	case zctcpip.ICMP:
+		ct.expiresAt = now.Add(icmpConntrackTTL)
+	default:
+		ct.expiresAt = now.Add(defaultConntrackTTL)
+	}
+	return true
+}
+
+func (ct *conntrack) observeTCP(packet zctcpip.TCPPacket, direction int) {
+	flags := packet.Flags()
+	if flags&zctcpip.TCPRst != 0 {
+		ct.tcpState = tcpStateReset
+		ct.tcpTTL = tcpResetTTL
+		return
+	}
+	if ct.tcpTTL == 0 {
+		ct.tcpTTL = defaultConntrackTTL
+	}
+	sequence := binary.BigEndian.Uint32(packet[4:8])
+	acknowledgment := binary.BigEndian.Uint32(packet[8:12])
+
+	switch ct.tcpState {
+	case tcpStateReset:
+		if flags&zctcpip.TCPSyn == 0 {
+			return
+		}
+		ct.tcpSeq = sequence
+		if direction == 1 {
+			ct.tcpState = tcpStateInboundSyn
+			ct.tcpTTL = tcpInboundSynTTL
+		} else {
+			ct.tcpState = tcpStateOutboundSyn
+			ct.tcpTTL = tcpOutboundSynTTL
+		}
+	case tcpStateInboundSyn:
+		if direction != 0 || flags&zctcpip.TCPSyn == 0 {
+			return
+		}
+		if flags&zctcpip.TCPAck != 0 && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateEstablished
+			ct.tcpTTL = tcpEstablishedTTL
+			return
+		}
+		ct.tcpState = tcpStateSynAck
+		ct.tcpSeq = sequence
+		ct.tcpTTL = tcpSynAckTTL
+	case tcpStateOutboundSyn:
+		if direction == 1 && flags&(zctcpip.TCPSyn|zctcpip.TCPAck) == zctcpip.TCPSyn|zctcpip.TCPAck && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateSynAck
+			ct.tcpSeq = sequence
+			ct.tcpTTL = tcpSynAckTTL
+		}
+	case tcpStateSynAck:
+		if direction == 0 && flags&zctcpip.TCPAck != 0 && acknowledgment == ct.tcpSeq+1 {
+			ct.tcpState = tcpStateEstablished
+			ct.tcpTTL = tcpEstablishedTTL
+			return
+		}
+		ct.observeTCPFin(flags, direction)
+	case tcpStateEstablished:
+		ct.observeTCPFin(flags, direction)
+	case tcpStateInboundFin:
+		if direction == 0 && flags&zctcpip.TCPFin != 0 {
+			ct.tcpState = tcpStateInboundFirstClosed
+			ct.tcpTTL = tcpInboundFirstClosedTTL
+		}
+	case tcpStateOutboundFin:
+		if direction == 1 && flags&zctcpip.TCPFin != 0 {
+			ct.tcpState = tcpStateOutboundFirstClosed
+			ct.tcpTTL = tcpOutboundFirstClosedTTL
+		}
+	}
+}
+
+func (ct *conntrack) observeTCPFin(flags uint16, direction int) {
+	if flags&zctcpip.TCPFin == 0 {
+		return
+	}
+	if direction == 1 {
+		ct.tcpState = tcpStateInboundFin
+	} else {
+		ct.tcpState = tcpStateOutboundFin
+	}
 }
 
 func (m *conntrackMgr) markAuth(authID uint64, token string, err error) {
@@ -183,7 +329,7 @@ func (m *conntrackMgr) nextAuthBatch(limit int) ([]conntrackAuthJob, bool) {
 	more := false
 	for element := m.lru.Front(); element != nil; element = element.Next() {
 		ct := element.Value.(*conntrack)
-		if ct.authStarted != 0 || len(ct.pending) == 0 {
+		if ct.authStarted != 0 || len(ct.pending) == 0 || m.now().Before(ct.authRetryAt) {
 			continue
 		}
 		if len(jobs) >= limit {
@@ -203,6 +349,7 @@ func (m *conntrackMgr) markAuthSent(authID uint64, deadline time.Time) {
 		case <-ct.authCh:
 		default:
 			ct.authDeadline = deadline
+			ct.authAttempts++
 		}
 	}
 	m.mu.Unlock()
@@ -216,12 +363,36 @@ func (m *conntrackMgr) expireAuth(now time.Time, err error) int {
 		next := element.Next()
 		ct := element.Value.(*conntrack)
 		if !ct.authDeadline.IsZero() && !now.Before(ct.authDeadline) {
-			m.removeLocked(ct, err)
-			expired++
+			if ct.authAttempts < defaultAuthMaxAttempts {
+				ct.authStarted = 0
+				ct.authDeadline = time.Time{}
+				ct.authRetryAt = now
+			} else {
+				m.removeLocked(ct, err)
+				expired++
+			}
 		}
 		element = next
 	}
 	return expired
+}
+
+func (m *conntrackMgr) retryAuth(authID uint64, delay time.Duration) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ct := m.byID[authID]
+	if ct == nil || ct.authAttempts >= defaultAuthMaxAttempts {
+		return false
+	}
+	select {
+	case <-ct.authCh:
+		return false
+	default:
+	}
+	ct.authStarted = 0
+	ct.authDeadline = time.Time{}
+	ct.authRetryAt = m.now().Add(delay)
+	return true
 }
 
 func (m *conntrackMgr) remove(key string) {
@@ -239,16 +410,17 @@ func (m *conntrackMgr) removeExpired() {
 }
 
 func (m *conntrackMgr) removeExpiredLocked(now time.Time) {
-	if m.ttl <= 0 {
-		return
-	}
-	cutoff := now.Add(-m.ttl)
-	for element := m.lru.Front(); element != nil; element = m.lru.Front() {
+	for element := m.lru.Front(); element != nil; {
+		next := element.Next()
 		ct := element.Value.(*conntrack)
-		if ct.lastSeen.After(cutoff) {
-			return
+		expiresAt := ct.expiresAt
+		if m.ttl > 0 {
+			expiresAt = ct.lastSeen.Add(m.ttl)
 		}
-		m.removeLocked(ct, errConntrackEvicted)
+		if !now.Before(expiresAt) {
+			m.removeLocked(ct, errConntrackEvicted)
+		}
+		element = next
 	}
 }
 

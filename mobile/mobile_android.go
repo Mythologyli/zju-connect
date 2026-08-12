@@ -92,7 +92,7 @@ func StartStack(fd int) {
 		return
 	}
 
-	vpnTUNStack, err := tun.NewStack(client)
+	vpnTUNStack, err := tun.NewStack(client, false, false, nil)
 	if err != nil {
 		return
 	}

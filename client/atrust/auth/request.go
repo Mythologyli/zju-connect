@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,9 +52,10 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 			Security           struct {
 				CSRF string `json:"csrfToken"`
 			} `json:"security"`
-			PubKey         string `json:"pubKey"`
-			PubKeyExp      string `json:"pubKeyExp"`
-			AntiReplayRand string `json:"antiReplayRand"`
+			PubKey         string             `json:"pubKey"`
+			PubKeyExp      string             `json:"pubKeyExp"`
+			AntiReplayRand string             `json:"antiReplayRand"`
+			AntiMITM       antiMITMAttackData `json:"antiMITMAttackData"`
 		} `json:"data"`
 	}
 	err = json.Unmarshal(body, &re)
@@ -61,16 +63,110 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 		return 0, nil, err
 	}
 	log.DebugPrintf("Parsed auth config: %+v", re)
-
-	s.csrfToken = re.Data.CSRF
-	if s.csrfToken == "" {
-		s.csrfToken = re.Data.Security.CSRF
+	responseCSRFToken := re.Data.CSRF
+	if responseCSRFToken == "" {
+		responseCSRFToken = re.Data.Security.CSRF
 	}
+	if len(re.Data.AntiMITM.raw) != 0 {
+		if err := s.checkAntiMITMAuthConfig(resp, re.Data.AntiMITM, responseCSRFToken); err != nil {
+			// Official desktop and Android clients report this through their
+			// event/UI layer, but their authentication callers continue.
+			log.Printf("aTrust anti-MITM check failed: %v", err)
+		}
+	}
+
+	s.csrfToken = responseCSRFToken
 	s.pubKey = re.Data.PubKey
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
 
 	return re.Data.IsLogin, re.Data.AuthServerInfoList, nil
+}
+
+func (s *Session) checkAntiMITMAuthConfig(resp *http.Response, data antiMITMAttackData, csrfToken string) error {
+	if err := verifySangforChallenge(data); err != nil {
+		return err
+	}
+	if err := verifySangforMITMSignature(data); err != nil {
+		return err
+	}
+	if data.Enable != 1 {
+		return nil
+	}
+	if resp.TLS == nil {
+		return fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
+	}
+	if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, data); err != nil {
+		return err
+	}
+	if data.AntiMITMRequest {
+		return nil
+	}
+	return s.performAntiMITMRequest(data, csrfToken)
+}
+
+func (s *Session) performAntiMITMRequest(data antiMITMAttackData, csrfToken string) error {
+	nonce, err := sangforNonce()
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: generate nonce: %w", err)
+	}
+	payload := []byte(fmt.Sprintf("\n            {\n                \"nonce\": \"%s\",\n                \"ticket\": \"%s\"\n            }\n        ", nonce, data.Ticket))
+
+	params := WithSharedParams(nil)
+	if s.deviceID != "" {
+		params.Set("mobileId", s.deviceID)
+	}
+	u := s.baseURL + "/controller/v1/public/antiMITMRequest"
+	req, err := http.NewRequest(http.MethodPost, u+"?"+params.Encode(), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-csrf-token", csrfToken)
+	req.Header.Set("x-sdp-rid", s.rid)
+	req.Header.Set("x-sdp-traceid", s.randSdpId())
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("aTrust anti-MITM request failed with HTTP status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Nonce          string `json:"nonce"`
+			AntiMITMEnable int    `json:"antiMITMEnable"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: invalid response: %w", err)
+	}
+	if result.Data.Nonce != nonce {
+		return fmt.Errorf("aTrust anti-MITM request nonce mismatch")
+	}
+	if result.Code == 10000004 {
+		return fmt.Errorf("aTrust anti-MITM request denied: session not found")
+	}
+	if result.Code == 10000008 {
+		return fmt.Errorf("aTrust anti-MITM request detected a MITM attack")
+	}
+
+	expected := sangforHMAC(sangforSignatureKey(data), body)
+	actual := strings.ToUpper(resp.Header.Get("X-Response-Sig"))
+	if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) != 1 {
+		return fmt.Errorf("aTrust anti-MITM response signature mismatch")
+	}
+	return nil
 }
 
 func (s *Session) reportEnv() error {

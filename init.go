@@ -91,8 +91,6 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
 	conf.UpdateBestNodesInterval = getTOMLVal(confTOML.UpdateBestNodesInterval, 300)
 	conf.SkipTCPTunnelWait = getTOMLVal(confTOML.SkipTCPTunnelWait, false)
-	conf.ATrustServerCertSHA256 = getTOMLVal(confTOML.ATrustServerCertSHA256, "")
-	conf.InsecureSkipVerify = getTOMLVal(confTOML.InsecureSkipVerify, false)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -197,8 +195,6 @@ func init() {
 	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
 	flag.IntVar(&conf.UpdateBestNodesInterval, "update-best-nodes-interval", 300, "Interval to update best nodes in seconds. Set to 0 to disable")
 	flag.BoolVar(&conf.SkipTCPTunnelWait, "skip-tcp-tunnel-wait", false, "Don't wait for aTrust TCP tunnel connection status")
-	flag.StringVar(&conf.ATrustServerCertSHA256, "atrust-server-cert-sha256", "", "Expected SHA-256 fingerprint of the aTrust authentication server certificate")
-	flag.BoolVar(&conf.InsecureSkipVerify, "insecure-skip-verify", false, "Skip aTrust authentication server certificate verification (insecure)")
 	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
 	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
@@ -222,10 +218,7 @@ func init() {
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
-		info, err := atrust.GetAuthInfoListWithTLSOptions(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface, atrust.TLSOptions{
-			ServerCertSHA256:   conf.ATrustServerCertSHA256,
-			InsecureSkipVerify: conf.InsecureSkipVerify,
-		})
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
 			os.Exit(1)
@@ -254,10 +247,7 @@ func init() {
 			os.Exit(1)
 		}
 
-		err = atrust.SetTrustedWithTLSOptions(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface, atrust.TLSOptions{
-			ServerCertSHA256:   conf.ATrustServerCertSHA256,
-			InsecureSkipVerify: conf.InsecureSkipVerify,
-		})
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
 			os.Exit(1)

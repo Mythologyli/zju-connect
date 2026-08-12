@@ -17,18 +17,18 @@ var domainResourceMatchSink bool
 
 func TestMatchDomainResourcePreservesNormalizedSuffixMatching(t *testing.T) {
 	want := client.DomainResource{AppID: "vpn-app"}
-	index := newDomainResourceIndex(map[string]client.DomainResource{".Example.COM.": want})
+	index := newDomainResourceIndex(client.DomainResources{".Example.COM.": {want}})
 	domain, got, ok := matchDomainResource(index, "service.example.com")
 	if !ok {
 		t.Fatal("matchDomainResource() did not find normalized suffix")
 	}
-	if domain != ".Example.COM." || got != want {
+	if domain != ".Example.COM." || len(got) != 1 || got[0] != want {
 		t.Fatalf("matchDomainResource() = (%q, %#v), want original domain and %#v", domain, got, want)
 	}
 }
 
 func TestDomainResourceMatchRequiresLabelBoundary(t *testing.T) {
-	index := newDomainResourceIndex(map[string]client.DomainResource{"example.com": {AppID: "vpn"}})
+	index := newDomainResourceIndex(client.DomainResources{"example.com": {{AppID: "vpn"}}})
 	for _, host := range []string{"example.com", "service.example.com"} {
 		if _, _, ok := index.Match(host); !ok {
 			t.Fatalf("expected %s to match", host)
@@ -40,7 +40,7 @@ func TestDomainResourceMatchRequiresLabelBoundary(t *testing.T) {
 }
 
 func TestWildcardDomainResourceRequiresSubdomain(t *testing.T) {
-	index := newDomainResourceIndex(map[string]client.DomainResource{"*.example.com": {AppID: "vpn"}})
+	index := newDomainResourceIndex(client.DomainResources{"*.example.com": {{AppID: "vpn"}}})
 	if _, _, ok := index.Match("service.example.com"); !ok {
 		t.Fatal("wildcard did not match subdomain")
 	}
@@ -50,9 +50,9 @@ func TestWildcardDomainResourceRequiresSubdomain(t *testing.T) {
 }
 
 func BenchmarkDomainResourceMatch(b *testing.B) {
-	resources := make(map[string]client.DomainResource, 1000)
+	resources := make(client.DomainResources, 1000)
 	for i := 0; i < 1000; i++ {
-		resources[fmt.Sprintf(".resource-%04d.example", i)] = client.DomainResource{}
+		resources[fmt.Sprintf(".resource-%04d.example", i)] = []client.DomainResource{{}}
 	}
 	index := newDomainResourceIndex(resources)
 	const host = "missing.example.com"
@@ -76,6 +76,21 @@ func BenchmarkDomainResourceMatch(b *testing.B) {
 			domainResourceMatchSink = matched
 		}
 	})
+}
+
+func TestDomainResourceMatchPrefersMostSpecificDomain(t *testing.T) {
+	index := newDomainResourceIndex(client.DomainResources{
+		".cnki.net":    {{PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "wildcard"}},
+		"www.cnki.net": {{PortMin: 80, PortMax: 80, Protocol: "tcp", AppID: "exact"}},
+	})
+
+	domain, resources, ok := index.Match("www.cnki.net")
+	if !ok || domain != "www.cnki.net" || len(resources) != 2 || resources[0].AppID != "exact" {
+		t.Fatalf("Match() = (%q, %#v, %v), want exact domain resource", domain, resources, ok)
+	}
+	if resource, matched := client.MatchDomainResource(resources, "tcp", 443); !matched || resource.AppID != "wildcard" {
+		t.Fatalf("443 match = (%#v, %v), want wildcard fallback", resource, matched)
+	}
 }
 
 func TestResolverReleasesCoordinationEntry(t *testing.T) {

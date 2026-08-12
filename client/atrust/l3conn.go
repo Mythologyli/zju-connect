@@ -20,6 +20,9 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 	defer c.recvLock.Unlock()
 	select {
 	case data := <-c.l3Tunnel.dataChan:
+		if len(p) < len(data) {
+			return 0, io.ErrShortBuffer
+		}
 		n = copy(p, data)
 		return n, nil
 	case <-c.closeCh:

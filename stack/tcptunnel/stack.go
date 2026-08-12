@@ -9,7 +9,7 @@ import (
 type Stack struct {
 	client  client.Client
 	resolve zcdns.LocalServer
-	ipPool  *ippool.IPPool[client.DomainResource]
+	ipPool  *ippool.IPPool[[]client.DomainResource]
 }
 
 func (s *Stack) Run() {}
@@ -25,6 +25,6 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
 }
 
-func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[client.DomainResource]) {
+func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[[]client.DomainResource]) {
 	s.ipPool = ipPool
 }

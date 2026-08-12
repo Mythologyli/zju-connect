@@ -109,11 +109,6 @@ func main() {
 
 		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey)
 		vpnClient.(*atrustclient.Client).SetSkipTCPTunnelWait(conf.SkipTCPTunnelWait)
-		vpnClient.(*atrustclient.Client).SetServerCertSHA256(conf.ATrustServerCertSHA256)
-		vpnClient.(*atrustclient.Client).SetInsecureSkipVerify(conf.InsecureSkipVerify)
-		if conf.InsecureSkipVerify {
-			log.Println("Warning: aTrust authentication server certificate verification is disabled")
-		}
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(
@@ -180,14 +175,14 @@ func main() {
 	if conf.Protocol == "easyconnect" {
 		if !conf.DisableZJUConfig {
 			if domainResources == nil {
-				domainResources = make(map[string]client.DomainResource)
+				domainResources = make(client.DomainResources)
 			}
 
-			domainResources["zju.edu.cn"] = client.DomainResource{
+			domainResources["zju.edu.cn"] = []client.DomainResource{{
 				PortMin:  1,
 				PortMax:  65535,
 				Protocol: "all",
-			}
+			}}
 
 			if ipResources == nil {
 				ipResources = []client.IPResource{}
@@ -211,18 +206,18 @@ func main() {
 
 		for _, customProxyDomain := range conf.CustomProxyDomain {
 			if domainResources != nil {
-				domainResources[customProxyDomain] = client.DomainResource{
+				domainResources[customProxyDomain] = append(domainResources[customProxyDomain], client.DomainResource{
 					PortMin:  1,
 					PortMax:  65535,
 					Protocol: "all",
-				}
+				})
 			} else {
-				domainResources = map[string]client.DomainResource{
-					customProxyDomain: {
+				domainResources = client.DomainResources{
+					customProxyDomain: {{
 						PortMin:  1,
 						PortMax:  65535,
 						Protocol: "all",
-					},
+					}},
 				}
 			}
 		}

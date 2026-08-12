@@ -23,18 +23,16 @@ import (
 )
 
 type Client struct {
-	Username           string
-	SID                string
-	DeviceID           string
-	ConnectionID       string
-	SignKey            string
-	ServerCertSHA256   string
-	InsecureSkipVerify bool
+	Username     string
+	SID          string
+	DeviceID     string
+	ConnectionID string
+	SignKey      string
 
 	serverAddress   string
 	ipResources     []client.IPResource
 	resourceIndex   *ipresource.Index
-	domainResources map[string]client.DomainResource
+	domainResources client.DomainResources
 	ipSet           *netaddr.IPSet
 	dnsResource     map[string][]net.IP
 	dnsServer       string
@@ -45,7 +43,11 @@ type Client struct {
 	BestNodes        map[string]string
 	BestNodesRWMutex sync.RWMutex
 
-	ip net.IP // Client IP
+	ipMu sync.RWMutex
+	ip   net.IP // Client IP
+
+	ipUpdateMu      sync.RWMutex
+	ipUpdateHandler func(net.IP) error
 
 	l3Tunnel   *L3Tunnel
 	l3TunnelMu sync.Mutex
@@ -60,14 +62,6 @@ type Client struct {
 
 func (c *Client) SetSkipTCPTunnelWait(skip bool) {
 	c.skipTCPTunnelWait = skip
-}
-
-func (c *Client) SetServerCertSHA256(fingerprint string) {
-	c.ServerCertSHA256 = fingerprint
-}
-
-func (c *Client) SetInsecureSkipVerify(skip bool) {
-	c.InsecureSkipVerify = skip
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -95,11 +89,35 @@ func (c *Client) Close() {
 }
 
 func (c *Client) IP() (net.IP, error) {
+	c.ipMu.RLock()
+	defer c.ipMu.RUnlock()
 	if c.ip == nil {
 		return nil, errors.New("IP not available")
 	}
 
-	return c.ip.To4(), nil
+	return append(net.IP(nil), c.ip.To4()...), nil
+}
+
+func (c *Client) setIP(ip net.IP) {
+	c.ipMu.Lock()
+	c.ip = append(net.IP(nil), ip...)
+	c.ipMu.Unlock()
+}
+
+func (c *Client) SetIPUpdateHandler(handler func(net.IP) error) {
+	c.ipUpdateMu.Lock()
+	c.ipUpdateHandler = handler
+	c.ipUpdateMu.Unlock()
+}
+
+func (c *Client) applyIPUpdate(ip net.IP) error {
+	c.ipUpdateMu.RLock()
+	handler := c.ipUpdateHandler
+	c.ipUpdateMu.RUnlock()
+	if handler == nil {
+		return errors.New("network stack does not support virtual IP updates")
+	}
+	return handler(append(net.IP(nil), ip...))
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {
@@ -118,7 +136,7 @@ func (c *Client) IPResources() ([]client.IPResource, error) {
 	return c.ipResources, nil
 }
 
-func (c *Client) DomainResources() (map[string]client.DomainResource, error) {
+func (c *Client) DomainResources() (client.DomainResources, error) {
 	if c.domainResources == nil {
 		return nil, errors.New("domain resources not available")
 	}
@@ -159,15 +177,6 @@ func randHex(n int) string {
 }
 
 func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool) ([]auth.AuthInfo, error) {
-	return GetAuthInfoListWithTLSOptions(serverAddress, serverPort, bindInterface, autoDetectInterface, TLSOptions{})
-}
-
-type TLSOptions struct {
-	ServerCertSHA256   string
-	InsecureSkipVerify bool
-}
-
-func GetAuthInfoListWithTLSOptions(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, tlsOptions TLSOptions) ([]auth.AuthInfo, error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
@@ -175,10 +184,7 @@ func GetAuthInfoListWithTLSOptions(serverAddress string, serverPort int, bindInt
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
-		ServerCertSHA256:   tlsOptions.ServerCertSHA256,
-		InsecureSkipVerify: tlsOptions.InsecureSkipVerify,
-	}, dialer.DialContext)
+	sess := auth.NewSession(serverHost, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
 
@@ -197,10 +203,6 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 }
 
 func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool) error {
-	return SetTrustedWithTLSOptions(serverAddress, serverPort, authData, trusted, bindInterface, autoDetectInterface, TLSOptions{})
-}
-
-func SetTrustedWithTLSOptions(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, tlsOptions TLSOptions) error {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -222,14 +224,7 @@ func SetTrustedWithTLSOptions(serverAddress string, serverPort int, authData []b
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	certificateHash := tlsOptions.ServerCertSHA256
-	if certificateHash == "" {
-		certificateHash = clientAuthData.ServerCertSHA256
-	}
-	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
-		ServerCertSHA256:   certificateHash,
-		InsecureSkipVerify: tlsOptions.InsecureSkipVerify,
-	}, dialer.DialContext)
+	sess := auth.NewSession(serverHost, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
@@ -300,14 +295,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		} else {
 			authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 		}
-		certificateHash := c.ServerCertSHA256
-		if certificateHash == "" {
-			certificateHash = clientAuthData.ServerCertSHA256
-		}
-		sess := auth.NewSessionWithOptions(authServerHost, auth.SessionOptions{
-			ServerCertSHA256:   certificateHash,
-			InsecureSkipVerify: c.InsecureSkipVerify,
-		}, c.underlayDialer.DialContext)
+		sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
 
 		var err error
 		var loginMethod auth.LoginMethod
@@ -353,7 +341,6 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.Username = loginResult.Username
 		c.SID = loginResult.SID
 		clientAuthData.Cookies = loginResult.Cookies
-		clientAuthData.ServerCertSHA256 = sess.ServerCertificateSHA256()
 
 		resourceData, err = sess.ClientResource()
 		if err != nil {
