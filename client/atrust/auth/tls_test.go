@@ -121,6 +121,66 @@ func TestSangforMITMSignatureVector(t *testing.T) {
 	}
 }
 
+func TestPerformAntiMITMRequest(t *testing.T) {
+	data := antiMITMAttackData{
+		DevicePubKeyMod: "A1B2C3",
+		DevicePubKeyExp: "10001",
+		Challenge:       "challenge-vector",
+		Ticket:          "ticket",
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/controller/v1/public/antiMITMRequest" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("unexpected request: %s %q", r.Method, r.Header.Get("Content-Type"))
+		}
+		var request struct {
+			Nonce  string `json:"nonce"`
+			Ticket string `json:"ticket"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.Nonce) != 64 || request.Ticket != data.Ticket {
+			t.Fatalf("unexpected anti-MITM body: %+v", request)
+		}
+		body := []byte(fmt.Sprintf(`{"code":0,"data":{"nonce":%q,"antiMITMEnable":1}}`, request.Nonce))
+		w.Header().Set("X-Response-Sig", sangforHMAC(sangforSignatureKey(data), body))
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	session := newTLSTestSession(server)
+	if err := session.performAntiMITMRequest(data, "csrf-token"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPerformAntiMITMRequestRejectsResponseSignature(t *testing.T) {
+	data := antiMITMAttackData{
+		DevicePubKeyMod: "A1B2C3",
+		DevicePubKeyExp: "10001",
+		Challenge:       "challenge-vector",
+		Ticket:          "ticket",
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Nonce string `json:"nonce"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = fmt.Fprintf(w, `{"code":0,"data":{"nonce":%q}}`, request.Nonce)
+	}))
+	defer server.Close()
+
+	session := newTLSTestSession(server)
+	if err := session.performAntiMITMRequest(data, ""); err == nil || !strings.Contains(err.Error(), "response signature mismatch") {
+		t.Fatalf("expected response signature mismatch, got %v", err)
+	}
+}
+
 func TestAuthConfigAcceptsMatchingAntiMITMCertificate(t *testing.T) {
 	var encodedCertificate string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -186,6 +246,7 @@ func signedAntiMITMJSON(t *testing.T, enable int, rsaCert, sm2EncCert string) st
 		Challenge:          "challenge-vector",
 		EncryptedChallenge: "E4E065E124F3E6FA5B5125745170A7EE97342BB9E9AE2FF7F523FF5872B9541E",
 		Ticket:             "ticket",
+		AntiMITMRequest:    true,
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {

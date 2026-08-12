@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -95,6 +96,16 @@ func verifySangforMITMSignature(data antiMITMAttackData) error {
 }
 
 func sangforMITMSignature(data antiMITMAttackData) (string, error) {
+	key := sangforSignatureKey(data)
+
+	origin, err := sangforOriginSignatureData(data.raw)
+	if err != nil {
+		return "", err
+	}
+	return sangforHMAC(key, []byte(origin)), nil
+}
+
+func sangforSignatureKey(data antiMITMAttackData) []byte {
 	first := sha256.Sum256([]byte(data.DevicePubKeyMod + data.DevicePubKeyExp + sangforSignatureSalt))
 	secondInput := strings.ToUpper(hex.EncodeToString(first[:])) + data.Challenge
 	second := sha256.Sum256([]byte(secondInput))
@@ -102,14 +113,21 @@ func sangforMITMSignature(data antiMITMAttackData) (string, error) {
 	for i := range key {
 		key[i] = first[i] ^ second[i]
 	}
+	return key
+}
 
-	origin, err := sangforOriginSignatureData(data.raw)
-	if err != nil {
+func sangforHMAC(key, message []byte) string {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write(message)
+	return strings.ToUpper(hex.EncodeToString(mac.Sum(nil)))
+}
+
+func sangforNonce() (string, error) {
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(origin))
-	return strings.ToUpper(hex.EncodeToString(mac.Sum(nil))), nil
+	return strings.ToUpper(hex.EncodeToString(nonce)), nil
 }
 
 func sangforOriginSignatureData(raw []byte) (string, error) {

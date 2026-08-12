@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,6 +63,10 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 		return 0, nil, err
 	}
 	log.DebugPrintf("Parsed auth config: %+v", re)
+	responseCSRFToken := re.Data.CSRF
+	if responseCSRFToken == "" {
+		responseCSRFToken = re.Data.Security.CSRF
+	}
 	if !s.insecureSkipVerify && len(re.Data.AntiMITM.raw) != 0 {
 		if err := verifySangforChallenge(re.Data.AntiMITM); err != nil {
 			return 0, nil, err
@@ -76,18 +81,90 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 			if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, re.Data.AntiMITM); err != nil {
 				return 0, nil, err
 			}
+			if !re.Data.AntiMITM.AntiMITMRequest {
+				if err := s.performAntiMITMRequest(re.Data.AntiMITM, responseCSRFToken); err != nil {
+					return 0, nil, err
+				}
+			}
 		}
 	}
 
-	s.csrfToken = re.Data.CSRF
-	if s.csrfToken == "" {
-		s.csrfToken = re.Data.Security.CSRF
-	}
+	s.csrfToken = responseCSRFToken
 	s.pubKey = re.Data.PubKey
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
 
 	return re.Data.IsLogin, re.Data.AuthServerInfoList, nil
+}
+
+func (s *Session) performAntiMITMRequest(data antiMITMAttackData, csrfToken string) error {
+	if data.Ticket == "" {
+		return fmt.Errorf("aTrust anti-MITM request failed: server ticket is empty")
+	}
+	nonce, err := sangforNonce()
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: generate nonce: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		Nonce  string `json:"nonce"`
+		Ticket string `json:"ticket"`
+	}{Nonce: nonce, Ticket: data.Ticket})
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+
+	params := WithSharedParams(nil)
+	if s.deviceID != "" {
+		params.Set("mobileId", s.deviceID)
+	}
+	u := s.baseURL + "/controller/v1/public/antiMITMRequest"
+	req, err := http.NewRequest(http.MethodPost, u+"?"+params.Encode(), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-csrf-token", csrfToken)
+	req.Header.Set("x-sdp-rid", s.rid)
+	req.Header.Set("x-sdp-traceid", s.randSdpId())
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Nonce          string `json:"nonce"`
+			AntiMITMEnable int    `json:"antiMITMEnable"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("aTrust anti-MITM request failed: invalid response: %w", err)
+	}
+	if result.Data.Nonce != nonce {
+		return fmt.Errorf("aTrust anti-MITM request nonce mismatch")
+	}
+	if result.Code == 10000004 {
+		return fmt.Errorf("aTrust anti-MITM request denied: session not found")
+	}
+	if result.Code == 10000008 {
+		return fmt.Errorf("aTrust anti-MITM request detected a MITM attack")
+	}
+
+	expected := sangforHMAC(sangforSignatureKey(data), body)
+	actual := strings.ToUpper(resp.Header.Get("X-Response-Sig"))
+	if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) != 1 {
+		return fmt.Errorf("aTrust anti-MITM response signature mismatch")
+	}
+	return nil
 }
 
 func (s *Session) reportEnv() error {
