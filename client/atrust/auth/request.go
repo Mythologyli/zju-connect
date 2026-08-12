@@ -51,9 +51,10 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 			Security           struct {
 				CSRF string `json:"csrfToken"`
 			} `json:"security"`
-			PubKey         string `json:"pubKey"`
-			PubKeyExp      string `json:"pubKeyExp"`
-			AntiReplayRand string `json:"antiReplayRand"`
+			PubKey         string             `json:"pubKey"`
+			PubKeyExp      string             `json:"pubKeyExp"`
+			AntiReplayRand string             `json:"antiReplayRand"`
+			AntiMITM       antiMITMAttackData `json:"antiMITMAttackData"`
 		} `json:"data"`
 	}
 	err = json.Unmarshal(body, &re)
@@ -61,6 +62,14 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 		return 0, nil, err
 	}
 	log.DebugPrintf("Parsed auth config: %+v", re)
+	if !s.insecureSkipVerify && re.Data.AntiMITM.Enable == 1 {
+		if resp.TLS == nil {
+			return 0, nil, fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
+		}
+		if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, re.Data.AntiMITM); err != nil {
+			return 0, nil, err
+		}
+	}
 
 	s.csrfToken = re.Data.CSRF
 	if s.csrfToken == "" {

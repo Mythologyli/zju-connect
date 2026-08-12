@@ -84,6 +84,7 @@ type Session struct {
 
 	certificateMu         sync.RWMutex
 	serverCertificateHash string
+	insecureSkipVerify    bool
 }
 
 func NewSession(server string, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
@@ -97,10 +98,11 @@ type SessionOptions struct {
 
 func NewSessionWithOptions(server string, opts SessionOptions, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
 	s := &Session{
-		baseHost: server,
-		baseURL:  "https://" + server,
-		rid:      base64.StdEncoding.EncodeToString([]byte(server)),
-		response: make(map[string]json.RawMessage),
+		baseHost:           server,
+		baseURL:            "https://" + server,
+		rid:                base64.StdEncoding.EncodeToString([]byte(server)),
+		response:           make(map[string]json.RawMessage),
+		insecureSkipVerify: opts.InsecureSkipVerify,
 	}
 	expectedCertificateHash := normalizeCertificateHash(opts.ServerCertSHA256)
 	tr := &http.Transport{
