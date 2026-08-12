@@ -106,7 +106,7 @@ func (s *Stack) AddRoute(target string) error {
 
 func (s *Stack) SetupResolve(zcdns.LocalServer) {}
 
-func (s *Stack) SetupIPPool(*ippool.IPPool[client.DomainResource]) {}
+func (s *Stack) SetupIPPool(*ippool.IPPool[[]client.DomainResource]) {}
 
 func NewStack(client client.Client, _ bool, _ bool, _ []client.IPResource) (*Stack, error) {
 	s := &Stack{}

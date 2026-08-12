@@ -7,9 +7,8 @@ import (
 )
 
 type domainResourceEntry struct {
-	domain   string
-	resource client.DomainResource
-	order    int
+	domain    string
+	resources []client.DomainResource
 }
 
 type domainResourceNode struct {
@@ -21,10 +20,9 @@ type domainResourceIndex struct {
 	root *domainResourceNode
 }
 
-func newDomainResourceIndex(resources map[string]client.DomainResource) *domainResourceIndex {
+func newDomainResourceIndex(resources client.DomainResources) *domainResourceIndex {
 	index := &domainResourceIndex{root: &domainResourceNode{}}
-	order := 0
-	for domain, resource := range resources {
+	for domain, domainResources := range resources {
 		normalized := normalizeHostname(domain)
 		if strings.HasPrefix(normalized, "*.") {
 			normalized = normalized[1:]
@@ -45,31 +43,36 @@ func newDomainResourceIndex(resources map[string]client.DomainResource) *domainR
 			node = child
 		}
 		if node.entry == nil {
-			node.entry = &domainResourceEntry{domain: domain, resource: resource, order: order}
+			node.entry = &domainResourceEntry{domain: domain}
 		}
-		order++
+		node.entry.resources = append(node.entry.resources, domainResources...)
 	}
 	return index
 }
 
-func (i *domainResourceIndex) Match(host string) (string, client.DomainResource, bool) {
+func (i *domainResourceIndex) Match(host string) (string, []client.DomainResource, bool) {
 	if i == nil || i.root == nil {
-		return "", client.DomainResource{}, false
+		return "", nil, false
 	}
 	node := i.root
-	var best *domainResourceEntry
+	var matches []*domainResourceEntry
 	for pos := len(host) - 1; pos >= 0; pos-- {
 		node = node.children[host[pos]]
 		if node == nil {
 			break
 		}
 		boundary := pos == 0 || host[pos] == '.' || host[pos-1] == '.'
-		if node.entry != nil && boundary && (best == nil || node.entry.order < best.order) {
-			best = node.entry
+		if node.entry != nil && boundary {
+			matches = append(matches, node.entry)
 		}
 	}
-	if best == nil {
-		return "", client.DomainResource{}, false
+	if len(matches) == 0 {
+		return "", nil, false
 	}
-	return best.domain, best.resource, true
+	mostSpecific := matches[len(matches)-1]
+	resources := make([]client.DomainResource, 0)
+	for pos := len(matches) - 1; pos >= 0; pos-- {
+		resources = append(resources, matches[pos].resources...)
+	}
+	return mostSpecific.domain, resources, true
 }

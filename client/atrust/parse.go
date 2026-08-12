@@ -75,7 +75,7 @@ func (c *Client) parseResource(resource []byte) error {
 
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
-	c.domainResources = make(map[string]client.DomainResource)
+	c.domainResources = make(client.DomainResources)
 	c.dnsResource = make(map[string][]net.IP)
 
 	for _, app := range clientResource.Data.AppList.Data.AppInfo {
@@ -197,13 +197,13 @@ func (c *Client) parseResource(resource []byte) error {
 							log.DebugPrintf("Ignore unsupported domain pattern: %s", hostStr)
 							continue
 						}
-						c.domainResources[domain] = client.DomainResource{
+						c.domainResources[domain] = append(c.domainResources[domain], client.DomainResource{
 							PortMin:     portMin,
 							PortMax:     portMax,
 							Protocol:    address.Protocol,
 							AppID:       appItem.ID,
 							NodeGroupID: appItem.NodeGroupID,
-						}
+						})
 
 						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", hostStr, portMin, portMax, address.Protocol)
 					}

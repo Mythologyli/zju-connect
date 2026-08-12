@@ -29,11 +29,24 @@ type DomainResource struct {
 	NodeGroupID string
 }
 
+type DomainResources map[string][]DomainResource
+
+func MatchDomainResource(resources []DomainResource, network string, port int) (DomainResource, bool) {
+	for _, resource := range resources {
+		protocolMatches := resource.Protocol == network || resource.Protocol == "all"
+		portMatches := network == "icmp" || resource.PortMin <= port && port <= resource.PortMax
+		if protocolMatches && portMatches {
+			return resource, true
+		}
+	}
+	return DomainResource{}, false
+}
+
 type Client interface {
 	IP() (net.IP, error)
 	IPSet() (*netaddr.IPSet, error)
 	IPResources() ([]IPResource, error)
-	DomainResources() (map[string]DomainResource, error)
+	DomainResources() (DomainResources, error)
 	DNSResource() (map[string][]net.IP, error)
 	DNSServer() (string, error)
 	DNSServers() ([]string, error)

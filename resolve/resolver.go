@@ -28,7 +28,7 @@ type Resolver struct {
 
 	dnsCache *cache.Cache
 
-	IPPool *ippool.IPPool[client.DomainResource]
+	IPPool *ippool.IPPool[[]client.DomainResource]
 
 	timer  *time.Timer
 	useTCP bool
@@ -81,11 +81,11 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		}
 	}()
 	var domainResourceFound = false
-	var domainResource client.DomainResource
-	if domain, resource, found := matchDomainResource(r.domainIndex, host); found {
+	var domainResources []client.DomainResource
+	if domain, resources, found := matchDomainResource(r.domainIndex, host); found {
 		domainResourceFound = true
-		domainResource = resource
-		ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
+		domainResources = resources
+		ctx = context.WithValue(ctx, ContextKeyDomainResource, resources)
 		log.DebugPrintf("Domain resource found: %s", domain)
 	}
 
@@ -101,7 +101,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 			ip := ips[(cursor.Add(1)-1)%uint64(len(ips))]
 			log.Printf("%s -> %s", host, ip.String())
 			if domainResourceFound {
-				err := r.IPPool.SetIPDomain(ip, host, domainResource)
+				err := r.IPPool.SetIPDomain(ip, host, domainResources)
 				if err != nil {
 					log.DebugPrintf("Set IP err: %s", err)
 				}
@@ -111,7 +111,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 
 		if fakeIPValue := ctx.Value(ContextKeyFakeIP); fakeIPValue != nil {
 			if domainResourceFound {
-				ip := r.IPPool.GenerateIP(host, domainResource)
+				ip := r.IPPool.GenerateIP(host, domainResources)
 				log.Printf("%s -> %s (Fake IP)", host, ip.String())
 				return ctx, ip, nil
 			}
@@ -189,7 +189,7 @@ func (r *Resolver) releaseResolutionWaiter(host string, call *sharedResolution) 
 	r.resolutionMu.Unlock()
 }
 
-func matchDomainResource(index *domainResourceIndex, host string) (string, client.DomainResource, bool) {
+func matchDomainResource(index *domainResourceIndex, host string) (string, []client.DomainResource, bool) {
 	return index.Match(host)
 }
 
@@ -356,7 +356,7 @@ func (r *Resolver) Close() {
 	})
 }
 
-func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string][]net.IP, useRemoteDNS bool) *Resolver {
+func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources client.DomainResources, dnsResource map[string][]net.IP, useRemoteDNS bool) *Resolver {
 	//domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
 	//for domain := range domainResource {
 	//	_ = domainSuffixTree.AddDomainSuffix(domain, true)
@@ -401,7 +401,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 		}
 	}
 	var err error
-	resolver.IPPool, err = ippool.NewIPPool[client.DomainResource]("198.18.0.0/16")
+	resolver.IPPool, err = ippool.NewIPPool[[]client.DomainResource]("198.18.0.0/16")
 	if err != nil {
 		log.Fatalf("Create Fake IP Pool failed: %v", err)
 	}

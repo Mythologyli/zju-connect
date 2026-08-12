@@ -331,16 +331,20 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	appID := ""
 	nodeGroupID := ""
 	domain := ""
-	if res := ctx.Value(resolve.ContextKeyDomainResource); res != nil {
-		resource := res.(client.DomainResource)
+	if resource, ok := ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource); ok {
 		appID = resource.AppID
 		nodeGroupID = resource.NodeGroupID
-		if res = ctx.Value(resolve.ContextKeyResolveHost); res != nil {
+		if res := ctx.Value(resolve.ContextKeyResolveHost); res != nil {
 			domain = res.(string)
 		}
-	} else if resource, ok := matchTCPIPResource(c.resourceIndex, addr); ok {
-		appID = resource.AppID
-		nodeGroupID = resource.NodeGroupID
+	}
+	if appID == "" {
+		resource, ok := matchTCPIPResource(c.resourceIndex, addr)
+		if ok {
+			appID = resource.AppID
+			nodeGroupID = resource.NodeGroupID
+			domain = ""
+		}
 	}
 	if appID == "" {
 		return nil, fmt.Errorf("host:%s port:%d is not resource: %w", addr.IP, addr.Port, client.ErrResourceNotFound)

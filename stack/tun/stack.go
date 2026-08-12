@@ -38,7 +38,7 @@ type Stack struct {
 	resourceIndexOnce   sync.Once
 	resourceIndex       *ipresource.Index
 	resourceCache       *resourceDecisionCache
-	ipPool              *ippool.IPPool[client.DomainResource]
+	ipPool              *ippool.IPPool[[]client.DomainResource]
 	fakeIP              bool
 }
 
@@ -46,7 +46,7 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
 }
 
-func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[client.DomainResource]) {
+func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[[]client.DomainResource]) {
 	s.ipPool = ipPool
 }
 
@@ -151,21 +151,15 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 		return fmt.Errorf("protocol %d not supported, skip", packet.Protocol())
 	}
 
-	domain, resource, ok := s.ipPool.GetDomain(packet.DestinationIP())
+	domain, resources, ok := s.ipPool.GetDomain(packet.DestinationIP())
 	if ok {
 		log.DebugPrintf("IP to domain %s", domain)
 
-		if resource.Protocol == protocol || resource.Protocol == "all" {
-			if protocol == "icmp" {
-				return s.processIPV4ICMP(packet, packet.Payload())
-			}
-
-			if resource.PortMin <= port && port <= resource.PortMax {
-				if protocol == "tcp" {
-					return s.processIPV4TCP(packet, packet.Payload())
-				} else {
-					return s.processIPV4UDP(packet, packet.Payload())
-				}
+		if _, matched := client.MatchDomainResource(resources, protocol, port); matched {
+			if protocol == "tcp" {
+				return s.processIPV4TCP(packet, packet.Payload())
+			} else {
+				return s.processIPV4UDP(packet, packet.Payload())
 			}
 		}
 	}
