@@ -2,11 +2,8 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	mathrand "math/rand"
@@ -16,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
@@ -58,9 +54,8 @@ type Cookie struct {
 }
 
 type ClientAuthData struct {
-	Cookies          []Cookie `json:"cookies"`
-	DeviceID         string   `json:"device_id"`
-	ServerCertSHA256 string   `json:"server_cert_sha256,omitempty"`
+	Cookies  []Cookie `json:"cookies"`
+	DeviceID string   `json:"device_id"`
 }
 
 type Session struct {
@@ -81,52 +76,11 @@ type Session struct {
 	ticket         string
 
 	response map[string]json.RawMessage
-
-	certificateMu         sync.RWMutex
-	serverCertificateHash string
 }
 
 func NewSession(server string, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
-	return NewSessionWithOptions(server, SessionOptions{}, dialContext...)
-}
-
-type SessionOptions struct {
-	ServerCertSHA256 string
-}
-
-func NewSessionWithOptions(server string, opts SessionOptions, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
-	s := &Session{
-		baseHost: server,
-		baseURL:  "https://" + server,
-		rid:      base64.StdEncoding.EncodeToString([]byte(server)),
-		response: make(map[string]json.RawMessage),
-	}
-	expectedCertificateHash := normalizeCertificateHash(opts.ServerCertSHA256)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: expectedCertificateHash != "",
-			VerifyConnection: func(state tls.ConnectionState) error {
-				if len(state.PeerCertificates) == 0 {
-					return fmt.Errorf("TLS peer did not provide a certificate")
-				}
-				digest := sha256.Sum256(state.PeerCertificates[0].Raw)
-				actual := hex.EncodeToString(digest[:])
-				if expectedCertificateHash != "" {
-					expected, err := hex.DecodeString(expectedCertificateHash)
-					if err != nil || len(expected) != sha256.Size {
-						return fmt.Errorf("invalid server certificate SHA-256 fingerprint")
-					}
-					if subtle.ConstantTimeCompare(expected, digest[:]) != 1 {
-						return fmt.Errorf("server certificate SHA-256 fingerprint mismatch: got %s", actual)
-					}
-				}
-				s.certificateMu.Lock()
-				s.serverCertificateHash = actual
-				s.certificateMu.Unlock()
-				return nil
-			},
-		},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	if len(dialContext) > 0 && dialContext[0] != nil {
 		tr.DialContext = dialContext[0]
@@ -134,20 +88,13 @@ func NewSessionWithOptions(server string, opts SessionOptions, dialContext ...fu
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
 
-	s.client = client
-	return s
-}
-
-func normalizeCertificateHash(fingerprint string) string {
-	fingerprint = strings.ToLower(fingerprint)
-	fingerprint = strings.ReplaceAll(fingerprint, ":", "")
-	return strings.TrimSpace(fingerprint)
-}
-
-func (s *Session) ServerCertificateSHA256() string {
-	s.certificateMu.RLock()
-	defer s.certificateMu.RUnlock()
-	return s.serverCertificateHash
+	return &Session{
+		client:   client,
+		baseHost: server,
+		baseURL:  "https://" + server,
+		rid:      base64.StdEncoding.EncodeToString([]byte(server)),
+		response: make(map[string]json.RawMessage),
+	}
 }
 
 type AuthInfo struct {

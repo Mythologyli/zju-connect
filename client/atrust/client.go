@@ -23,12 +23,11 @@ import (
 )
 
 type Client struct {
-	Username         string
-	SID              string
-	DeviceID         string
-	ConnectionID     string
-	SignKey          string
-	ServerCertSHA256 string
+	Username     string
+	SID          string
+	DeviceID     string
+	ConnectionID string
+	SignKey      string
 
 	serverAddress   string
 	ipResources     []client.IPResource
@@ -63,10 +62,6 @@ type Client struct {
 
 func (c *Client) SetSkipTCPTunnelWait(skip bool) {
 	c.skipTCPTunnelWait = skip
-}
-
-func (c *Client) SetServerCertSHA256(fingerprint string) {
-	c.ServerCertSHA256 = fingerprint
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -229,9 +224,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
 	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSessionWithOptions(serverHost, auth.SessionOptions{
-		ServerCertSHA256: clientAuthData.ServerCertSHA256,
-	}, dialer.DialContext)
+	sess := auth.NewSession(serverHost, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
@@ -302,13 +295,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		} else {
 			authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 		}
-		certificateHash := c.ServerCertSHA256
-		if certificateHash == "" {
-			certificateHash = clientAuthData.ServerCertSHA256
-		}
-		sess := auth.NewSessionWithOptions(authServerHost, auth.SessionOptions{
-			ServerCertSHA256: certificateHash,
-		}, c.underlayDialer.DialContext)
+		sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
 
 		var err error
 		var loginMethod auth.LoginMethod
@@ -354,7 +341,6 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.Username = loginResult.Username
 		c.SID = loginResult.SID
 		clientAuthData.Cookies = loginResult.Cookies
-		clientAuthData.ServerCertSHA256 = sess.ServerCertificateSHA256()
 
 		resourceData, err = sess.ClientResource()
 		if err != nil {
