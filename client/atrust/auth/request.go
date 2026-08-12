@@ -67,7 +67,7 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 	if responseCSRFToken == "" {
 		responseCSRFToken = re.Data.Security.CSRF
 	}
-	if !s.insecureSkipVerify && len(re.Data.AntiMITM.raw) != 0 {
+	if len(re.Data.AntiMITM.raw) != 0 {
 		if err := verifySangforChallenge(re.Data.AntiMITM); err != nil {
 			return 0, nil, err
 		}
@@ -98,20 +98,11 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 }
 
 func (s *Session) performAntiMITMRequest(data antiMITMAttackData, csrfToken string) error {
-	if data.Ticket == "" {
-		return fmt.Errorf("aTrust anti-MITM request failed: server ticket is empty")
-	}
 	nonce, err := sangforNonce()
 	if err != nil {
 		return fmt.Errorf("aTrust anti-MITM request failed: generate nonce: %w", err)
 	}
-	payload, err := json.Marshal(struct {
-		Nonce  string `json:"nonce"`
-		Ticket string `json:"ticket"`
-	}{Nonce: nonce, Ticket: data.Ticket})
-	if err != nil {
-		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
-	}
+	payload := []byte(fmt.Sprintf("\n            {\n                \"nonce\": \"%s\",\n                \"ticket\": \"%s\"\n            }\n        ", nonce, data.Ticket))
 
 	params := WithSharedParams(nil)
 	if s.deviceID != "" {
@@ -136,6 +127,9 @@ func (s *Session) performAntiMITMRequest(data antiMITMAttackData, csrfToken stri
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("aTrust anti-MITM request failed with HTTP status %d", resp.StatusCode)
 	}
 
 	var result struct {

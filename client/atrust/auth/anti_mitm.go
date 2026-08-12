@@ -5,7 +5,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -16,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -23,6 +24,11 @@ const (
 	sangforChallengeSalt           = "OrHWuJz7gku5awmVb5w1sKTmfeCWHmzokBxmn0sn0faIcv1G10PdrbbRGKBrrZ3m"
 	sangforSignatureSalt           = "3uW5IEy8KwDaOMK8uw1TmNr50U3aK1Qdu8b6vopXxGstzan3AJXxVNR6piuKi5Nq"
 )
+
+var sangforNonceGenerator struct {
+	sync.Mutex
+	state uint64
+}
 
 type antiMITMAttackData struct {
 	Enable             int    `json:"enable"`
@@ -123,11 +129,35 @@ func sangforHMAC(key, message []byte) string {
 }
 
 func sangforNonce() (string, error) {
-	nonce := make([]byte, 32)
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
+	sangforNonceGenerator.Lock()
+	defer sangforNonceGenerator.Unlock()
+
+	if sangforNonceGenerator.state == 0 {
+		sangforNonceGenerator.state = uint64(time.Now().Unix()) % 2147483647
+		if sangforNonceGenerator.state == 0 {
+			sangforNonceGenerator.state = 1
+		}
 	}
+	nonce := sangforNonceBytes(&sangforNonceGenerator.state, 32)
 	return strings.ToUpper(hex.EncodeToString(nonce)), nil
+}
+
+func sangforNonceBytes(state *uint64, size int) []byte {
+	const (
+		modulus           = uint64(2147483647)
+		rejectionBoundary = uint64(0x7FFFFF00)
+	)
+
+	nonce := make([]byte, 0, size)
+	for len(nonce) < size {
+		*state = 48271 * *state % modulus
+		value := *state - 1
+		if value >= rejectionBoundary {
+			continue
+		}
+		nonce = append(nonce, byte(value&0xFF))
+	}
+	return nonce
 }
 
 func sangforOriginSignatureData(raw []byte) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,6 +122,14 @@ func TestSangforMITMSignatureVector(t *testing.T) {
 	}
 }
 
+func TestSangforNonceGeneratorVector(t *testing.T) {
+	state := uint64(1)
+	got := strings.ToUpper(hex.EncodeToString(sangforNonceBytes(&state, 16)))
+	if want := "8EE1457CF0225058C27E226EAA4CA802"; got != want {
+		t.Fatalf("unexpected Sangfor nonce sequence: got %s, want %s", got, want)
+	}
+}
+
 func TestPerformAntiMITMRequest(t *testing.T) {
 	data := antiMITMAttackData{
 		DevicePubKeyMod: "A1B2C3",
@@ -135,15 +144,23 @@ func TestPerformAntiMITMRequest(t *testing.T) {
 		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" {
 			t.Fatalf("unexpected request: %s %q", r.Method, r.Header.Get("Content-Type"))
 		}
+		requestBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var request struct {
 			Nonce  string `json:"nonce"`
 			Ticket string `json:"ticket"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := json.Unmarshal(requestBody, &request); err != nil {
 			t.Fatal(err)
 		}
 		if len(request.Nonce) != 64 || request.Ticket != data.Ticket {
 			t.Fatalf("unexpected anti-MITM body: %+v", request)
+		}
+		expectedBody := fmt.Sprintf("\n            {\n                \"nonce\": \"%s\",\n                \"ticket\": \"%s\"\n            }\n        ", request.Nonce, request.Ticket)
+		if string(requestBody) != expectedBody {
+			t.Fatalf("unexpected anti-MITM body encoding: %q", requestBody)
 		}
 		body := []byte(fmt.Sprintf(`{"code":0,"data":{"nonce":%q,"antiMITMEnable":1}}`, request.Nonce))
 		w.Header().Set("X-Response-Sig", sangforHMAC(sangforSignatureKey(data), body))
@@ -195,6 +212,24 @@ func TestAuthConfigAcceptsMatchingAntiMITMCertificate(t *testing.T) {
 	}
 }
 
+func TestAuthConfigRejectsSecondStageFailure(t *testing.T) {
+	var encodedCertificate string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/controller/v1/public/antiMITMRequest" {
+			_, _ = w.Write([]byte(`{"code":0,"data":{"nonce":"wrong"}}`))
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"code":0,"data":{"antiMITMAttackData":%s}}`, signedAntiMITMJSONWithRequest(t, 1, encodedCertificate, "", false))
+	}))
+	defer server.Close()
+	encodedCertificate = base64.StdEncoding.EncodeToString(server.Certificate().Raw)
+
+	session := newTLSTestSession(server)
+	if _, _, err := session.authConfig(false, true); err == nil || !strings.Contains(err.Error(), "nonce mismatch") {
+		t.Fatalf("desktop aTrust rejects second-stage verification failure: %v", err)
+	}
+}
+
 func TestAuthConfigRejectsMismatchedAntiMITMCertificate(t *testing.T) {
 	encodedCertificate := base64.StdEncoding.EncodeToString([]byte("not the peer certificate"))
 
@@ -236,6 +271,10 @@ func TestAuthConfigIgnoresUnknownAntiMITMEnableValue(t *testing.T) {
 }
 
 func signedAntiMITMJSON(t *testing.T, enable int, rsaCert, sm2EncCert string) string {
+	return signedAntiMITMJSONWithRequest(t, enable, rsaCert, sm2EncCert, true)
+}
+
+func signedAntiMITMJSONWithRequest(t *testing.T, enable int, rsaCert, sm2EncCert string, antiMITMRequest bool) string {
 	t.Helper()
 	data := antiMITMAttackData{
 		Enable:             enable,
@@ -246,7 +285,7 @@ func signedAntiMITMJSON(t *testing.T, enable int, rsaCert, sm2EncCert string) st
 		Challenge:          "challenge-vector",
 		EncryptedChallenge: "E4E065E124F3E6FA5B5125745170A7EE97342BB9E9AE2FF7F523FF5872B9541E",
 		Ticket:             "ticket",
-		AntiMITMRequest:    true,
+		AntiMITMRequest:    antiMITMRequest,
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -264,7 +303,7 @@ func signedAntiMITMJSON(t *testing.T, enable int, rsaCert, sm2EncCert string) st
 	return string(raw)
 }
 
-func TestInsecureSkipVerifyDisablesAntiMITMCheck(t *testing.T) {
+func TestInsecureSkipVerifyDoesNotDisableAntiMITMCheck(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"antiMITMAttackData":{"enable":1}}}`))
 	}))
@@ -274,7 +313,7 @@ func TestInsecureSkipVerifyDisablesAntiMITMCheck(t *testing.T) {
 		strings.TrimPrefix(server.URL, "https://"),
 		SessionOptions{InsecureSkipVerify: true},
 	)
-	if _, _, err := session.authConfig(false, true); err != nil {
-		t.Fatal(err)
+	if _, _, err := session.authConfig(false, true); err == nil || !strings.Contains(err.Error(), "challenge verification failed") {
+		t.Fatalf("insecure TLS must not disable the application anti-MITM protocol: %v", err)
 	}
 }
