@@ -62,12 +62,20 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 		return 0, nil, err
 	}
 	log.DebugPrintf("Parsed auth config: %+v", re)
-	if !s.insecureSkipVerify && re.Data.AntiMITM.Enable == 1 {
-		if resp.TLS == nil {
-			return 0, nil, fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
-		}
-		if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, re.Data.AntiMITM); err != nil {
+	if !s.insecureSkipVerify && len(re.Data.AntiMITM.raw) != 0 {
+		if err := verifySangforChallenge(re.Data.AntiMITM); err != nil {
 			return 0, nil, err
+		}
+		if err := verifySangforMITMSignature(re.Data.AntiMITM); err != nil {
+			return 0, nil, err
+		}
+		if re.Data.AntiMITM.Enable == 1 {
+			if resp.TLS == nil {
+				return 0, nil, fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
+			}
+			if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, re.Data.AntiMITM); err != nil {
+				return 0, nil, err
+			}
 		}
 	}
 
