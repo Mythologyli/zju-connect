@@ -68,24 +68,10 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 		responseCSRFToken = re.Data.Security.CSRF
 	}
 	if len(re.Data.AntiMITM.raw) != 0 {
-		if err := verifySangforChallenge(re.Data.AntiMITM); err != nil {
-			return 0, nil, err
-		}
-		if err := verifySangforMITMSignature(re.Data.AntiMITM); err != nil {
-			return 0, nil, err
-		}
-		if re.Data.AntiMITM.Enable == 1 {
-			if resp.TLS == nil {
-				return 0, nil, fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
-			}
-			if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, re.Data.AntiMITM); err != nil {
-				return 0, nil, err
-			}
-			if !re.Data.AntiMITM.AntiMITMRequest {
-				if err := s.performAntiMITMRequest(re.Data.AntiMITM, responseCSRFToken); err != nil {
-					return 0, nil, err
-				}
-			}
+		if err := s.checkAntiMITMAuthConfig(resp, re.Data.AntiMITM, responseCSRFToken); err != nil {
+			// Official desktop and Android clients report this through their
+			// event/UI layer, but their authentication callers continue.
+			log.Printf("aTrust anti-MITM check failed: %v", err)
 		}
 	}
 
@@ -95,6 +81,28 @@ func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 	s.antiReplayRand = re.Data.AntiReplayRand
 
 	return re.Data.IsLogin, re.Data.AuthServerInfoList, nil
+}
+
+func (s *Session) checkAntiMITMAuthConfig(resp *http.Response, data antiMITMAttackData, csrfToken string) error {
+	if err := verifySangforChallenge(data); err != nil {
+		return err
+	}
+	if err := verifySangforMITMSignature(data); err != nil {
+		return err
+	}
+	if data.Enable != 1 {
+		return nil
+	}
+	if resp.TLS == nil {
+		return fmt.Errorf("aTrust anti-MITM verification failed: response was not received over TLS")
+	}
+	if err := verifySangforCertificateIdentity(resp.TLS.PeerCertificates, data); err != nil {
+		return err
+	}
+	if data.AntiMITMRequest {
+		return nil
+	}
+	return s.performAntiMITMRequest(data, csrfToken)
 }
 
 func (s *Session) performAntiMITMRequest(data antiMITMAttackData, csrfToken string) error {

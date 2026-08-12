@@ -212,7 +212,7 @@ func TestAuthConfigAcceptsMatchingAntiMITMCertificate(t *testing.T) {
 	}
 }
 
-func TestAuthConfigRejectsSecondStageFailure(t *testing.T) {
+func TestAuthConfigReportsButDoesNotPropagateSecondStageFailure(t *testing.T) {
 	var encodedCertificate string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/controller/v1/public/antiMITMRequest" {
@@ -225,12 +225,12 @@ func TestAuthConfigRejectsSecondStageFailure(t *testing.T) {
 	encodedCertificate = base64.StdEncoding.EncodeToString(server.Certificate().Raw)
 
 	session := newTLSTestSession(server)
-	if _, _, err := session.authConfig(false, true); err == nil || !strings.Contains(err.Error(), "nonce mismatch") {
-		t.Fatalf("desktop aTrust rejects second-stage verification failure: %v", err)
+	if _, _, err := session.authConfig(false, true); err != nil {
+		t.Fatalf("official authentication caller does not propagate the check result: %v", err)
 	}
 }
 
-func TestAuthConfigRejectsMismatchedAntiMITMCertificate(t *testing.T) {
+func TestAuthConfigReportsButDoesNotPropagateMismatchedAntiMITMCertificate(t *testing.T) {
 	encodedCertificate := base64.StdEncoding.EncodeToString([]byte("not the peer certificate"))
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -239,8 +239,8 @@ func TestAuthConfigRejectsMismatchedAntiMITMCertificate(t *testing.T) {
 	defer server.Close()
 
 	session := newTLSTestSession(server)
-	if _, _, err := session.authConfig(false, true); err == nil || !strings.Contains(err.Error(), "anti-MITM certificate mismatch") {
-		t.Fatalf("expected anti-MITM mismatch, got %v", err)
+	if _, _, err := session.authConfig(false, true); err != nil {
+		t.Fatalf("official authentication caller does not propagate the check result: %v", err)
 	}
 }
 
@@ -313,7 +313,13 @@ func TestInsecureSkipVerifyDoesNotDisableAntiMITMCheck(t *testing.T) {
 		strings.TrimPrefix(server.URL, "https://"),
 		SessionOptions{InsecureSkipVerify: true},
 	)
-	if _, _, err := session.authConfig(false, true); err == nil || !strings.Contains(err.Error(), "challenge verification failed") {
+	resp, err := session.client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data := antiMITMAttackData{Enable: 1}
+	if err := session.checkAntiMITMAuthConfig(resp, data, ""); err == nil || !strings.Contains(err.Error(), "challenge verification failed") {
 		t.Fatalf("insecure TLS must not disable the application anti-MITM protocol: %v", err)
 	}
 }
