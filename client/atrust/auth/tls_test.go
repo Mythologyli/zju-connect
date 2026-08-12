@@ -40,43 +40,6 @@ func TestPinnedServerCertificateMismatch(t *testing.T) {
 		t.Fatalf("expected fingerprint mismatch, got %v", err)
 	}
 }
-
-func TestInsecureSkipVerifyAcceptsSelfSignedCertificate(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"code":0,"data":{}}`))
-	}))
-	defer server.Close()
-
-	session := NewSessionWithOptions(
-		strings.TrimPrefix(server.URL, "https://"),
-		SessionOptions{InsecureSkipVerify: true},
-	)
-	if _, err := session.accessCheck(); err != nil {
-		t.Fatal(err)
-	}
-	if got := session.ServerCertificateSHA256(); len(got) != 64 {
-		t.Fatalf("unexpected certificate fingerprint: %q", got)
-	}
-}
-
-func TestInsecureSkipVerifyOverridesPinnedCertificate(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"code":0,"data":{}}`))
-	}))
-	defer server.Close()
-
-	session := NewSessionWithOptions(
-		strings.TrimPrefix(server.URL, "https://"),
-		SessionOptions{
-			ServerCertSHA256:   strings.Repeat("00", 32),
-			InsecureSkipVerify: true,
-		},
-	)
-	if _, err := session.accessCheck(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSangforCertificateDigest(t *testing.T) {
 	rawDER := []byte{0x01, 0x02, 0x03}
 	want := sha256.Sum256([]byte("AQID@~*&!()-"))
@@ -301,25 +264,4 @@ func signedAntiMITMJSONWithRequest(t *testing.T, enable int, rsaCert, sm2EncCert
 		t.Fatal(err)
 	}
 	return string(raw)
-}
-
-func TestInsecureSkipVerifyDoesNotDisableAntiMITMCheck(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"code":0,"data":{"antiMITMAttackData":{"enable":1}}}`))
-	}))
-	defer server.Close()
-
-	session := NewSessionWithOptions(
-		strings.TrimPrefix(server.URL, "https://"),
-		SessionOptions{InsecureSkipVerify: true},
-	)
-	resp, err := session.client.Get(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	data := antiMITMAttackData{Enable: 1}
-	if err := session.checkAntiMITMAuthConfig(resp, data, ""); err == nil || !strings.Contains(err.Error(), "challenge verification failed") {
-		t.Fatalf("insecure TLS must not disable the application anti-MITM protocol: %v", err)
-	}
 }

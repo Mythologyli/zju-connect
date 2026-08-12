@@ -110,10 +110,6 @@ func main() {
 		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey)
 		vpnClient.(*atrustclient.Client).SetSkipTCPTunnelWait(conf.SkipTCPTunnelWait)
 		vpnClient.(*atrustclient.Client).SetServerCertSHA256(conf.ATrustServerCertSHA256)
-		vpnClient.(*atrustclient.Client).SetInsecureSkipVerify(conf.InsecureSkipVerify)
-		if conf.InsecureSkipVerify {
-			log.Println("Warning: aTrust authentication server certificate verification is disabled")
-		}
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(
