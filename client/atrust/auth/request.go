@@ -237,6 +237,7 @@ const (
 type authServiceInfo struct {
 	AuthID   string `json:"authId"`
 	AuthType string `json:"authType"`
+	SubType  string `json:"subType"`
 }
 
 type authStepData struct {
@@ -273,6 +274,9 @@ func authStepFromData(data authStepData) authStep {
 			switch selected.AuthType {
 			case "auth/totp", "auth/radius", "auth/challenge":
 				step.Service = selected.AuthType
+			}
+			if selected.AuthType == "auth/token" && selected.SubType != "" {
+				step.Service = "auth/" + selected.SubType
 			}
 		}
 	}
