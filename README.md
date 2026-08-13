@@ -114,6 +114,8 @@
 
 + `password`: 网络账户密码
 
++ `password-file`: 从指定文件读取网络账户密码（默认空）。可避免在进程参数中明文暴露密码，文件内容末尾的换行符会被去除。若同时设置了 `password`，将以 `password-file` 为准
+
 + `graph-code-file`: 图形验证码文件路径。默认为空。在 aTrust 模式下，留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，非 ZJU 用户可能需要添加此参数

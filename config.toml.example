@@ -3,6 +3,7 @@ server_address = "rvpn.zju.edu.cn"
 server_port = 443
 username = "username"
 password = "password"
+password_file = "" # Read the password from this file instead, e.g. "/run/secrets/vpn_password"
 disable_zju_config = false
 disable_zju_dns = false
 socks_bind = ":1080"

@@ -109,6 +109,8 @@
 
 + `password`: Network account password
 
++ `password-file`: Read the network account password from the given file (default empty). This avoids exposing the password in plaintext in process arguments. Trailing newlines in the file are stripped. If both `password` and `password-file` are set, `password-file` takes precedence
+
 + `graph-code-file`: Graphic captcha file path, default is empty. In aTrust mode, if set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 
 + `disable-zju-config`: Disable ZJU related configuration, non-ZJU users may need to add this argument

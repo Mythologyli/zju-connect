@@ -8,6 +8,7 @@ type (
 		ServerPort          int
 		Username            string
 		Password            string
+		PasswordFile        string
 		SocksBind           string
 		SocksUser           string
 		SocksPasswd         string
@@ -79,6 +80,7 @@ type (
 		ServerPort              *int                       `toml:"server_port"`
 		Username                *string                    `toml:"username"`
 		Password                *string                    `toml:"password"`
+		PasswordFile            *string                    `toml:"password_file"`
 		TOTPSecret              *string                    `toml:"totp_secret"`
 		CertFile                *string                    `toml:"cert_file"`
 		CertPassword            *string                    `toml:"cert_password"`

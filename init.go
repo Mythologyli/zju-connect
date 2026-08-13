@@ -49,6 +49,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.ServerPort = getTOMLVal(confTOML.ServerPort, 443)
 	conf.Username = getTOMLVal(confTOML.Username, "")
 	conf.Password = getTOMLVal(confTOML.Password, "")
+	conf.PasswordFile = getTOMLVal(confTOML.PasswordFile, "")
 	conf.TOTPSecret = getTOMLVal(confTOML.TOTPSecret, "")
 	conf.CertFile = getTOMLVal(confTOML.CertFile, "")
 	conf.CertPassword = getTOMLVal(confTOML.CertPassword, "")
@@ -152,6 +153,7 @@ func init() {
 	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect/aTrust port address")
 	flag.StringVar(&conf.Username, "username", "", "Your username")
 	flag.StringVar(&conf.Password, "password", "", "Your password")
+	flag.StringVar(&conf.PasswordFile, "password-file", "", "Read the password from the given file instead of passing it on the command line")
 	flag.StringVar(&conf.TOTPSecret, "totp-secret", "", "TOTP secret")
 	flag.StringVar(&conf.CertFile, "cert-file", "", "Client certificate p12 file path for certificate login")
 	flag.StringVar(&conf.CertPassword, "cert-password", "", "Client certificate password")
@@ -328,6 +330,18 @@ func init() {
 				conf.CustomProxyDomain = append(conf.CustomProxyDomain, domain)
 			}
 		}
+	}
+
+	if conf.PasswordFile != "" {
+		if conf.Password != "" {
+			log.Println("ZJU Connect: both password and password-file are set, password-file will be used")
+		}
+		password, err := os.ReadFile(conf.PasswordFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ZJU Connect: read password file error: %s\n", err)
+			os.Exit(1)
+		}
+		conf.Password = strings.TrimRight(string(password), "\r\n")
 	}
 
 	missing := conf.ServerAddress == ""
