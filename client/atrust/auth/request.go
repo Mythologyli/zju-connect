@@ -15,6 +15,34 @@ import (
 	"github.com/mythologyli/zju-connect/log"
 )
 
+func (s *Session) ServerVersionInfo() ([]byte, error) {
+	log.Println("Perform GET /public/manifest")
+
+	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/public/manifest", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("aTrust server manifest returned HTTP status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ParseServerVersionInfo(body); err != nil {
+		return nil, err
+	}
+	log.DebugPrintf("Received server manifest: %s", string(body))
+	return body, nil
+}
+
 func (s *Session) authConfig(mod, needTicket bool) (int, []AuthInfo, error) {
 	log.Println("Perform GET /passport/v1/public/authConfig")
 

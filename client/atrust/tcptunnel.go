@@ -6,9 +6,9 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -23,21 +23,26 @@ import (
 )
 
 type tcpTunnelConn struct {
-	tlsConn *tls.Conn
+	tlsConn net.Conn
 	reader  *bufio.Reader
+	readMu  sync.Mutex
+	writeMu sync.Mutex
 	readBuf []byte
+	reuse   bool
+	raw     bool
+
+	closeWriteOnce sync.Once
+	closeWriteErr  error
 }
 
-type tcpTunnelFrame struct {
-	payload []byte
-}
+const tcpTunnelHandshakeTimeout = 18 * time.Second
 
-const maxPooledTCPTunnelFrameSize = 4096
-
-var tcpTunnelFramePool = sync.Pool{
-	New: func() any {
-		return &tcpTunnelFrame{payload: make([]byte, 0, 2048)}
-	},
+func tcpTunnelHandshakeDeadline(ctx context.Context, now time.Time) time.Time {
+	deadline := now.Add(tcpTunnelHandshakeTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		return ctxDeadline
+	}
+	return deadline
 }
 
 func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
@@ -52,9 +57,183 @@ func readTCPProtocolResponse(reader *bufio.Reader) (string, error) {
 	return string(data), nil
 }
 
+type tcpTunnelAuthResponse struct {
+	Code    int64  `json:"code"`
+	Message string `json:"message"`
+}
+
+type tcpTunnelProcess struct {
+	Name             string `json:"name"`
+	DigitalSignature string `json:"digital_signature"`
+	Platform         string `json:"platform"`
+	Fingerprint      string `json:"fingerprint"`
+	Description      string `json:"description"`
+	Path             string `json:"path"`
+	Version          string `json:"version"`
+	SecurityEnv      string `json:"security_env"`
+}
+
+type tcpTunnelAuthRequest struct {
+	SID           string `json:"sid"`
+	AppID         string `json:"appId"`
+	URL           string `json:"url"`
+	DeviceID      string `json:"deviceId"`
+	ConnectionID  string `json:"connectionId"`
+	ProcHash      string `json:"procHash"`
+	UserName      string `json:"userName"`
+	RCAppliedInfo int    `json:"rcAppliedInfo"`
+	Lang          string `json:"lang"`
+	DestAddr      string `json:"destAddr"`
+	DestIP        string `json:"destIP,omitempty"`
+	Env           struct {
+		Application struct {
+			Runtime struct {
+				Process        tcpTunnelProcess `json:"process"`
+				ProcessTrusted string           `json:"process_trusted"`
+			} `json:"runtime"`
+		} `json:"application"`
+	} `json:"env"`
+	XRequestSig string `json:"xRequestSig"`
+}
+
+func marshalTCPTunnelAuthRequest(request tcpTunnelAuthRequest, signKey []byte) ([]byte, error) {
+	unsigned, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tcp tunnel auth request: %w", err)
+	}
+	request.XRequestSig = calcXRequestSig(signKey, unsigned)
+	signed, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal signed tcp tunnel auth request: %w", err)
+	}
+	return signed, nil
+}
+
+func encodeTCPTunnelAuthLength(length int) ([2]byte, error) {
+	var encoded [2]byte
+	if length > 0xFFFF {
+		return encoded, fmt.Errorf("tcp tunnel auth request too large: %d bytes", length)
+	}
+	binary.BigEndian.PutUint16(encoded[:], uint16(length))
+	return encoded, nil
+}
+
+func writeTCPTunnelHandshakeMessage(writer io.Writer, data []byte) error {
+	n, err := writer.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+func writeTCPTunnelInitialMessages(writer io.Writer, initMsg, destMsg []byte, zeroRTT bool) error {
+	if err := writeTCPTunnelHandshakeMessage(writer, initMsg); err != nil {
+		return fmt.Errorf("failed to send init message: %w", err)
+	}
+	if zeroRTT {
+		if err := writeTCPTunnelHandshakeMessage(writer, destMsg); err != nil {
+			return fmt.Errorf("failed to send dest address: %w", err)
+		}
+	}
+	return nil
+}
+
+func encodeTCPTunnelDestination(destIP net.IP, port int, zeroRTT bool) ([]byte, error) {
+	ipv4 := destIP.To4()
+	if ipv4 == nil {
+		return nil, fmt.Errorf("invalid IPv4 address")
+	}
+	rsv := byte(0)
+	if zeroRTT {
+		rsv = 1
+	}
+	msg := append([]byte{0x05, 0x01, rsv, 0x01}, ipv4...)
+	return binary.BigEndian.AppendUint16(msg, uint16(port)), nil
+}
+
+func parseTCPTunnelAuthResponse(data string) error {
+	var response tcpTunnelAuthResponse
+	if err := json.Unmarshal([]byte(data), &response); err != nil {
+		return fmt.Errorf("failed to parse tcp tunnel auth response: %w", err)
+	}
+	if response.Code != 0 {
+		return fmt.Errorf("tcp tunnel authentication failed (code %d): %s", response.Code, response.Message)
+	}
+	return nil
+}
+
+func readSOCKS5ConnectReply(reader *bufio.Reader) (status byte, reuse bool, err error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return 0, false, fmt.Errorf("failed to read tcp tunnel connect reply: %w", err)
+	}
+	if header[0] != 0x05 {
+		return 0, false, fmt.Errorf("unexpected tcp tunnel connect version: 0x%02X", header[0])
+	}
+	if header[1] != 0x00 {
+		return header[1], false, nil
+	}
+	var addressLength int
+	switch header[3] {
+	case 0x01:
+		addressLength = net.IPv4len
+	case 0x04:
+		addressLength = net.IPv6len
+	default:
+		return 0, false, fmt.Errorf("unexpected tcp tunnel bind address type: 0x%02X", header[3])
+	}
+	if _, err := io.CopyN(io.Discard, reader, int64(addressLength+2)); err != nil {
+		return 0, false, fmt.Errorf("failed to read tcp tunnel bind address: %w", err)
+	}
+	return 0, header[2] == 0x01, nil
+}
+
 func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) (err error) {
+	_, err = waitForTCPConnectReply(ctx, conn, reader)
+	return err
+}
+
+func waitForTCPAuth(ctx context.Context, conn net.Conn, reader *bufio.Reader) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	cancelDone := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		defer close(cancelDone)
+		_ = conn.Close()
+	})
+	defer func() {
+		if !stopCancel() {
+			<-cancelDone
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+		}
+	}()
+
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return fmt.Errorf("failed to read tcp tunnel response: %w", err)
+	}
+	if header[0] != 0x53 || header[1] != 0x00 {
+		return fmt.Errorf("unexpected tcp tunnel response: %02X %02X", header[0], header[1])
+	}
+	response, err := readTCPProtocolResponse(reader)
+	if err != nil {
+		return fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
+	}
+	log.DebugPrint("Received protocol response:")
+	log.DebugDumpHex([]byte(response))
+	return parseTCPTunnelAuthResponse(response)
+}
+
+func waitForTCPConnectReply(ctx context.Context, conn net.Conn, reader *bufio.Reader) (reuse bool, err error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 
 	cancelDone := make(chan struct{})
@@ -74,7 +253,7 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 	for {
 		header := make([]byte, 2)
 		if _, err := io.ReadFull(reader, header); err != nil {
-			return fmt.Errorf("failed to read tcp tunnel response: %w", err)
+			return false, fmt.Errorf("failed to read tcp tunnel response: %w", err)
 		}
 		if log.DebugEnabled() {
 			log.DebugPrintf("Received header: %02X %02X", header[0], header[1])
@@ -83,73 +262,63 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 			continue
 		}
 		if header[0] != 0x53 || header[1] != 0x00 {
-			return fmt.Errorf("unexpected tcp tunnel response: %02X %02X", header[0], header[1])
+			return false, fmt.Errorf("unexpected tcp tunnel response: %02X %02X", header[0], header[1])
 		}
 
 		response, err := readTCPProtocolResponse(reader)
 		if err != nil {
-			return fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
+			return false, fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
 		}
 		log.DebugPrint("Received protocol response:")
 		log.DebugDumpHex([]byte(response))
-		if !strings.Contains(response, "OK") {
-			return fmt.Errorf("tcp tunnel setup failed: %s", response)
+		if err := parseTCPTunnelAuthResponse(response); err != nil {
+			return false, err
 		}
 		break
 	}
 
-	probe := []byte{0x01, 0x00, 0x00, 0x00}
-	if n, err := conn.Write(probe); err != nil {
-		return fmt.Errorf("failed to send tcp tunnel connect probe: %w", err)
-	} else if n != len(probe) {
-		return fmt.Errorf("failed to send tcp tunnel connect probe: %w", io.ErrShortWrite)
-	}
-	log.DebugPrint("Sent TCP connect probe")
-	log.DebugDumpHex(probe)
-
-	status := make([]byte, 2)
-	if _, err := io.ReadFull(reader, status); err != nil {
-		return fmt.Errorf("failed to read tcp tunnel connect status: %w", err)
+	status, reuse, err := readSOCKS5ConnectReply(reader)
+	if err != nil {
+		return false, err
 	}
 	if log.DebugEnabled() {
-		log.DebugPrintf("Received TCP connect status: %02X %02X", status[0], status[1])
-	}
-	if status[0] != 0x05 {
-		return fmt.Errorf("unexpected tcp tunnel connect status: %02X %02X", status[0], status[1])
+		log.DebugPrintf("Received TCP connect status: 0x%02X", status)
 	}
 
-	switch status[1] {
+	switch status {
 	case 0x00:
-		return nil
+		return reuse, nil
 	case 0x01:
-		return fmt.Errorf("tcp tunnel server failure")
+		return false, fmt.Errorf("tcp tunnel server failure")
 	case 0x02:
-		return fmt.Errorf("tcp tunnel connection not allowed")
+		return false, fmt.Errorf("tcp tunnel connection not allowed")
 	case 0x03:
-		return fmt.Errorf("network is unreachable")
+		return false, fmt.Errorf("network is unreachable")
 	case 0x04:
-		return fmt.Errorf("host is unreachable")
+		return false, fmt.Errorf("host is unreachable")
 	case 0x05:
-		return fmt.Errorf("connection refused")
+		return false, fmt.Errorf("connection refused")
 	case 0x06:
-		return fmt.Errorf("tcp tunnel TTL expired")
+		return false, fmt.Errorf("tcp tunnel TTL expired")
 	case 0x07:
-		return fmt.Errorf("tcp tunnel command not supported")
+		return false, fmt.Errorf("tcp tunnel command not supported")
 	case 0x08:
-		return fmt.Errorf("tcp tunnel address type not supported")
+		return false, fmt.Errorf("tcp tunnel address type not supported")
 	default:
-		return fmt.Errorf("tcp tunnel connect failed with status 0x%02X", status[1])
+		return false, fmt.Errorf("tcp tunnel connect failed with status 0x%02X", status)
 	}
-}
-
-func (c *Client) waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader) error {
-	if c.skipTCPTunnelWait {
-		return nil
-	}
-	return waitForTCPConnect(ctx, conn, reader)
 }
 
 func (c *tcpTunnelConn) Read(b []byte) (int, error) {
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
+
+	if len(b) == 0 {
+		return 0, nil
+	}
+	if c.raw {
+		return c.reader.Read(b)
+	}
 	if len(c.readBuf) > 0 {
 		n := copy(b, c.readBuf)
 		c.readBuf = c.readBuf[n:]
@@ -157,135 +326,103 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	}
 
 	for {
-		var header [2]byte
-		_, err := io.ReadFull(c.reader, header[:])
-		if err != nil {
+		var header [4]byte
+		if _, err := io.ReadFull(c.reader, header[:]); err != nil {
+			log.DebugPrintf("TCP tunnel read ended: %v", err)
 			return 0, err
 		}
-		if log.DebugEnabled() {
-			log.DebugPrintf("Received header: %02X %02X", header[0], header[1])
-		}
-		if header[0] == 0x01 && header[1] == 0x00 {
-			var lengthBytes [2]byte
-			_, err = io.ReadFull(c.reader, lengthBytes[:])
-			if err != nil {
-				return 0, err
+		switch {
+		case header[0] == 0x01 && header[1] == 0x00:
+			length := int(binary.BigEndian.Uint16(header[2:]))
+			if length == 0 {
+				continue
 			}
-			length := int(binary.BigEndian.Uint16(lengthBytes[:]))
 			if length <= len(b) {
-				if _, err = io.ReadFull(c.reader, b[:length]); err != nil {
+				if _, err := io.ReadFull(c.reader, b[:length]); err != nil {
 					return 0, err
 				}
-				log.DebugPrint("Received application data, length:", length)
+				log.DebugPrintf("TCP tunnel received %d bytes", length)
 				log.DebugDumpHex(b[:length])
 				return length, nil
 			}
-			data := make([]byte, length)
-			_, err = io.ReadFull(c.reader, data)
-			if err != nil {
+
+			payload := make([]byte, length)
+			if _, err := io.ReadFull(c.reader, payload); err != nil {
 				return 0, err
 			}
-			log.DebugPrint("Received application data, length:", length)
-			log.DebugDumpHex(data)
-
-			n := copy(b, data)
-			if n < len(data) {
-				c.readBuf = data[n:]
-			}
-
+			log.DebugPrintf("TCP tunnel received %d bytes", length)
+			log.DebugDumpHex(payload)
+			n := copy(b, payload)
+			c.readBuf = payload[n:]
 			return n, nil
-		} else if header[0] == 0x01 && header[1] == 0x01 {
-			_, err = io.ReadFull(c.reader, header[:])
-			if err != nil {
-				return 0, err
-			}
-
-			if header[0] == 0x30 && header[1] == 0x30 {
-				log.DebugPrint("Received close message")
-				_ = c.tlsConn.Close()
-				return 0, fmt.Errorf("connection closed by server")
-			}
-		} else if header[0] == 0x53 && header[1] == 0x00 {
-			var lengthBytes [2]byte
-			_, err = io.ReadFull(c.reader, lengthBytes[:])
-			if err != nil {
-				return 0, err
-			}
-			length := binary.BigEndian.Uint16(lengthBytes[:])
-
-			data := make([]byte, length)
-			_, err = io.ReadFull(c.reader, data)
-			if err != nil {
-				return 0, err
-			}
-
-			log.DebugPrint("Received protocol response:")
-			log.DebugDumpHex(data)
-
-			if !strings.Contains(string(data), "OK") {
-				log.Printf("Failed to connect to the server: %s", string(data))
-				_ = c.tlsConn.Close()
-
-				if strings.Contains(string(data), "invalid SID") {
-					panic(err)
-				}
-
-				return 0, fmt.Errorf("failed to connect to the server")
-			}
+		case header[0] == 0x01 && header[1] == 0x01:
+			log.DebugPrint("TCP tunnel closed by server")
+			return 0, io.EOF
+		default:
+			return 0, fmt.Errorf("unexpected TCP tunnel data frame header: % x", header)
 		}
 	}
 }
 
 func (c *tcpTunnelConn) Write(b []byte) (int, error) {
-	length := len(b)
-	if length > 0xFFFF {
-		return 0, fmt.Errorf("data too large")
-	}
-	frame := getTCPTunnelFrame(b)
-	defer putTCPTunnelFrame(frame)
-	err := writeTCPTunnelFrame(c.tlsConn, frame.payload)
-	log.DebugDumpHex(frame.payload)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 
-	return length, err
-}
-
-func writeTCPTunnelFrame(writer io.Writer, frame []byte) error {
-	n, err := writer.Write(frame)
-	if err == nil && n != len(frame) {
-		return io.ErrShortWrite
+	if len(b) == 0 {
+		return 0, nil
 	}
-	return err
-}
-
-func getTCPTunnelFrame(data []byte) *tcpTunnelFrame {
-	frame := tcpTunnelFramePool.Get().(*tcpTunnelFrame)
-	required := 4 + len(data)
-	if cap(frame.payload) < required {
-		frame.payload = make([]byte, required)
-	} else {
-		frame.payload = frame.payload[:required]
+	if c.raw {
+		return c.tlsConn.Write(b)
 	}
-	frame.payload[0] = 0x01
-	frame.payload[1] = 0x00
-	binary.BigEndian.PutUint16(frame.payload[2:4], uint16(len(data)))
-	copy(frame.payload[4:], data)
-	return frame
-}
 
-func putTCPTunnelFrame(frame *tcpTunnelFrame) {
-	if cap(frame.payload) > maxPooledTCPTunnelFrameSize {
-		return
+	written := 0
+	for written < len(b) {
+		chunkSize := min(len(b)-written, 0xFFFF)
+		chunk := b[written : written+chunkSize]
+		frame := make([]byte, 4+chunkSize)
+		frame[0] = 0x01
+		binary.BigEndian.PutUint16(frame[2:4], uint16(chunkSize))
+		copy(frame[4:], chunk)
+		if err := writeTCPTunnelHandshakeMessage(c.tlsConn, frame); err != nil {
+			log.DebugPrintf("TCP tunnel write failed after %d bytes: %v", written, err)
+			return written, err
+		}
+		written += chunkSize
 	}
-	frame.payload = frame.payload[:0]
-	tcpTunnelFramePool.Put(frame)
+	log.DebugPrintf("TCP tunnel sent %d bytes", written)
+	log.DebugDumpHex(b)
+	return written, nil
 }
 
 func (c *tcpTunnelConn) Close() error {
-	closeMsg := []byte{0x01, 0x01, 0x00, 0x00}
-	_, _ = c.tlsConn.Write(closeMsg)
-	log.DebugPrint("Sent close message")
-	log.DebugDumpHex(closeMsg)
-	return c.tlsConn.Close()
+	writeErr := c.CloseWrite()
+	closeErr := c.tlsConn.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
+}
+
+func (c *tcpTunnelConn) CloseRead() error {
+	if conn, ok := c.tlsConn.(interface{ CloseRead() error }); ok {
+		return conn.CloseRead()
+	}
+	return nil
+}
+
+func (c *tcpTunnelConn) CloseWrite() error {
+	c.closeWriteOnce.Do(func() {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		if c.reuse {
+			c.closeWriteErr = writeTCPTunnelHandshakeMessage(c.tlsConn, []byte{0x01, 0x01, 0x00, 0x00})
+			return
+		}
+		if conn, ok := c.tlsConn.(interface{ CloseWrite() error }); ok {
+			c.closeWriteErr = conn.CloseWrite()
+		}
+	})
+	return c.closeWriteErr
 }
 
 func (c *tcpTunnelConn) LocalAddr() net.Addr {
@@ -327,6 +464,15 @@ func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr) (client.IPRe
 	return index.MatchLast(addr.IP, "tcp", addr.Port)
 }
 
+func tcpTunnelAuthDestinations(addr *net.TCPAddr, domain string) (destAddr, destIP string) {
+	destAddr = addr.String()
+	if domain != "" {
+		destAddr = fmt.Sprintf("%s:%d", domain, addr.Port)
+		destIP = addr.IP.String()
+	}
+	return destAddr, destIP
+}
+
 func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
 	appID := ""
 	nodeGroupID := ""
@@ -363,6 +509,10 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
 	}
+	if err := conn.SetReadDeadline(tcpTunnelHandshakeDeadline(ctx, time.Now())); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to set tcp tunnel handshake timeout: %w", err)
+	}
 	procName := "google-chrome-stable"
 	procPath := "/usr/bin/google-chrome-stable"
 	if addr.Port == 22 {
@@ -371,73 +521,86 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	}
 	procHash := fmt.Sprintf("%X", sha256.Sum256([]byte(procPath)))
 
-	destAddr := addr.String()
-	if domain != "" {
-		destAddr = fmt.Sprintf("%s:%d", domain, addr.Port)
-	}
+	destAddr, destIP := tcpTunnelAuthDestinations(addr, domain)
 
-	destIP := addr.IP.To4()
-	if destIP == nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("invalid IPv4 address")
-	}
-	destPort := make([]byte, 2)
-	binary.BigEndian.PutUint16(destPort, uint16(addr.Port))
-
-	msg := fmt.Sprintf(
-		`{"sid":"%s","appId":"%s","url":"tcp://%s","deviceId":"%s","connectionId":"%s","procHash":"%s","userName":"%s","rcAppliedInfo":0,"lang":"en-US","destAddr":"%s","env":{"application":{"runtime":{"process":{"name":"%s","digital_signature":"TrustAppClosed","platform":"Linux","fingerprint":"%s","description":"TrustAppClosed","path":"%s","version":"TrustAppClosed","security_env":"normal"},"process_trusted":"TRUSTED"}}},"xRequestSig":""}`,
-		c.SID, appID, destAddr, c.DeviceID, c.ConnectionID, procHash, c.Username, destAddr, procName, procHash, procPath,
-	)
 	signKeyBytes, err := hex.DecodeString(c.SignKey)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("invalid sign key: %w", err)
 	}
-
-	sig := calcXRequestSig(signKeyBytes, []byte(msg))
-	msg = msg[:len(msg)-3] + `"` + sig + `"}`
-	msgBytes := []byte(msg)
-	msgLen := len(msgBytes)
-	lenBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenBytes, uint16(msgLen))
-	initHeader := []byte{0x05, 0x01, 0x81, 0x53, 0x03}
-	initMsg := append(initHeader, lenBytes...)
-	initMsg = append(initMsg, msgBytes...)
-	if _, err := conn.Write(initMsg); err != nil {
+	authRequest := tcpTunnelAuthRequest{
+		SID:          c.SID,
+		AppID:        appID,
+		URL:          "tcp://" + destAddr,
+		DeviceID:     c.DeviceID,
+		ConnectionID: c.ConnectionID,
+		ProcHash:     procHash,
+		UserName:     c.Username,
+		Lang:         "en-US",
+		DestAddr:     destAddr,
+		DestIP:       destIP,
+		XRequestSig:  "",
+	}
+	authRequest.Env.Application.Runtime.Process = tcpTunnelProcess{
+		Name:             procName,
+		DigitalSignature: "TrustAppClosed",
+		Platform:         "Linux",
+		Fingerprint:      procHash,
+		Description:      "TrustAppClosed",
+		Path:             procPath,
+		Version:          "TrustAppClosed",
+		SecurityEnv:      "normal",
+	}
+	authRequest.Env.Application.Runtime.ProcessTrusted = "TRUSTED"
+	msgBytes, err := marshalTCPTunnelAuthRequest(authRequest, signKeyBytes)
+	if err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("failed to send init message: %w", err)
+		return nil, err
+	}
+	lenBytes, err := encodeTCPTunnelAuthLength(len(msgBytes))
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	initHeader := []byte{0x05, 0x01, 0x81, 0x53, 0x03}
+	initMsg := append(initHeader, lenBytes[:]...)
+	initMsg = append(initMsg, msgBytes...)
+	destMsg, err := encodeTCPTunnelDestination(addr.IP, addr.Port, c.tcpTunnelZeroRTT)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	if err := writeTCPTunnelInitialMessages(conn, initMsg, destMsg, c.tcpTunnelZeroRTT); err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 	log.DebugDumpHex(initMsg)
-
-	var destMsg []byte
-	if domain == "" {
-		destHeader := []byte{0x05, 0x01, 0x01, 0x01}
-		destMsg = append(destHeader, destIP...)
-	} else {
-		destHeader := []byte{0x05, 0x01, 0x01, 0x03}
-		// For domain, we need to send the length of the domain name
-		domainLen := len(domain)
-		if domainLen > 255 {
-			_ = conn.Close()
-			return nil, fmt.Errorf("domain name too long: %s", domain)
-		}
-		destHeader = append(destHeader, byte(domainLen))
-		destMsg = append(destHeader, []byte(domain)...)
+	if c.tcpTunnelZeroRTT {
+		log.DebugDumpHex(destMsg)
 	}
-	destMsg = append(destMsg, destPort...)
-	if _, err := conn.Write(destMsg); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("failed to send dest address: %w", err)
-	}
-	log.DebugDumpHex(destMsg)
 
 	tunnelConn := &tcpTunnelConn{
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
+		raw:     !c.tcpTunnelZeroRTT,
 	}
-	if err := c.waitForTCPConnect(ctx, conn, tunnelConn.reader); err != nil {
+	var reuse bool
+	var waitErr error
+	if c.tcpTunnelZeroRTT {
+		reuse, waitErr = waitForTCPConnectReply(ctx, conn, tunnelConn.reader)
+	} else {
+		waitErr = waitForTCPAuth(ctx, conn, tunnelConn.reader)
+	}
+	clearDeadlineErr := conn.SetReadDeadline(time.Time{})
+	if waitErr != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, waitErr
 	}
+	if clearDeadlineErr != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to clear tcp tunnel handshake timeout: %w", clearDeadlineErr)
+	}
+	tunnelConn.reuse = reuse
 	return tunnelConn, nil
 }

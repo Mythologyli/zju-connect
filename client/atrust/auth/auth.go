@@ -54,8 +54,40 @@ type Cookie struct {
 }
 
 type ClientAuthData struct {
-	Cookies  []Cookie `json:"cookies"`
-	DeviceID string   `json:"device_id"`
+	Cookies           []Cookie        `json:"cookies"`
+	DeviceID          string          `json:"device_id"`
+	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
+}
+
+type ServerVersionInfo struct {
+	Code int `json:"code"`
+	Data struct {
+		Capacities struct {
+			Tun0RTT struct {
+				Version string `json:"version"`
+			} `json:"tun0rtt"`
+		} `json:"capacities"`
+		Options struct {
+			Tun0RTT struct {
+				Enable bool `json:"enable"`
+			} `json:"tun0rtt"`
+		} `json:"options"`
+	} `json:"data"`
+}
+
+func ParseServerVersionInfo(data []byte) (ServerVersionInfo, error) {
+	var info ServerVersionInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return info, fmt.Errorf("failed to parse aTrust server manifest: %w", err)
+	}
+	if info.Code != 0 {
+		return info, fmt.Errorf("aTrust server manifest failed with code %d", info.Code)
+	}
+	return info, nil
+}
+
+func (i ServerVersionInfo) TCPTunnelZeroRTT() bool {
+	return i.Data.Capacities.Tun0RTT.Version != "" && i.Data.Options.Tun0RTT.Enable
 }
 
 type Session struct {

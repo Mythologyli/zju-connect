@@ -52,16 +52,11 @@ type Client struct {
 	l3Tunnel   *L3Tunnel
 	l3TunnelMu sync.Mutex
 
-	lifecycleCtx    context.Context
-	lifecycleCancel context.CancelFunc
-	closeOnce       sync.Once
-	underlayDialer  *underlay.Dialer
-
-	skipTCPTunnelWait bool
-}
-
-func (c *Client) SetSkipTCPTunnelWait(skip bool) {
-	c.skipTCPTunnelWait = skip
+	lifecycleCtx     context.Context
+	lifecycleCancel  context.CancelFunc
+	closeOnce        sync.Once
+	underlayDialer   *underlay.Dialer
+	tcpTunnelZeroRTT bool
 }
 
 func NewClient(username, sid, deviceID, signKey string) *Client {
@@ -264,6 +259,41 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		log.Println("Warning: failed to detect underlay interface; using system routing")
 	}
 
+	var clientAuthData auth.ClientAuthData
+	if authData != nil {
+		if err := json.Unmarshal(authData, &clientAuthData); err != nil {
+			log.Println("Error parsing client data:", err)
+			return nil, err
+		}
+	}
+	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+	if clientAuthData.DeviceID == "" && c.DeviceID != "" {
+		clientAuthData.DeviceID = c.DeviceID
+	}
+
+	var authServerHost string
+	if serverPort == 443 {
+		authServerHost = serverAddress
+	} else {
+		authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+	}
+	sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
+	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
+	serverVersionInfo, err := resolveServerVersionInfo(clientAuthData.ServerVersionInfo, serverVersionInfo, manifestErr)
+	if err != nil {
+		return nil, err
+	}
+	if manifestErr != nil {
+		log.Printf("Failed to refresh aTrust server manifest, using cached version: %v", manifestErr)
+	}
+	clientAuthData.ServerVersionInfo = serverVersionInfo
+	parsedServerVersion, err := auth.ParseServerVersionInfo(clientAuthData.ServerVersionInfo)
+	if err != nil {
+		return nil, err
+	}
+	c.tcpTunnelZeroRTT = parsedServerVersion.TCPTunnelZeroRTT()
+	log.Printf("aTrust TCP tunnel zero-RTT: %t", c.tcpTunnelZeroRTT)
+
 	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
 		log.Println("Skipping login")
 
@@ -272,30 +302,12 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			c.SignKey = randHex(64)
 		}
 	} else {
-		var clientAuthData auth.ClientAuthData
-		if authData != nil {
-			err := json.Unmarshal(authData, &clientAuthData)
-			if err != nil {
-				log.Println("Error parsing client data:", err)
-				return nil, err
-			}
-		}
-		log.DebugPrintf("Given auth data: %+v", clientAuthData)
-
 		if clientAuthData.DeviceID == "" {
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
 		}
 		c.DeviceID = clientAuthData.DeviceID
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
-
-		var authServerHost string
-		if serverPort == 443 {
-			authServerHost = serverAddress
-		} else {
-			authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
-		}
-		sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
 
 		var err error
 		var loginMethod auth.LoginMethod
@@ -348,13 +360,13 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 			return nil, err
 		}
 
-		authData, err = json.Marshal(clientAuthData)
-		if err != nil {
-			log.Println("Error marshaling auth data:", err)
-		}
+	}
+	authData, err = json.Marshal(clientAuthData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal client data: %w", err)
 	}
 
-	err := c.parseResource(resourceData)
+	err = c.parseResource(resourceData)
 	if err != nil {
 		return nil, err
 	}
@@ -382,6 +394,16 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	}
 
 	return authData, nil
+}
+
+func resolveServerVersionInfo(cached, fetched []byte, fetchErr error) ([]byte, error) {
+	if fetchErr == nil {
+		return fetched, nil
+	}
+	if len(cached) == 0 {
+		return nil, fmt.Errorf("failed to acquire aTrust server manifest: %w", fetchErr)
+	}
+	return cached, nil
 }
 
 func newUnderlayDialer(serverHost, bindInterface string, autoDetectInterface bool) *underlay.Dialer {
