@@ -150,6 +150,8 @@
 
 + `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
 
++ `local-dns-server`: 指定用于解析 VPN 服务器域名的本地 DNS，格式为 IP 或 IP:port；留空时使用系统 DNS，可路由的 DNS 地址在探测成功后绑定到底层网卡，本地 DNS stub 保持 loopback 路由
+
 + `dns-hijack`: 启用 TUN 模式时劫持 DNS 请求，建议在启用 TUN 模式时添加此参数
 
 + `fake-ip`: 启用 Fake IP 功能，与 dns-hijack 配合使用，建议在使用 aTrust 协议并启用 TUN 模式时添加此参数。此参数在 EasyConnect 协议下无效

@@ -51,9 +51,10 @@ func main() {
 		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
 	}
 	underlayDialer, underlayErr := underlay.New(underlay.Options{
-		InterfaceName: conf.BindInterface,
-		AutoDetect:    conf.AutoDetectInterface,
-		DebugPCAPFile: conf.DebugPCAPFile,
+		InterfaceName:  conf.BindInterface,
+		AutoDetect:     conf.AutoDetectInterface,
+		DebugPCAPFile:  conf.DebugPCAPFile,
+		LocalDNSServer: conf.LocalDNSServer,
 	})
 	if underlayErr != nil {
 		log.Fatalf("Create underlay dialer: %v", underlayErr)

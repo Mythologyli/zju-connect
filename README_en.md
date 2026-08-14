@@ -145,6 +145,8 @@
 
 + `dns-server-bind`: DNS server listening address, default is empty (disabled). For example, set to `127.0.0.1:53`, then you can send DNS requests to `127.0.0.1:53`
 
++ `local-dns-server`: Local DNS server used to resolve the VPN server hostname, as IP or IP:port; when empty, the system DNS is used, routable DNS addresses are bound to the detected underlay interface, and local DNS stubs keep their loopback route
+
 + `dns-hijack`: Hijack DNS requests when TUN mode is enabled, it's recommended to add this argument when using TUN mode
 
 + `fake-ip`: Enable Fake IP mode. Works with dns-hijack. Don't enable it if you are using EasyConnect protocol

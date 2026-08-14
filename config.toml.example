@@ -20,6 +20,7 @@ keep_alive_url = "" # "https://www.cnki.net/favicon.ico"
 zju_dns_server = "auto"
 secondary_dns_server = "auto"
 dns_server_bind = ""
+local_dns_server = "" # DNS used to resolve the VPN server, e.g. "223.5.5.5" or "223.5.5.5:53"
 dns_hijack = false
 fake_ip = false
 debug_dump = false

@@ -172,14 +172,14 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool) ([]auth.AuthInfo, error) {
+func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, localDNSServer string) ([]auth.AuthInfo, error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface, localDNSServer)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return tunnel.NewL3Conn()
 }
 
-func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool) error {
+func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, localDNSServer string) error {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -223,7 +223,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface, localDNSServer)
 	if err != nil {
 		return err
 	}
@@ -399,10 +399,11 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	return authData, nil
 }
 
-func newUnderlayDialer(bindInterface string, autoDetectInterface bool) (*underlay.Dialer, error) {
+func newUnderlayDialer(bindInterface string, autoDetectInterface bool, localDNSServer string) (*underlay.Dialer, error) {
 	return underlay.New(underlay.Options{
-		InterfaceName: bindInterface,
-		AutoDetect:    autoDetectInterface,
+		InterfaceName:  bindInterface,
+		AutoDetect:     autoDetectInterface,
+		LocalDNSServer: localDNSServer,
 	})
 }
 

@@ -21,6 +21,7 @@ type (
 		RemoteDNSServer     string
 		SecondaryDNSServer  string
 		DNSServerBind       string
+		LocalDNSServer      string
 		CustomDNSList       []SingleCustomDNS
 		DisableKeepAlive    bool
 		KeepAliveURL        string
@@ -103,6 +104,7 @@ type (
 		RemoteDNSServer         *string                    `toml:"zju_dns_server"` // TODO: rename to remote_dns_server
 		SecondaryDNSServer      *string                    `toml:"secondary_dns_server"`
 		DNSServerBind           *string                    `toml:"dns_server_bind"`
+		LocalDNSServer          *string                    `toml:"local_dns_server"`
 		DNSHijack               *bool                      `toml:"dns_hijack"`
 		FakeIP                  *bool                      `toml:"fake_ip"`
 		GraphCodeFile           *string                    `toml:"graph_code_file"`

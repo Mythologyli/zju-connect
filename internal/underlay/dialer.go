@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,12 +19,13 @@ import (
 // server before the TUN interface was installed. This prevents VPN underlay
 // connections from being captured by the TUN interface itself.
 type Dialer struct {
-	mu            sync.RWMutex
-	interfaceName string
-	autoDetect    bool
-	excludedIPs   []net.IP
-	requireBound  bool
-	capture       *pcapCapture
+	mu             sync.RWMutex
+	interfaceName  string
+	autoDetect     bool
+	excludedIPs    []net.IP
+	requireBound   bool
+	capture        *pcapCapture
+	localDNSServer string
 }
 
 type Options struct {
@@ -33,6 +35,9 @@ type Options struct {
 	AutoDetect    bool
 	// DebugPCAPFile records application-visible TCP traffic on underlay sockets.
 	DebugPCAPFile string
+	// LocalDNSServer overrides the system DNS for VPN server hostname resolution.
+	// It must be an IP address with an optional port.
+	LocalDNSServer string
 }
 
 func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
@@ -61,6 +66,11 @@ func New(options ...Options) (*Dialer, error) {
 		option = options[0]
 	}
 	d := &Dialer{autoDetect: option.AutoDetect}
+	localDNSServer, err := normalizeLocalDNSServer(option.LocalDNSServer)
+	if err != nil {
+		return nil, err
+	}
+	d.localDNSServer = localDNSServer
 	if option.InterfaceName != "" {
 		d.updateInterfaceName(option.InterfaceName)
 		d.autoDetect = false
@@ -120,7 +130,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 		}
 	}
 
-	conn, err := dialOnInterface(ctx, network, address, interfaceName)
+	conn, err := dialOnInterface(ctx, network, address, interfaceName, d.localDNSServer)
 	if err == nil {
 		return d.wrapCapture(conn), nil
 	}
@@ -130,7 +140,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 		return nil, err
 	}
 
-	conn, retryErr := dialOnInterface(ctx, network, address, refreshedInterface)
+	conn, retryErr := dialOnInterface(ctx, network, address, refreshedInterface, d.localDNSServer)
 	if retryErr != nil {
 		return nil, fmt.Errorf("dial underlay via %q failed after %q failed: %w", refreshedInterface, interfaceName, retryErr)
 	}
@@ -164,14 +174,63 @@ func (d *Dialer) wrapCapture(conn net.Conn) net.Conn {
 	return d.capture.Wrap(conn)
 }
 
-func dialContextOnInterface(ctx context.Context, network, address, interfaceName string) (net.Conn, error) {
+func dialContextOnInterface(ctx context.Context, network, address, interfaceName, localDNSServer string) (net.Conn, error) {
 	nd := &net.Dialer{}
 	if interfaceName != "" {
 		if err := bindInterface(nd, interfaceName); err != nil {
 			return nil, fmt.Errorf("bind underlay interface %q: %w", interfaceName, err)
 		}
 	}
+	if interfaceName != "" || localDNSServer != "" {
+		nd.Resolver = newUnderlayResolver(interfaceName, localDNSServer)
+	}
 	return nd.DialContext(ctx, network, address)
+}
+
+func newUnderlayResolver(interfaceName, localDNSServer string) *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, systemDNSServer string) (net.Conn, error) {
+			target := systemDNSServer
+			if localDNSServer != "" {
+				target = localDNSServer
+			}
+			dialer := &net.Dialer{}
+			if interfaceName != "" && !isLoopbackAddress(target) {
+				if err := bindInterface(dialer, interfaceName); err != nil {
+					return nil, fmt.Errorf("bind local DNS interface %q: %w", interfaceName, err)
+				}
+			}
+			return dialer.DialContext(ctx, network, target)
+		},
+	}
+}
+
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func normalizeLocalDNSServer(address string) (string, error) {
+	if address == "" {
+		return "", nil
+	}
+	if ip := net.ParseIP(address); ip != nil {
+		return net.JoinHostPort(address, "53"), nil
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil {
+		return "", fmt.Errorf("local DNS server must be an IP address with an optional port: %q", address)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", fmt.Errorf("invalid local DNS server port in %q", address)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 var dialOnInterface = dialContextOnInterface
