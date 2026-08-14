@@ -69,6 +69,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.AddRoute = getTOMLVal(confTOML.AddRoute, false)
 	conf.DNSTTL = getTOMLVal(confTOML.DNSTTL, uint64(3600))
 	conf.DebugDump = getTOMLVal(confTOML.DebugDump, false)
+	conf.DebugPCAPFile = getTOMLVal(confTOML.DebugPCAPFile, "")
 	conf.DisableKeepAlive = getTOMLVal(confTOML.DisableKeepAlive, false)
 	conf.KeepAliveURL = getTOMLVal(confTOML.KeepAliveURL, "")
 	conf.RemoteDNSServer = getTOMLVal(confTOML.RemoteDNSServer, "auto")
@@ -171,6 +172,7 @@ func init() {
 	flag.BoolVar(&conf.AddRoute, "add-route", false, "Add route from rules for TUN interface")
 	flag.Uint64Var(&conf.DNSTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&conf.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
+	flag.StringVar(&conf.DebugPCAPFile, "debug-pcap-file", "", "Save reconstructed VPN underlay TCP traffic to a PCAP file (debug only)")
 	flag.BoolVar(&conf.DisableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
 	flag.StringVar(&conf.KeepAliveURL, "keep-alive-url", "", "Keep alive URL, default is empty (use DNS keep alive)")
 	flag.StringVar(&conf.RemoteDNSServer, "zju-dns-server", "auto", "Remote DNS server address. Set to 'auto' to use remote DNS server provided by server") // TODO: rename to remote-dns-server

@@ -156,6 +156,8 @@
 
 + `debug-dump`: 是否开启调试，一般不需要加此参数
 
++ `debug-pcap-file`: 根据 VPN 底层 TCP 连接实际收发的数据重建 PCAP 文件，仅用于调试；捕获队列满时会阻塞网络读写，不包含内核握手和重传，TLS 内容仍为密文
+
 + `bind-interface`: 手动指定 VPN 底层连接使用的网卡接口，支持 EasyConnect 和 aTrust。非空时优先使用该接口，不再自动探测
 
 + `auto-detect-interface`: 自动探测并绑定 VPN 底层网卡，默认为 `false`。设为 `true` 时启用自动探测；未启用且未指定 `bind-interface` 时，底层连接使用系统路由。**若同时使用其他启用了 Fake IP 的 VPN，此功能可能无法正常工作**

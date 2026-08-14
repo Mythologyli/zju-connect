@@ -53,9 +53,13 @@ func main() {
 	underlayDialer, underlayErr := underlay.New(underlay.Options{
 		InterfaceName: conf.BindInterface,
 		AutoDetect:    conf.AutoDetectInterface,
+		DebugPCAPFile: conf.DebugPCAPFile,
 	})
 	if underlayErr != nil {
 		log.Fatalf("Create underlay dialer: %v", underlayErr)
+	}
+	if conf.DebugPCAPFile != "" {
+		log.Printf("VPN underlay PCAP capture enabled: %s", conf.DebugPCAPFile)
 	}
 	var vpnClient client.Client
 	switch conf.Protocol {

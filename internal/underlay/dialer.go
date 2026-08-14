@@ -23,6 +23,7 @@ type Dialer struct {
 	autoDetect    bool
 	excludedIPs   []net.IP
 	requireBound  bool
+	capture       *pcapCapture
 }
 
 type Options struct {
@@ -30,6 +31,8 @@ type Options struct {
 	// It takes precedence over AutoDetect.
 	InterfaceName string
 	AutoDetect    bool
+	// DebugPCAPFile records application-visible TCP traffic on underlay sockets.
+	DebugPCAPFile string
 }
 
 func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
@@ -62,12 +65,22 @@ func New(options ...Options) (*Dialer, error) {
 		d.updateInterfaceName(option.InterfaceName)
 		d.autoDetect = false
 	}
+	if option.DebugPCAPFile != "" {
+		capture, err := newPCAPCapture(option.DebugPCAPFile)
+		if err != nil {
+			return nil, fmt.Errorf("initialize underlay PCAP capture: %w", err)
+		}
+		d.capture = capture
+	}
 	return d, nil
 }
 
-// Close releases resources owned by the dialer.
+// Close flushes and closes the optional capture file.
 func (d *Dialer) Close() error {
-	return nil
+	if d == nil || d.capture == nil {
+		return nil
+	}
+	return d.capture.Close()
 }
 
 func (d *Dialer) InterfaceName() string {
@@ -109,7 +122,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 
 	conn, err := dialOnInterface(ctx, network, address, interfaceName)
 	if err == nil {
-		return conn, nil
+		return d.wrapCapture(conn), nil
 	}
 
 	refreshedInterface := d.refreshInterface()
@@ -121,7 +134,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	if retryErr != nil {
 		return nil, fmt.Errorf("dial underlay via %q failed after %q failed: %w", refreshedInterface, interfaceName, retryErr)
 	}
-	return conn, nil
+	return d.wrapCapture(conn), nil
 }
 
 func (d *Dialer) ensureInterface(address string) string {
@@ -142,6 +155,13 @@ func (d *Dialer) updateInterfaceName(interfaceName string) {
 	}
 	d.interfaceName = interfaceName
 	log.Printf("Underlay interface: %s", interfaceName)
+}
+
+func (d *Dialer) wrapCapture(conn net.Conn) net.Conn {
+	if d.capture == nil {
+		return conn
+	}
+	return d.capture.Wrap(conn)
 }
 
 func dialContextOnInterface(ctx context.Context, network, address, interfaceName string) (net.Conn, error) {

@@ -31,6 +31,7 @@ type (
 		FakeIP              bool
 		GraphCodeFile       string
 		DebugDump           bool
+		DebugPCAPFile       string
 		BindInterface       string
 		AutoDetectInterface bool
 
@@ -106,6 +107,7 @@ type (
 		FakeIP                  *bool                      `toml:"fake_ip"`
 		GraphCodeFile           *string                    `toml:"graph_code_file"`
 		DebugDump               *bool                      `toml:"debug_dump"`
+		DebugPCAPFile           *string                    `toml:"debug_pcap_file"`
 		PortForwarding          []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS               []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain       []string                   `toml:"custom_proxy_domain"`

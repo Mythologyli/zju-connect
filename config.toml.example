@@ -23,6 +23,7 @@ dns_server_bind = ""
 dns_hijack = false
 fake_ip = false
 debug_dump = false
+debug_pcap_file = "" # Reconstruct encrypted VPN underlay TCP traffic in this PCAP file (debug only)
 bind_interface = ""
 auto_detect_interface = false
 
