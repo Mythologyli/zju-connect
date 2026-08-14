@@ -98,7 +98,7 @@ func TestGetConnCoalescesConcurrentConnects(t *testing.T) {
 		closeCh:      make(chan struct{}),
 		conntrackMgr: newConntrackMgr(),
 	}
-	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
+	tunnel.connect = func(context.Context, string, *conntrackMgr) (*l3TunnelConn, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 		}
@@ -158,7 +158,7 @@ func TestTunnelAuthUsesContextDeadline(t *testing.T) {
 	}
 }
 
-func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
+func TestTunnelReconnectUsesFixedIntervalUntilSuccessAndSharesResult(t *testing.T) {
 	client := NewClient("user", "sid", "device", "")
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
@@ -167,8 +167,7 @@ func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
 		connecting:        make(map[string]*l3TunnelConnectCall),
 		dataChan:          make(chan []byte, 1),
 		closeCh:           make(chan struct{}),
-		reconnectDelay:    10 * time.Millisecond,
-		reconnectAttempts: 3,
+		reconnectInterval: 10 * time.Millisecond,
 	}
 	transport := &trackingNetConn{closed: make(chan struct{})}
 	want := &l3TunnelConn{
@@ -178,17 +177,17 @@ func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
 		conntrackMgr: newConntrackMgr(),
 	}
 	var calls atomic.Int32
-	var firstAttempt time.Time
-	var secondAttempt time.Time
-	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
-		switch calls.Add(1) {
-		case 1:
-			firstAttempt = time.Now()
+	var attemptTimes []time.Time
+	var attemptTimesMu sync.Mutex
+	tunnel.connect = func(context.Context, string, *conntrackMgr) (*l3TunnelConn, error) {
+		call := calls.Add(1)
+		attemptTimesMu.Lock()
+		attemptTimes = append(attemptTimes, time.Now())
+		attemptTimesMu.Unlock()
+		if call <= 6 {
 			return nil, fmt.Errorf("dial failed: %w", net.ErrClosed)
-		default:
-			secondAttempt = time.Now()
-			return want, nil
 		}
+		return want, nil
 	}
 
 	tunnel.startReconnect("group")
@@ -199,11 +198,16 @@ func TestTunnelReconnectUsesBackoffAndSharesResult(t *testing.T) {
 	if got != want {
 		t.Fatalf("getConn() = %p, want %p", got, want)
 	}
-	if calls.Load() != 2 {
-		t.Fatalf("connect calls = %d, want 2", calls.Load())
+	if calls.Load() != 7 {
+		t.Fatalf("connect calls = %d, want 7", calls.Load())
 	}
-	if elapsed := secondAttempt.Sub(firstAttempt); elapsed < 15*time.Millisecond {
-		t.Fatalf("retry delay = %s, want exponential backoff", elapsed)
+	attemptTimesMu.Lock()
+	defer attemptTimesMu.Unlock()
+	for i := 1; i < len(attemptTimes); i++ {
+		elapsed := attemptTimes[i].Sub(attemptTimes[i-1])
+		if elapsed < 8*time.Millisecond || elapsed > 100*time.Millisecond {
+			t.Fatalf("retry delay %d = %s, want fixed 10ms interval", i, elapsed)
+		}
 	}
 	tunnel.Close()
 }
@@ -217,8 +221,7 @@ func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
 		connecting:        make(map[string]*l3TunnelConnectCall),
 		dataChan:          make(chan []byte, 1),
 		closeCh:           make(chan struct{}),
-		reconnectDelay:    time.Millisecond,
-		reconnectAttempts: 1,
+		reconnectInterval: time.Millisecond,
 	}
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -230,7 +233,7 @@ func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
 		conntrackMgr: newConntrackMgr(),
 	}
 	var calls atomic.Int32
-	tunnel.connect = func(context.Context, string) (*l3TunnelConn, error) {
+	tunnel.connect = func(context.Context, string, *conntrackMgr) (*l3TunnelConn, error) {
 		calls.Add(1)
 		close(started)
 		<-release
@@ -250,6 +253,264 @@ func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("connect calls = %d, want 1", got)
+	}
+	tunnel.Close()
+}
+
+func TestTunnelReconnectStopsWhenTunnelCloses(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	tunnel := &L3Tunnel{
+		client:            client,
+		conns:             make(map[string]*l3TunnelConn),
+		connecting:        make(map[string]*l3TunnelConnectCall),
+		dataChan:          make(chan []byte, 1),
+		closeCh:           make(chan struct{}),
+		reconnectInterval: time.Hour,
+	}
+	attempted := make(chan struct{})
+	tunnel.connect = func(context.Context, string, *conntrackMgr) (*l3TunnelConn, error) {
+		close(attempted)
+		return nil, fmt.Errorf("dial failed: %w", net.ErrClosed)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := tunnel.getConn("group")
+		result <- err
+	}()
+	<-attempted
+	tunnel.Close()
+	select {
+	case err := <-result:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("getConn() error = %v, want net.ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("getConn() did not stop after tunnel close")
+	}
+}
+
+func TestTunnelReconnectPreservesConntrackAndToken(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	tunnel := &L3Tunnel{
+		client:            client,
+		conns:             make(map[string]*l3TunnelConn),
+		connecting:        make(map[string]*l3TunnelConnectCall),
+		conntrackMgrs:     make(map[string]*conntrackMgr),
+		dataChan:          make(chan []byte, 1),
+		closeCh:           make(chan struct{}),
+		reconnectInterval: time.Millisecond,
+	}
+	var calls atomic.Int32
+	var first, second *l3TunnelConn
+	tunnel.connect = func(_ context.Context, _ string, manager *conntrackMgr) (*l3TunnelConn, error) {
+		conn := &l3TunnelConn{
+			tlsConn:      tls.Client(&trackingNetConn{closed: make(chan struct{})}, &tls.Config{InsecureSkipVerify: true}),
+			incoming:     make(chan []byte),
+			closeCh:      make(chan struct{}),
+			conntrackMgr: manager,
+		}
+		if calls.Add(1) == 1 {
+			first = conn
+		} else {
+			second = conn
+		}
+		return conn, nil
+	}
+
+	conn, err := tunnel.getConn("group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := conn.conntrackMgr
+	ct := manager.getOrCreate("flow", "app", "group")
+	manager.completeAuth(ct.authID, "connect-token", nil)
+
+	tunnel.evictConn("group", conn)
+	tunnel.startReconnect("group")
+	reconnected, err := tunnel.getConn("group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != conn || second != reconnected || calls.Load() != 2 {
+		t.Fatalf("connections = first %p second %p calls %d", first, second, calls.Load())
+	}
+	if reconnected.conntrackMgr != manager {
+		t.Fatal("reconnect replaced the node group's conntrack manager")
+	}
+	if manager.getByKey(ct.key) != ct {
+		t.Fatal("reconnect replaced the authenticated conntrack")
+	}
+	if token, authErr, authenticated := manager.authResult(ct); !authenticated || authErr != nil || token != "connect-token" {
+		t.Fatalf("auth result after reconnect = token %q, err %v, authenticated %t", token, authErr, authenticated)
+	}
+	manager.mu.Lock()
+	closedBeforeTunnelClose := manager.closed
+	manager.mu.Unlock()
+	if closedBeforeTunnelClose {
+		t.Fatal("transport close also closed the shared conntrack manager")
+	}
+
+	tunnel.Close()
+	manager.mu.Lock()
+	closedAfterTunnelClose := manager.closed
+	manager.mu.Unlock()
+	if !closedAfterTunnelClose {
+		t.Fatal("tunnel close did not close the shared conntrack manager")
+	}
+}
+
+func TestTunnelRecoversFromReadAndHeartbeatFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		start func(*l3TunnelConn)
+	}{
+		{
+			name: "TLS EOF",
+			start: func(conn *l3TunnelConn) {
+				conn.reader = bufio.NewReader(bytes.NewReader(nil))
+				go conn.readLoop()
+			},
+		},
+		{
+			name: "unknown version",
+			start: func(conn *l3TunnelConn) {
+				conn.reader = bufio.NewReader(bytes.NewReader([]byte{0xff, cmdDataResp}))
+				go conn.readLoop()
+			},
+		},
+		{
+			name: "unknown command",
+			start: func(conn *l3TunnelConn) {
+				conn.reader = bufio.NewReader(bytes.NewReader([]byte{l3Version, 0x92}))
+				go conn.readLoop()
+			},
+		},
+		{
+			name: "late tunnel auth",
+			start: func(conn *l3TunnelConn) {
+				conn.reader = bufio.NewReader(bytes.NewReader([]byte{0x53, 0x00, 0x00, 0x00}))
+				go conn.readLoop()
+			},
+		},
+		{
+			name: "truncated frame",
+			start: func(conn *l3TunnelConn) {
+				conn.reader = bufio.NewReader(bytes.NewReader([]byte{l3Version, cmdDataResp, 0x00, 0x04, 0x45}))
+				go conn.readLoop()
+			},
+		},
+		{
+			name: "heartbeat lost",
+			start: func(conn *l3TunnelConn) {
+				conn.heartbeatInterval = time.Millisecond
+				conn.heartbeatMissLimit = 1
+				atomic.StoreInt32(&conn.heartbeatMisses, 1)
+				go conn.heartbeatLoop()
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := NewClient("user", "sid", "device", "")
+			client.BestNodes = map[string]string{"group": "node:443"}
+			manager := newConntrackMgr()
+			oldConn := &l3TunnelConn{
+				tlsConn:      tls.Client(&trackingNetConn{closed: make(chan struct{})}, &tls.Config{InsecureSkipVerify: true}),
+				incoming:     make(chan []byte),
+				closeCh:      make(chan struct{}),
+				conntrackMgr: manager,
+			}
+			reconnected := make(chan *l3TunnelConn, 1)
+			tunnel := &L3Tunnel{
+				client:            client,
+				conns:             map[string]*l3TunnelConn{"group": oldConn},
+				connecting:        make(map[string]*l3TunnelConnectCall),
+				conntrackMgrs:     map[string]*conntrackMgr{"group": manager},
+				dataChan:          make(chan []byte, 1),
+				closeCh:           make(chan struct{}),
+				reconnectInterval: time.Millisecond,
+			}
+			tunnel.connect = func(_ context.Context, _ string, gotManager *conntrackMgr) (*l3TunnelConn, error) {
+				conn := &l3TunnelConn{
+					tlsConn:      tls.Client(&trackingNetConn{closed: make(chan struct{})}, &tls.Config{InsecureSkipVerify: true}),
+					incoming:     make(chan []byte),
+					closeCh:      make(chan struct{}),
+					conntrackMgr: gotManager,
+				}
+				reconnected <- conn
+				return conn, nil
+			}
+
+			go tunnel.forwardFromConn("group", oldConn)
+			test.start(oldConn)
+			select {
+			case newConn := <-reconnected:
+				if newConn.conntrackMgr != manager {
+					t.Fatal("recovery replaced conntrack manager")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("failure did not establish a replacement tunnel")
+			}
+			tunnel.Close()
+		})
+	}
+}
+
+func TestTunnelRecoversFromDataWriteFailure(t *testing.T) {
+	client := NewClient("user", "sid", "device", "")
+	client.BestNodes = map[string]string{"group": "node:443"}
+	manager := newConntrackMgr()
+	packet := zctcpip.IPv4Packet(makeUDPPacket(12345, 53))
+	meta, err := buildPacketMeta(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.key = connTrackKey(meta)
+	ct := manager.getOrCreate(meta.key, "app", "group")
+	manager.completeAuth(ct.authID, "connect-token", nil)
+	oldConn := &l3TunnelConn{
+		tlsConn:        tls.Client(&trackingNetConn{closed: make(chan struct{})}, &tls.Config{InsecureSkipVerify: true}),
+		incoming:       make(chan []byte),
+		closeCh:        make(chan struct{}),
+		conntrackMgr:   manager,
+		writeFrameHook: func([]byte) error { return net.ErrClosed },
+	}
+	tunnel := &L3Tunnel{
+		client:            client,
+		conns:             map[string]*l3TunnelConn{"group": oldConn},
+		connecting:        make(map[string]*l3TunnelConnectCall),
+		conntrackMgrs:     map[string]*conntrackMgr{"group": manager},
+		dataChan:          make(chan []byte, 1),
+		closeCh:           make(chan struct{}),
+		reconnectInterval: time.Millisecond,
+	}
+	written := make(chan []byte, 1)
+	tunnel.connect = func(_ context.Context, _ string, gotManager *conntrackMgr) (*l3TunnelConn, error) {
+		return &l3TunnelConn{
+			tlsConn:      tls.Client(&trackingNetConn{closed: make(chan struct{})}, &tls.Config{InsecureSkipVerify: true}),
+			incoming:     make(chan []byte),
+			closeCh:      make(chan struct{}),
+			conntrackMgr: gotManager,
+			writeFrameHook: func(frame []byte) error {
+				written <- append([]byte(nil), frame...)
+				return nil
+			},
+		}, nil
+	}
+
+	if err := tunnel.writePacket(packet, "app", "group"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case frame := <-written:
+		if !bytes.Contains(frame, []byte("connect-token")) {
+			t.Fatalf("replacement tunnel did not reuse connect token: % X", frame)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("packet was not retried on a replacement tunnel")
 	}
 	tunnel.Close()
 }
@@ -1277,6 +1538,69 @@ func TestAuthServerRetriesDoNotConsumeTimeoutBudget(t *testing.T) {
 	}
 	if ct.authTimeouts != 0 {
 		t.Fatalf("auth timeouts after server retries = %d, want 0", ct.authTimeouts)
+	}
+}
+
+func TestAuthRetryStatusesRecoverAfterRepeatedBusyResponses(t *testing.T) {
+	for status := byte(authRetryStatusMin); status <= authRetryStatusMax; status++ {
+		t.Run(fmt.Sprintf("status_%02x", status), func(t *testing.T) {
+			now := time.Unix(1000, 0)
+			manager := newConntrackMgr()
+			manager.now = func() time.Time { return now }
+			ct := manager.getOrCreate("flow", "app", "group")
+			packet := makeUDPPacket(12345, 53)
+			if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, packet); err != nil {
+				t.Fatal(err)
+			}
+			var frames [][]byte
+			conn := &l3TunnelConn{
+				closeCh:      make(chan struct{}),
+				authWake:     make(chan struct{}, 1),
+				conntrackMgr: manager,
+				writeFrameHook: func(frame []byte) error {
+					frames = append(frames, append([]byte(nil), frame...))
+					return nil
+				},
+			}
+			response, err := json.Marshal(authResponseIP{
+				Data: authResponseIPData{ConntrackHash: ct.authID},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for attempt := 0; attempt < defaultAuthMaxAttempts+1; attempt++ {
+				jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+				if len(jobs) != 1 || jobs[0].conntrack != ct {
+					t.Fatalf("busy response %d auth jobs = %v, want conntrack", attempt, jobs)
+				}
+				manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
+				conn.handleAuthResp(status, response)
+				if jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize); len(jobs) != 0 {
+					t.Fatalf("busy response %d retried before 10s: %v", attempt, jobs)
+				}
+				now = now.Add(defaultAuthRetryWait)
+			}
+			if ct.authTimeouts != 0 {
+				t.Fatalf("busy responses consumed %d timeout attempts", ct.authTimeouts)
+			}
+
+			jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+			if len(jobs) != 1 || jobs[0].conntrack != ct {
+				t.Fatalf("recovery auth jobs = %v, want conntrack", jobs)
+			}
+			manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
+			success, err := json.Marshal(authResponseIP{
+				Data: authResponseIPData{ConntrackHash: ct.authID, ConnectToken: "connect-token"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.handleAuthResp(0, success)
+			if len(frames) != 1 || !bytes.Contains(frames[0], []byte("connect-token")) || !bytes.HasSuffix(frames[0], packet) {
+				t.Fatalf("recovery frames = % X, want cached packet with token", frames)
+			}
+		})
 	}
 }
 
