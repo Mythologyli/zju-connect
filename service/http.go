@@ -92,15 +92,18 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	log.DebugPrintf("HTTP proxy request: %s %s", req.Method, req.URL.String())
 	req.RequestURI = ""
 
 	resp, err := p.client.Do(req)
 	if err != nil {
+		log.DebugPrintf("HTTP proxy upstream request failed: %s %s: %v", req.Method, req.URL.String(), err)
 		w.WriteHeader(500)
 		_, _ = w.Write([]byte(err.Error() + "\n"))
 		return
 	}
 	defer resp.Body.Close()
+	log.DebugPrintf("HTTP proxy upstream response: %s %s: %s", req.Method, req.URL.String(), resp.Status)
 
 	hdr := w.Header()
 	for k, v := range resp.Header {
@@ -109,12 +112,19 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	w.WriteHeader(resp.StatusCode)
 
-	_, _ = io.Copy(w, resp.Body)
+	written, err := io.Copy(w, resp.Body)
+	if err != nil {
+		log.DebugPrintf("HTTP proxy response relay failed after %d bytes: %s %s: %v", written, req.Method, req.URL.String(), err)
+		return
+	}
+	log.DebugPrintf("HTTP proxy response relayed: %s %s: %d bytes", req.Method, req.URL.String(), written)
 }
 
 func (p *httpProxy) handleConnect(w http.ResponseWriter, req *http.Request) {
+	log.DebugPrintf("HTTP proxy CONNECT request: %s", req.Host)
 	targetConn, err := p.dialContext(req.Context(), "tcp", req.Host)
 	if err != nil {
+		log.DebugPrintf("HTTP proxy CONNECT dial failed: %s: %v", req.Host, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error() + "\n"))
 		return
@@ -144,20 +154,23 @@ func (p *httpProxy) handleConnect(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if err := buffered.Flush(); err != nil {
+		log.DebugPrintf("HTTP proxy CONNECT response failed: %s: %v", req.Host, err)
 		return
 	}
+	log.DebugPrintf("HTTP proxy CONNECT established: %s", req.Host)
 
 	relayDone := make(chan struct{}, 2)
-	go relayHTTPConnect(targetConn, buffered, relayDone)
-	go relayHTTPConnect(clientConn, targetConn, relayDone)
+	go relayHTTPConnect(targetConn, buffered, req.Host, "upstream", relayDone)
+	go relayHTTPConnect(clientConn, targetConn, req.Host, "downstream", relayDone)
 	<-relayDone
 	_ = clientConn.Close()
 	_ = targetConn.Close()
 	<-relayDone
 }
 
-func relayHTTPConnect(dst net.Conn, src io.Reader, done chan<- struct{}) {
-	_, _ = io.Copy(dst, src)
+func relayHTTPConnect(dst net.Conn, src io.Reader, host, direction string, done chan<- struct{}) {
+	written, err := io.Copy(dst, src)
+	log.DebugPrintf("HTTP proxy CONNECT %s relay ended: %s: %d bytes: %v", direction, host, written, err)
 	if conn, ok := dst.(interface{ CloseWrite() error }); ok {
 		_ = conn.CloseWrite()
 	}
