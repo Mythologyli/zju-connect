@@ -157,19 +157,25 @@ func (s *Stack) processIPV4(packet zctcpip.IPv4Packet) error {
 
 		if _, matched := client.MatchDomainResource(resources, protocol, port); matched {
 			if protocol == "tcp" {
-				return s.processIPV4TCP(packet, packet.Payload())
+				_, tcpTunnelMatched := client.MatchDomainResourceWhere(resources, protocol, port, func(resource client.DomainResource) bool {
+					return !resource.EnableTCPPrefL3
+				})
+				return s.processIPV4TCP(packet, packet.Payload(), tcpTunnelMatched)
 			} else {
 				return s.processIPV4UDP(packet, packet.Payload())
 			}
 		}
 	}
 
-	if s.matchesStaticResource(packet.DestinationIP(), protocol, port) {
+	if _, matched := s.matchStaticResource(packet.DestinationIP(), protocol, port); matched {
 		if protocol == "icmp" {
 			return s.processIPV4ICMP(packet, packet.Payload())
 		}
 		if protocol == "tcp" {
-			return s.processIPV4TCP(packet, packet.Payload())
+			_, tcpTunnelMatched := s.resourceIndex.MatchWhere(packet.DestinationIP(), protocol, port, func(resource client.IPResource) bool {
+				return !resource.EnableTCPPrefL3
+			})
+			return s.processIPV4TCP(packet, packet.Payload(), tcpTunnelMatched)
 		} else {
 			return s.processIPV4UDP(packet, packet.Payload())
 		}
@@ -200,14 +206,22 @@ func (s *Stack) matchesStaticResource(destination net.IP, protocol string, port 
 	return decision
 }
 
-func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPPacket) error {
+func (s *Stack) matchStaticResource(destination net.IP, protocol string, port int) (client.IPResource, bool) {
+	s.resourceIndexOnce.Do(func() {
+		s.resourceIndex = ipresource.New(s.ipResources)
+		s.resourceCache = newResourceDecisionCache()
+	})
+	return s.resourceIndex.Match(destination, protocol, port)
+}
+
+func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPPacket, useTCPTunnel bool) error {
 	log.DebugPrintf("receive tcp %s:%d -> %s:%d", packet.SourceIP(), tcpPacket.SourcePort(), packet.DestinationIP(), tcpPacket.DestinationPort())
 
 	if !packet.DestinationIP().IsGlobalUnicast() {
 		return s.endpoint.Write(packet)
 	}
 
-	if s.endpoint.client.CanUseTCPTunnel() {
+	if useTCPTunnel && s.endpoint.client.CanUseTCPTunnel() {
 		pkt := gvisorstack.NewPacketBuffer(gvisorstack.PacketBufferOptions{
 			Payload: buffer.MakeWithData(packet),
 		})

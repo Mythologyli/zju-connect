@@ -59,42 +59,51 @@ func build(resources []indexedResource) *node {
 }
 
 func (i *Index) Match(destination net.IP, protocol string, port int) (client.IPResource, bool) {
-	return i.match(destination, protocol, port, false)
+	return i.match(destination, protocol, port, false, nil)
 }
 
 func (i *Index) MatchLast(destination net.IP, protocol string, port int) (client.IPResource, bool) {
-	return i.match(destination, protocol, port, true)
+	return i.match(destination, protocol, port, true, nil)
 }
 
-func (i *Index) match(destination net.IP, protocol string, port int, preferLast bool) (client.IPResource, bool) {
+func (i *Index) MatchWhere(destination net.IP, protocol string, port int, accept func(client.IPResource) bool) (client.IPResource, bool) {
+	return i.match(destination, protocol, port, false, accept)
+}
+
+func (i *Index) MatchLastWhere(destination net.IP, protocol string, port int, accept func(client.IPResource) bool) (client.IPResource, bool) {
+	return i.match(destination, protocol, port, true, accept)
+}
+
+func (i *Index) match(destination net.IP, protocol string, port int, preferLast bool, accept func(client.IPResource) bool) (client.IPResource, bool) {
 	ip, ok := IPv4Uint32(destination)
 	if !ok || i == nil || i.root == nil {
 		return client.IPResource{}, false
 	}
 	var best *indexedResource
-	i.root.match(ip, protocol, port, preferLast, &best)
+	i.root.match(ip, protocol, port, preferLast, accept, &best)
 	if best == nil {
 		return client.IPResource{}, false
 	}
 	return best.resource, true
 }
 
-func (n *node) match(ip uint32, protocol string, port int, preferLast bool, best **indexedResource) {
+func (n *node) match(ip uint32, protocol string, port int, preferLast bool, accept func(client.IPResource) bool, best **indexedResource) {
 	if n.maxEnd < ip {
 		return
 	}
 	if n.left != nil && n.left.maxEnd >= ip {
-		n.left.match(ip, protocol, port, preferLast, best)
+		n.left.match(ip, protocol, port, preferLast, accept, best)
 	}
 	resource := &n.resource
 	if resource.start <= ip && ip <= resource.end &&
 		(resource.resource.Protocol == protocol || resource.resource.Protocol == "all") &&
 		(protocol == "icmp" || resource.resource.PortMin <= port && port <= resource.resource.PortMax) &&
+		(accept == nil || accept(resource.resource)) &&
 		(*best == nil || (!preferLast && resource.order < (*best).order) || (preferLast && resource.order > (*best).order)) {
 		*best = resource
 	}
 	if resource.start <= ip && n.right != nil && n.right.maxEnd >= ip {
-		n.right.match(ip, protocol, port, preferLast, best)
+		n.right.match(ip, protocol, port, preferLast, accept, best)
 	}
 }
 

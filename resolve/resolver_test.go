@@ -15,6 +15,20 @@ import (
 
 var domainResourceMatchSink bool
 
+func TestTCPPrefersL3UsesSelectedResource(t *testing.T) {
+	if TCPPrefersL3(context.Background()) {
+		t.Fatal("empty context unexpectedly prefers L3")
+	}
+	domainCtx := context.WithValue(context.Background(), ContextKeyDomainResource, client.DomainResource{EnableTCPPrefL3: true})
+	if !TCPPrefersL3(domainCtx) {
+		t.Fatal("domain resource preference was ignored")
+	}
+	ipCtx := context.WithValue(context.Background(), ContextKeyIPResource, client.IPResource{EnableTCPPrefL3: true})
+	if !TCPPrefersL3(ipCtx) {
+		t.Fatal("IP resource preference was ignored")
+	}
+}
+
 func TestMatchDomainResourcePreservesNormalizedSuffixMatching(t *testing.T) {
 	want := client.DomainResource{AppID: "vpn-app"}
 	index := newDomainResourceIndex(client.DomainResources{".Example.COM.": {want}})

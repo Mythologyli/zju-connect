@@ -9,7 +9,7 @@ import (
 )
 
 func TestServerVersionInfoSelectsTCPTunnelZeroRTT(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		name    string
 		version string
 		enable  bool
@@ -18,10 +18,9 @@ func TestServerVersionInfoSelectsTCPTunnelZeroRTT(t *testing.T) {
 		{name: "supported and enabled", version: "1.0.0.0", enable: true, want: true},
 		{name: "missing capability", enable: true},
 		{name: "disabled by option", version: "1.0.0.0"},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			manifest := fmt.Sprintf(`{"code":0,"data":{"capacities":{"tun0rtt":{"version":%q}},"options":{"tun0rtt":{"enable":%t}}}}`, test.version, test.enable)
+			manifest := fmt.Sprintf(`{"code":0,"data":{"capacities":{"zeroRTT":{"version":%q}},"options":{"tun0rtt":{"enable":%t}}}}`, test.version, test.enable)
 			info, err := ParseServerVersionInfo([]byte(manifest))
 			if err != nil {
 				t.Fatal(err)
@@ -34,7 +33,7 @@ func TestServerVersionInfoSelectsTCPTunnelZeroRTT(t *testing.T) {
 }
 
 func TestServerVersionInfoFetchesAndValidatesManifest(t *testing.T) {
-	manifest := `{"code":0,"data":{"capacities":{"tun0rtt":{"version":"1.0.0.0"}},"options":{"tun0rtt":{"enable":true}}}}`
+	manifest := `{"code":0,"data":{"capacities":{"zeroRTT":{"version":"1.0.0.0"}},"options":{"tun0rtt":{"enable":true}}}}`
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/public/manifest" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -53,7 +52,7 @@ func TestServerVersionInfoFetchesAndValidatesManifest(t *testing.T) {
 }
 
 func TestServerVersionInfoRejectsInvalidResponse(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		name       string
 		status     int
 		body       string
@@ -62,8 +61,7 @@ func TestServerVersionInfoRejectsInvalidResponse(t *testing.T) {
 		{name: "HTTP failure", status: http.StatusBadGateway, body: `{}`, wantErrMsg: "HTTP status 502"},
 		{name: "invalid JSON", status: http.StatusOK, body: `{`, wantErrMsg: "failed to parse"},
 		{name: "manifest failure", status: http.StatusOK, body: `{"code":17}`, wantErrMsg: "code 17"},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(test.status)

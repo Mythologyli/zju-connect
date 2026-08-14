@@ -472,23 +472,12 @@ func TestWriteTCPTunnelHandshakeMessageRejectsShortWrite(t *testing.T) {
 func TestWriteTCPTunnelInitialMessagesSelectsWireHandshake(t *testing.T) {
 	initMsg := []byte("init")
 	destMsg := []byte("dest")
-	for _, test := range []struct {
-		name    string
-		zeroRTT bool
-		want    string
-	}{
-		{name: "non zero RTT", want: "init"},
-		{name: "zero RTT", zeroRTT: true, want: "initdest"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var got bytes.Buffer
-			if err := writeTCPTunnelInitialMessages(&got, initMsg, destMsg, test.zeroRTT); err != nil {
-				t.Fatal(err)
-			}
-			if got.String() != test.want {
-				t.Fatalf("wire handshake = %q, want %q", got.String(), test.want)
-			}
-		})
+	var got bytes.Buffer
+	if err := writeTCPTunnelInitialMessages(&got, initMsg, destMsg); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != "initdest" {
+		t.Fatalf("wire handshake = %q, want initdest", got.String())
 	}
 }
 
@@ -566,6 +555,44 @@ func TestWaitForTCPAuthHandlesSplitResponse(t *testing.T) {
 	}()
 	if err := waitForTCPAuth(context.Background(), client, bufio.NewReader(client)); err != nil {
 		t.Fatal(err)
+	}
+	if err := <-serverErrCh; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCapturedRawHandshakeConsumesConnectReplyBeforeHTTP(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	payload := []byte("HTTP/1.1 200 OK\r\n")
+	serverErrCh := make(chan error, 1)
+	go func() {
+		responseJSON := []byte(`{"code":0,"message":"Successful"}`)
+		response := []byte{0x05, 0x81, 0x53, 0x00, 0x00, byte(len(responseJSON))}
+		response = append(response, responseJSON...)
+		response = append(response, []byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0}...)
+		response = append(response, payload...)
+		_, err := server.Write(response)
+		serverErrCh <- err
+	}()
+
+	reader := bufio.NewReader(client)
+	reuse, err := waitForTCPConnectReply(context.Background(), client, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reuse {
+		t.Fatal("captured SOCKS5 reply unexpectedly enabled reuse")
+	}
+	tunnelConn := &tcpTunnelConn{tlsConn: client, reader: reader, raw: true}
+	got := make([]byte, len(payload))
+	if _, err := io.ReadFull(tunnelConn, got); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("raw payload = %q, want %q", got, payload)
 	}
 	if err := <-serverErrCh; err != nil {
 		t.Fatal(err)
@@ -748,6 +775,16 @@ func TestMatchTCPIPResourceUsesLastMatchingRule(t *testing.T) {
 	}
 	if resource.AppID != "last" {
 		t.Fatalf("matched AppID = %q, want last matching rule", resource.AppID)
+	}
+}
+
+func TestMatchTCPIPResourceRejectsTCPPrefL3(t *testing.T) {
+	resources := []client.IPResource{{
+		IPMin: net.IPv4(10, 0, 0, 1), IPMax: net.IPv4(10, 0, 0, 10), PortMin: 443, PortMax: 443,
+		Protocol: "tcp", AppID: "l3-app", EnableTCPPrefL3: true,
+	}}
+	if resource, ok := matchTCPIPResource(ipresource.New(resources), &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 443}); ok {
+		t.Fatalf("matchTCPIPResource() = %#v, want no TCP tunnel resource", resource)
 	}
 }
 

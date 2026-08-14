@@ -895,6 +895,18 @@ func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 	}
 }
 
+func TestL3TunnelAcceptsTCPOnlyWhenResourcePrefersL3(t *testing.T) {
+	destination := net.IPv4(10, 0, 0, 42)
+	resources := []client.IPResource{
+		{IPMin: destination, IPMax: destination, PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "tcp-app"},
+		{IPMin: destination, IPMax: destination, PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "l3-app", EnableTCPPrefL3: true},
+	}
+	resource, ok := matchL3IPResource(ipresource.New(resources), destination, "tcp", 443)
+	if !ok || resource.AppID != "l3-app" {
+		t.Fatalf("L3 match = (%#v, %t), want l3-app", resource, ok)
+	}
+}
+
 func TestL3ConnReadRejectsShortBuffer(t *testing.T) {
 	packet := make([]byte, 1500)
 	tunnel := &L3Tunnel{

@@ -129,14 +129,12 @@ func writeTCPTunnelHandshakeMessage(writer io.Writer, data []byte) error {
 	return nil
 }
 
-func writeTCPTunnelInitialMessages(writer io.Writer, initMsg, destMsg []byte, zeroRTT bool) error {
-	if err := writeTCPTunnelHandshakeMessage(writer, initMsg); err != nil {
-		return fmt.Errorf("failed to send init message: %w", err)
-	}
-	if zeroRTT {
-		if err := writeTCPTunnelHandshakeMessage(writer, destMsg); err != nil {
-			return fmt.Errorf("failed to send dest address: %w", err)
-		}
+func writeTCPTunnelInitialMessages(writer io.Writer, initMsg, destMsg []byte) error {
+	message := make([]byte, 0, len(initMsg)+len(destMsg))
+	message = append(message, initMsg...)
+	message = append(message, destMsg...)
+	if err := writeTCPTunnelHandshakeMessage(writer, message); err != nil {
+		return fmt.Errorf("failed to send tcp tunnel handshake: %w", err)
 	}
 	return nil
 }
@@ -461,7 +459,9 @@ func calcXRequestSig(key []byte, data []byte) string {
 }
 
 func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr) (client.IPResource, bool) {
-	return index.MatchLast(addr.IP, "tcp", addr.Port)
+	return index.MatchLastWhere(addr.IP, "tcp", addr.Port, func(resource client.IPResource) bool {
+		return !resource.EnableTCPPrefL3
+	})
 }
 
 func tcpTunnelAuthDestinations(addr *net.TCPAddr, domain string) (destAddr, destIP string) {
@@ -478,6 +478,9 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	nodeGroupID := ""
 	domain := ""
 	if resource, ok := ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource); ok {
+		if resource.EnableTCPPrefL3 {
+			return nil, fmt.Errorf("host:%s port:%d prefers L3 tunnel: %w", addr.IP, addr.Port, client.ErrResourceNotFound)
+		}
 		appID = resource.AppID
 		nodeGroupID = resource.NodeGroupID
 		if res := ctx.Value(resolve.ContextKeyResolveHost); res != nil {
@@ -571,27 +574,19 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, err
 	}
 
-	if err := writeTCPTunnelInitialMessages(conn, initMsg, destMsg, c.tcpTunnelZeroRTT); err != nil {
+	if err := writeTCPTunnelInitialMessages(conn, initMsg, destMsg); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 	log.DebugDumpHex(initMsg)
-	if c.tcpTunnelZeroRTT {
-		log.DebugDumpHex(destMsg)
-	}
+	log.DebugDumpHex(destMsg)
 
 	tunnelConn := &tcpTunnelConn{
 		tlsConn: conn,
 		reader:  bufio.NewReader(conn),
 		raw:     !c.tcpTunnelZeroRTT,
 	}
-	var reuse bool
-	var waitErr error
-	if c.tcpTunnelZeroRTT {
-		reuse, waitErr = waitForTCPConnectReply(ctx, conn, tunnelConn.reader)
-	} else {
-		waitErr = waitForTCPAuth(ctx, conn, tunnelConn.reader)
-	}
+	reuse, waitErr := waitForTCPConnectReply(ctx, conn, tunnelConn.reader)
 	clearDeadlineErr := conn.SetReadDeadline(time.Time{})
 	if waitErr != nil {
 		_ = conn.Close()
@@ -601,6 +596,6 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to clear tcp tunnel handshake timeout: %w", clearDeadlineErr)
 	}
-	tunnelConn.reuse = reuse
+	tunnelConn.reuse = c.tcpTunnelZeroRTT && reuse
 	return tunnelConn, nil
 }

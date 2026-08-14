@@ -4,11 +4,12 @@ import (
 	"context"
 	"net"
 
+	"github.com/mythologyli/zju-connect/resolve"
 	"inet.af/netaddr"
 )
 
 func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
-	if s.endpoint.client.CanUseTCPTunnel() {
+	if s.endpoint.client.CanUseTCPTunnel() && !resolve.TCPPrefersL3(ctx) {
 		return s.endpoint.client.DialTCP(ctx, addr)
 	}
 

@@ -60,15 +60,53 @@ func TestDialIPPortSelectsMatchingDomainResource(t *testing.T) {
 	}
 }
 
+func TestDialIPPortPrefersTCPTunnelResourceOverOverlappingL3Resource(t *testing.T) {
+	resources := []client.DomainResource{
+		{PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "l3", EnableTCPPrefL3: true},
+		{PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "tcp"},
+	}
+	ctx := context.WithValue(context.Background(), resolve.ContextKeyDomainResource, resources)
+	dialer := &Dialer{stack: &capturingStack{}, resourceIndex: ipresource.New(nil)}
+
+	if _, err := dialer.DialIPPort(ctx, "tcp", "121.194.4.13:443"); err != nil {
+		t.Fatalf("DialIPPort() error = %v", err)
+	}
+	if got := dialer.stack.(*capturingStack).domainResource.AppID; got != "tcp" {
+		t.Fatalf("selected AppID = %q, want tcp", got)
+	}
+}
+
+func TestDialIPPortCarriesTCPPrefL3IPResource(t *testing.T) {
+	resource := client.IPResource{
+		IPMin: net.IPv4(10, 0, 0, 42), IPMax: net.IPv4(10, 0, 0, 42), PortMin: 443, PortMax: 443,
+		Protocol: "tcp", AppID: "l3", EnableTCPPrefL3: true,
+	}
+	stack := &capturingStack{}
+	dialer := &Dialer{stack: stack, ipResources: []client.IPResource{resource}, resourceIndex: ipresource.New([]client.IPResource{resource})}
+
+	if _, err := dialer.DialIPPort(context.Background(), "tcp", "10.0.0.42:443"); err != nil {
+		t.Fatalf("DialIPPort() error = %v", err)
+	}
+	if !stack.ipResource.EnableTCPPrefL3 || stack.ipResource.AppID != "l3" {
+		t.Fatalf("selected IP resource = %#v, want l3 TCP-prefers-L3", stack.ipResource)
+	}
+}
+
 type capturingStack struct {
 	domainResource client.DomainResource
+	ipResource     client.IPResource
 }
 
 func (s *capturingStack) Run()                                                {}
 func (s *capturingStack) SetupResolve(zcdns.LocalServer)                      {}
 func (s *capturingStack) SetupIPPool(*ippool.IPPool[[]client.DomainResource]) {}
 func (s *capturingStack) DialTCP(ctx context.Context, _ *net.TCPAddr) (net.Conn, error) {
-	s.domainResource = ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource)
+	if resource, ok := ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource); ok {
+		s.domainResource = resource
+	}
+	if resource, ok := ctx.Value(resolve.ContextKeyIPResource).(client.IPResource); ok {
+		s.ipResource = resource
+	}
 	return nil, nil
 }
 func (s *capturingStack) DialUDP(context.Context, *net.UDPAddr) (net.Conn, error) {

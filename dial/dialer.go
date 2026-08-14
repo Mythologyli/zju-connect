@@ -119,9 +119,9 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 		var matched bool
 		switch resources := res.(type) {
 		case []client.DomainResource:
-			resource, matched = client.MatchDomainResource(resources, network, port)
+			resource, matched = matchDomainResourceForTunnel(resources, network, port)
 		case client.DomainResource:
-			resource, matched = client.MatchDomainResource([]client.DomainResource{resources}, network, port)
+			resource, matched = matchDomainResourceForTunnel([]client.DomainResource{resources}, network, port)
 		}
 		if matched {
 			ctx = context.WithValue(ctx, resolve.ContextKeyDomainResource, resource)
@@ -131,7 +131,8 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	}
 
 	if !matchedResource && d.ipResources != nil {
-		if matchesIPResource(d.resourceIndex, target.IP, network, port) {
+		if resource, matched := matchIPResourceForTunnel(d.resourceIndex, target.IP, network, port); matched {
+			ctx = context.WithValue(ctx, resolve.ContextKeyIPResource, resource)
 			useVPN = true
 			matchedResource = true
 		}
@@ -174,9 +175,31 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	}
 }
 
+func matchDomainResourceForTunnel(resources []client.DomainResource, network string, port int) (client.DomainResource, bool) {
+	if network == "tcp" {
+		if resource, ok := client.MatchDomainResourceWhere(resources, network, port, func(resource client.DomainResource) bool {
+			return !resource.EnableTCPPrefL3
+		}); ok {
+			return resource, true
+		}
+	}
+	return client.MatchDomainResource(resources, network, port)
+}
+
 func matchesIPResource(index *ipresource.Index, target net.IP, network string, port int) bool {
-	_, ok := index.Match(target, network, port)
+	_, ok := matchIPResourceForTunnel(index, target, network, port)
 	return ok
+}
+
+func matchIPResourceForTunnel(index *ipresource.Index, target net.IP, network string, port int) (client.IPResource, bool) {
+	if network == "tcp" {
+		if resource, ok := index.MatchWhere(target, network, port, func(resource client.IPResource) bool {
+			return !resource.EnableTCPPrefL3
+		}); ok {
+			return resource, true
+		}
+	}
+	return index.Match(target, network, port)
 }
 
 func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Conn, error) {

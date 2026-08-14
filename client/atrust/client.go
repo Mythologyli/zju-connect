@@ -287,7 +287,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		log.Printf("Failed to refresh aTrust server manifest, using cached version: %v", manifestErr)
 	}
 	clientAuthData.ServerVersionInfo = serverVersionInfo
-	parsedServerVersion, err := auth.ParseServerVersionInfo(clientAuthData.ServerVersionInfo)
+	parsedServerVersion, err := auth.ParseServerVersionInfo(serverVersionInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -396,6 +396,13 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	return authData, nil
 }
 
+func newUnderlayDialer(serverHost, bindInterface string, autoDetectInterface bool) *underlay.Dialer {
+	return underlay.New(serverHost, underlay.Options{
+		InterfaceName: bindInterface,
+		AutoDetect:    autoDetectInterface,
+	})
+}
+
 func resolveServerVersionInfo(cached, fetched []byte, fetchErr error) ([]byte, error) {
 	if fetchErr == nil {
 		return fetched, nil
@@ -404,13 +411,6 @@ func resolveServerVersionInfo(cached, fetched []byte, fetchErr error) ([]byte, e
 		return nil, fmt.Errorf("failed to acquire aTrust server manifest: %w", fetchErr)
 	}
 	return cached, nil
-}
-
-func newUnderlayDialer(serverHost, bindInterface string, autoDetectInterface bool) *underlay.Dialer {
-	return underlay.New(serverHost, underlay.Options{
-		InterfaceName: bindInterface,
-		AutoDetect:    autoDetectInterface,
-	})
 }
 
 func buildConnectionID(deviceID string) string {
