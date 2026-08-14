@@ -4,23 +4,110 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewManualInterfaceTakesPrecedence(t *testing.T) {
-	dialer := New("invalid.invalid:443", Options{
+	dialer, err := New(Options{
 		InterfaceName: "manual-interface",
 		AutoDetect:    true,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := dialer.InterfaceName(); got != "manual-interface" {
 		t.Fatalf("InterfaceName() = %q, want %q", got, "manual-interface")
 	}
 }
 
 func TestNewAutoDetectDisabled(t *testing.T) {
-	dialer := New("invalid.invalid:443", Options{AutoDetect: false})
+	dialer, err := New(Options{AutoDetect: false})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := dialer.InterfaceName(); got != "" {
 		t.Fatalf("InterfaceName() = %q, want empty", got)
+	}
+}
+
+func TestAutoDetectionIsDeferredAndSharedByConcurrentFirstDials(t *testing.T) {
+	originalFind := findDefaultInterface
+	originalDial := dialOnInterface
+	t.Cleanup(func() {
+		findDefaultInterface = originalFind
+		dialOnInterface = originalDial
+	})
+
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	interfaceName := ""
+	for _, iface := range interfaces {
+		if usableInterface(iface.Name, nil) {
+			interfaceName = iface.Name
+			break
+		}
+	}
+	if interfaceName == "" {
+		t.Skip("no usable network interface")
+	}
+
+	var detectCalls atomic.Int32
+	findDefaultInterface = func() string {
+		detectCalls.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		return interfaceName
+	}
+	client, server := net.Pipe()
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+	dialOnInterface = func(_ context.Context, _, _, gotInterface string) (net.Conn, error) {
+		if gotInterface != interfaceName {
+			return nil, errors.New("dial did not use detected interface")
+		}
+		return client, nil
+	}
+
+	dialer, err := New(Options{AutoDetect: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := detectCalls.Load(); got != 0 {
+		t.Fatalf("New triggered %d interface detections, want 0", got)
+	}
+	if got := dialer.InterfaceName(); got != "" {
+		t.Fatalf("InterfaceName before first dial = %q, want empty", got)
+	}
+
+	const callers = 8
+	var wait sync.WaitGroup
+	errs := make(chan error, callers)
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, dialErr := dialer.DialContext(context.Background(), "tcp", "vpn.example.com:443")
+			errs <- dialErr
+		}()
+	}
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := detectCalls.Load(); got != 1 {
+		t.Fatalf("interface detection calls = %d, want 1", got)
+	}
+	if got := dialer.InterfaceName(); got != interfaceName {
+		t.Fatalf("InterfaceName after first dial = %q, want %q", got, interfaceName)
 	}
 }
 
@@ -97,8 +184,11 @@ func TestDialContextDoesNotReplaceManualInterface(t *testing.T) {
 		return nil, wantErr
 	}
 
-	dialer := New("invalid.invalid:443", Options{InterfaceName: "manual-interface", AutoDetect: true})
-	_, err := dialer.DialContext(context.Background(), "tcp", "example.com:443")
+	dialer, err := New(Options{InterfaceName: "manual-interface", AutoDetect: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = dialer.DialContext(context.Background(), "tcp", "example.com:443")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("DialContext error = %v, want %v", err, wantErr)
 	}

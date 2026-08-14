@@ -59,13 +59,14 @@ type Client struct {
 	tcpTunnelZeroRTT bool
 }
 
-func NewClient(username, sid, deviceID, signKey string) *Client {
+func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
 		Username:        username,
 		SID:             sid,
 		DeviceID:        deviceID,
 		SignKey:         signKey,
+		underlayDialer:  underlayDialer,
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
@@ -178,7 +179,11 @@ func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string,
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface)
+	if err != nil {
+		return nil, err
+	}
+	defer dialer.Close()
 	sess := auth.NewSession(serverHost, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
@@ -218,7 +223,11 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface)
+	if err != nil {
+		return err
+	}
+	defer dialer.Close()
 	sess := auth.NewSession(serverHost, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
@@ -247,17 +256,11 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
-	c.serverAddress = serverAddress
-	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
-	c.underlayDialer = newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
-		log.Printf("Underlay interface: %s", interfaceName)
-	} else if !autoDetectInterface {
-		log.Println("Underlay interface auto detection disabled; using system routing")
-	} else {
-		log.Println("Warning: failed to detect underlay interface; using system routing")
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
+	if c.underlayDialer == nil {
+		return nil, errors.New("underlay dialer is required")
 	}
+	c.serverAddress = serverAddress
 
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
@@ -396,8 +399,8 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	return authData, nil
 }
 
-func newUnderlayDialer(serverHost, bindInterface string, autoDetectInterface bool) *underlay.Dialer {
-	return underlay.New(serverHost, underlay.Options{
+func newUnderlayDialer(bindInterface string, autoDetectInterface bool) (*underlay.Dialer, error) {
+	return underlay.New(underlay.Options{
 		InterfaceName: bindInterface,
 		AutoDetect:    autoDetectInterface,
 	})

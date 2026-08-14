@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tun "github.com/mythologyli/sing-tun"
+	"github.com/mythologyli/zju-connect/log"
 	"github.com/sagernet/sing/common/logger"
 )
 
@@ -51,18 +52,22 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, co
 	return tlsConn, nil
 }
 
-func New(serverAddress string, options ...Options) *Dialer {
+func New(options ...Options) (*Dialer, error) {
 	option := Options{AutoDetect: true}
 	if len(options) > 0 {
 		option = options[0]
 	}
+	d := &Dialer{autoDetect: option.AutoDetect}
 	if option.InterfaceName != "" {
-		return &Dialer{interfaceName: option.InterfaceName}
+		d.updateInterfaceName(option.InterfaceName)
+		d.autoDetect = false
 	}
-	if !option.AutoDetect {
-		return &Dialer{}
-	}
-	return &Dialer{interfaceName: detectInterface(serverAddress), autoDetect: true}
+	return d, nil
+}
+
+// Close releases resources owned by the dialer.
+func (d *Dialer) Close() error {
+	return nil
 }
 
 func (d *Dialer) InterfaceName() string {
@@ -90,14 +95,13 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	if d == nil {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
-
+	interfaceName := d.ensureInterface(address)
 	d.mu.RLock()
-	interfaceName := d.interfaceName
 	autoDetect := d.autoDetect
 	requireBound := d.requireBound
 	d.mu.RUnlock()
 	if autoDetect && requireBound && interfaceName == "" {
-		interfaceName = d.refreshInterface("")
+		interfaceName = d.refreshInterface()
 		if interfaceName == "" {
 			return nil, fmt.Errorf("no usable underlay interface")
 		}
@@ -108,7 +112,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 		return conn, nil
 	}
 
-	refreshedInterface := d.refreshInterface(interfaceName)
+	refreshedInterface := d.refreshInterface()
 	if refreshedInterface == "" || refreshedInterface == interfaceName {
 		return nil, err
 	}
@@ -118,6 +122,26 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 		return nil, fmt.Errorf("dial underlay via %q failed after %q failed: %w", refreshedInterface, interfaceName, retryErr)
 	}
 	return conn, nil
+}
+
+func (d *Dialer) ensureInterface(address string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.autoDetect || d.interfaceName != "" {
+		return d.interfaceName
+	}
+	if interfaceName := detectInterface(address); usableInterface(interfaceName, d.excludedIPs) {
+		d.updateInterfaceName(interfaceName)
+	}
+	return d.interfaceName
+}
+
+func (d *Dialer) updateInterfaceName(interfaceName string) {
+	if interfaceName == "" || interfaceName == d.interfaceName {
+		return
+	}
+	d.interfaceName = interfaceName
+	log.Printf("Underlay interface: %s", interfaceName)
 }
 
 func dialContextOnInterface(ctx context.Context, network, address, interfaceName string) (net.Conn, error) {
@@ -138,16 +162,16 @@ func (d *Dialer) DialTimeout(network, address string, timeout time.Duration) (ne
 	return d.DialContext(ctx, network, address)
 }
 
-func detectInterface(serverAddress string) string {
+func detectInterface(targetAddress string) string {
 	if interfaceName := findDefaultInterface(); usableInterface(interfaceName, nil) {
 		return interfaceName
 	}
 
 	// This fallback is primarily for platforms without a default-interface
-	// monitor. New runs before the TUN interface is installed.
-	host, port, err := net.SplitHostPort(serverAddress)
+	// monitor. The first DialContext runs before the TUN interface is installed.
+	host, port, err := net.SplitHostPort(targetAddress)
 	if err != nil {
-		host = serverAddress
+		host = targetAddress
 		port = "443"
 	}
 	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, port), 3*time.Second)
@@ -185,7 +209,7 @@ func detectInterface(serverAddress string) string {
 	return ""
 }
 
-func (d *Dialer) refreshInterface(previous string) string {
+func (d *Dialer) refreshInterface() string {
 	d.mu.RLock()
 	autoDetect := d.autoDetect
 	d.mu.RUnlock()
@@ -199,9 +223,7 @@ func (d *Dialer) refreshInterface(previous string) string {
 	if !usableInterface(interfaceName, d.excludedIPs) {
 		return ""
 	}
-	if interfaceName != previous {
-		d.interfaceName = interfaceName
-	}
+	d.updateInterfaceName(interfaceName)
 	return interfaceName
 }
 

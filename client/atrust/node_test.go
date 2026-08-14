@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseResourceSeparatesWANAndLANNodes(t *testing.T) {
-	client := NewClient("", "", "", "")
+	client := NewClient("", "", "", "", nil)
 	client.serverAddress = "vpn.example.com"
 	resource := []byte(`{
 		"data": {
