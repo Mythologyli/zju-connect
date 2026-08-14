@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,24 @@ import (
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	zlog "github.com/mythologyli/zju-connect/log"
 )
+
+func TestDefaultHeartbeatIntervalMatchesOfficialClient(t *testing.T) {
+	if defaultHeartbeatInterval != 5*time.Second {
+		t.Fatalf("default heartbeat interval = %v, want 5s", defaultHeartbeatInterval)
+	}
+}
+
+func TestDefaultAuthTimingMatchesOfficialClient(t *testing.T) {
+	if defaultAuthTimeout != 5*time.Second {
+		t.Fatalf("default auth timeout = %v, want 5s", defaultAuthTimeout)
+	}
+	if defaultAuthRetryWait != 10*time.Second {
+		t.Fatalf("default auth retry wait = %v, want 10s", defaultAuthRetryWait)
+	}
+	if defaultAuthMaxAttempts != 3 {
+		t.Fatalf("default auth attempts = %d, want 3", defaultAuthMaxAttempts)
+	}
+}
 
 func TestForwardFromConnPreservesPacket(t *testing.T) {
 	transport := &trackingNetConn{closed: make(chan struct{})}
@@ -286,6 +305,7 @@ func TestReadLoopProcessesControlFramesWhenIncomingQueueIsFull(t *testing.T) {
 		conntrackMgr: newConntrackMgr(),
 	}
 	atomic.StoreInt32(&conn.heartbeatMisses, 2)
+	atomic.StoreUint32(&conn.heartbeatHasWrite, 1)
 	conn.incoming <- []byte("already queued")
 	done := make(chan struct{})
 	go func() {
@@ -300,6 +320,9 @@ func TestReadLoopProcessesControlFramesWhenIncomingQueueIsFull(t *testing.T) {
 	}
 	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
 		t.Fatalf("heartbeat misses = %d, want control response processed", misses)
+	}
+	if hasWrite := atomic.LoadUint32(&conn.heartbeatHasWrite); hasWrite != 0 {
+		t.Fatalf("heartbeat hasWrite = %d, want control response to clear activity", hasWrite)
 	}
 	if got := <-conn.incoming; !bytes.Equal(got, []byte("already queued")) {
 		t.Fatalf("full queue content changed to % X", got)
@@ -334,6 +357,7 @@ func TestHeartbeatTimeoutClosesTunnelConnection(t *testing.T) {
 		heartbeatMissLimit: 2,
 		writeFrameHook:     func([]byte) error { return nil },
 	}
+	atomic.StoreInt32(&conn.heartbeatMisses, conn.heartbeatMissLimit)
 
 	go conn.heartbeatLoop()
 	select {
@@ -374,6 +398,89 @@ func TestHeartbeatWaitsForFirstInterval(t *testing.T) {
 		t.Fatal("heartbeat was not sent after the first interval")
 	}
 	_ = conn.Close()
+}
+
+func TestHeartbeatSuccessfulCommandWriteSuppressesProbe(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	written := make(chan []byte, 2)
+	conn := &l3TunnelConn{
+		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:            make(chan struct{}),
+		conntrackMgr:       newConntrackMgr(),
+		heartbeatInterval:  40 * time.Millisecond,
+		heartbeatMissLimit: 2,
+		writeFrameHook: func(frame []byte) error {
+			written <- append([]byte(nil), frame...)
+			return nil
+		},
+	}
+	atomic.StoreInt32(&conn.heartbeatMisses, 1)
+	if err := conn.writeFrame([]byte{l3Version, cmdDataReq}); err != nil {
+		t.Fatal(err)
+	}
+	<-written
+	go conn.heartbeatLoop()
+
+	time.Sleep(60 * time.Millisecond)
+	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
+		t.Fatalf("heartbeat misses = %d, want command activity to clear misses", misses)
+	}
+	select {
+	case frame := <-written:
+		t.Fatalf("heartbeat sent despite command activity: % X", frame)
+	default:
+	}
+	_ = conn.Close()
+}
+
+func TestSuccessfulHeartbeatWriteClearsMissesOnNextTick(t *testing.T) {
+	transport := &trackingNetConn{closed: make(chan struct{})}
+	written := make(chan []byte, 2)
+	conn := &l3TunnelConn{
+		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+		closeCh:            make(chan struct{}),
+		conntrackMgr:       newConntrackMgr(),
+		heartbeatInterval:  30 * time.Millisecond,
+		heartbeatMissLimit: 2,
+		writeFrameHook: func(frame []byte) error {
+			written <- append([]byte(nil), frame...)
+			return nil
+		},
+	}
+	go conn.heartbeatLoop()
+
+	select {
+	case frame := <-written:
+		if !bytes.Equal(frame, []byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}) {
+			t.Fatalf("first idle frame = % X, want heartbeat", frame)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("idle heartbeat was not sent")
+	}
+	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 1 {
+		t.Fatalf("misses after heartbeat = %d, want 1", misses)
+	}
+
+	time.Sleep(45 * time.Millisecond)
+	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
+		t.Fatalf("misses after successful heartbeat activity = %d, want 0", misses)
+	}
+	select {
+	case frame := <-written:
+		t.Fatalf("next tick sent a heartbeat instead of consuming hasWrite: % X", frame)
+	default:
+	}
+	_ = conn.Close()
+}
+
+func TestFailedCommandWriteDoesNotSetHeartbeatActivity(t *testing.T) {
+	conn := &l3TunnelConn{writeFrameHook: func([]byte) error { return io.ErrClosedPipe }}
+	if err := conn.writeFrame([]byte{l3Version, cmdDataReq}); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("writeFrame() error = %v, want closed pipe", err)
+	}
+	if atomic.LoadUint32(&conn.heartbeatHasWrite) != 0 {
+		t.Fatal("failed command write set heartbeat activity")
+	}
 }
 
 func TestLogPacketDisabledAllocatesNothing(t *testing.T) {
@@ -417,6 +524,62 @@ func TestReadDataResponseUsesLengthPrefix(t *testing.T) {
 	}
 }
 
+type limitedReader struct {
+	reader io.Reader
+	limit  int
+}
+
+func (r limitedReader) Read(p []byte) (int, error) {
+	if len(p) > r.limit {
+		p = p[:r.limit]
+	}
+	return r.reader.Read(p)
+}
+
+func TestReadFrameHandlesSplitAndCoalescedFrames(t *testing.T) {
+	data := []byte{
+		l3Version, cmdAuthResp, 0x84, 0x00, 0x02, 'o', 'k',
+		l3Version, cmdHeartbeatResp, 0x00, 0x00,
+	}
+	conn := &l3TunnelConn{reader: bufio.NewReaderSize(limitedReader{reader: bytes.NewReader(data), limit: 1}, 2)}
+
+	authFrame, err := conn.readFrame()
+	if err != nil {
+		t.Fatalf("readFrame(auth) error = %v", err)
+	}
+	if authFrame.cmd != cmdAuthResp || authFrame.status != 0x84 || !bytes.Equal(authFrame.payload, []byte("ok")) {
+		t.Fatalf("auth frame = %#v", authFrame)
+	}
+	heartbeatFrame, err := conn.readFrame()
+	if err != nil {
+		t.Fatalf("readFrame(heartbeat) error = %v", err)
+	}
+	if heartbeatFrame.cmd != cmdHeartbeatResp || heartbeatFrame.status != 0 || len(heartbeatFrame.payload) != 0 {
+		t.Fatalf("heartbeat frame = %#v", heartbeatFrame)
+	}
+}
+
+func TestReadFrameRejectsUnknownProtocolHeaders(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{name: "version", data: []byte{0x04, cmdDataResp}, want: "version 0x04"},
+		{name: "command", data: []byte{l3Version, 0x92, 0x00, 0x00}, want: "command 0x92"},
+		{name: "late tunnel auth", data: []byte{0x53, 0x00, 0x00, 0x00}, want: "version 0x53"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			conn := &l3TunnelConn{reader: bufio.NewReader(bytes.NewReader(test.data))}
+			_, err := conn.readFrame()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("readFrame() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestSplitIncomingIPPacketsHandlesMultipleAndPartialPackets(t *testing.T) {
 	first := makeUDPPacket(12345, 53)
 	second := makeUDPPacket(23456, 443)
@@ -432,12 +595,18 @@ func TestSplitIncomingIPPacketsHandlesMultipleAndPartialPackets(t *testing.T) {
 	}
 }
 
-func TestSplitIncomingIPPacketsRejectsOversizedPacket(t *testing.T) {
-	packet := make([]byte, maxIncomingIPPacketSize+1)
+func TestSplitIncomingIPPacketsAcceptsLargePacketAcrossFrames(t *testing.T) {
+	packet := make([]byte, 2000)
 	packet[0] = zctcpip.IPv4Version<<4 | 5
 	binary.BigEndian.PutUint16(packet[2:4], uint16(len(packet)))
-	if _, _, err := splitIncomingIPPackets(packet); err == nil {
-		t.Fatal("oversized IP packet was accepted")
+
+	packets, remaining, err := splitIncomingIPPackets(packet[:1000])
+	if err != nil || len(packets) != 0 || len(remaining) != 1000 {
+		t.Fatalf("partial split packets=%d remaining=%d err=%v", len(packets), len(remaining), err)
+	}
+	packets, remaining, err = splitIncomingIPPackets(append(remaining, packet[1000:]...))
+	if err != nil || len(packets) != 1 || !bytes.Equal(packets[0], packet) || len(remaining) != 0 {
+		t.Fatalf("complete split packets=%d remaining=%d err=%v", len(packets), len(remaining), err)
 	}
 }
 
@@ -466,7 +635,7 @@ func TestL3ConnWritePreservesLengthAndResourceError(t *testing.T) {
 }
 
 func TestL3ConnReadRejectsShortBuffer(t *testing.T) {
-	packet := make([]byte, maxIncomingIPPacketSize)
+	packet := make([]byte, 1500)
 	tunnel := &L3Tunnel{
 		dataChan: make(chan []byte, 1),
 		closeCh:  make(chan struct{}),
@@ -757,6 +926,53 @@ func TestPendingPacketsFlushInOrderAfterAuthentication(t *testing.T) {
 	}
 }
 
+func TestBuildAuthRequestMatchesOfficialFieldOrderAndSignature(t *testing.T) {
+	info := clientInfo{sid: "sid", deviceID: "device", connectionID: "connection"}
+	meta := packetMeta{
+		atype: 4, proto: 17,
+		srcIP: net.IPv4(192, 0, 2, 1), dstIP: net.IPv4(198, 51, 100, 2),
+		srcPort: 12345, dstPort: 53,
+	}
+	ct := &conntrack{appID: "app", authID: 42}
+	key := []byte("signing-key")
+
+	encoded, err := buildAuthRequest(info, key, meta, ct)
+	if err != nil {
+		t.Fatalf("buildAuthRequest() error = %v", err)
+	}
+	var signed authRequestIP
+	if err := json.Unmarshal(encoded, &signed); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	signature := signed.XRequestSig
+	signed.XRequestSig = ""
+	unsigned, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if signature != calcXRequestSig(key, unsigned) {
+		t.Fatalf("signature = %q, want signature of %s", signature, unsigned)
+	}
+
+	wantKeys := []string{"sid", "appId", "procHash", "url", "deviceId", "connectionId", "rcAppliedInfo", "lang", "env", "conntrackHash", "ip", "xRequestSig"}
+	positions := make([]int, len(wantKeys))
+	for i, key := range wantKeys {
+		positions[i] = bytes.Index(unsigned, []byte(`"`+key+`"`))
+		if positions[i] < 0 {
+			t.Fatalf("unsigned request missing %q: %s", key, unsigned)
+		}
+		if i > 0 && positions[i] <= positions[i-1] {
+			t.Fatalf("unsigned request field order does not match binary struct: %s", unsigned)
+		}
+	}
+	if bytes.Contains(unsigned, []byte(`"appToken"`)) || bytes.Contains(unsigned, []byte(`"domain"`)) {
+		t.Fatalf("omitempty fields unexpectedly encoded: %s", unsigned)
+	}
+	if !bytes.Contains(unsigned, []byte(`"rcAppliedInfo":0`)) {
+		t.Fatalf("required rcAppliedInfo missing: %s", unsigned)
+	}
+}
+
 func TestAuthSchedulerCollectsFlowsWithoutPerFlowWorkers(t *testing.T) {
 	manager := newConntrackMgr()
 	for i := 0; i < 3; i++ {
@@ -795,7 +1011,7 @@ func TestAuthFailureClearsOnlyFailedConntrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn.handleAuthResp(0, response)
+	conn.handleAuthResp(1, response)
 
 	if manager.getByKey(failed.key) != nil {
 		t.Fatal("failed conntrack was not removed")
@@ -810,12 +1026,132 @@ func TestAuthFailureClearsOnlyFailedConntrack(t *testing.T) {
 	}
 }
 
-func TestPendingPacketCacheIsBoundedAndAuthTimeoutRetries(t *testing.T) {
+func TestAuthResponseIgnoresJSONCode(t *testing.T) {
+	manager := newConntrackMgr()
+	conn := &l3TunnelConn{closeCh: make(chan struct{}), conntrackMgr: manager}
+	ct := manager.getOrCreate("flow", "app", "group")
+	response, err := json.Marshal(authResponseIP{
+		Code: 73600007, Message: "business message",
+		Data: authResponseIPData{ConntrackHash: ct.authID, ConnectToken: "token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.handleAuthResp(0, response)
+
+	token, authErr, authenticated := manager.authResult(ct)
+	if !authenticated || authErr != nil || token != "token" {
+		t.Fatalf("auth result = token %q, err %v, authenticated %t", token, authErr, authenticated)
+	}
+}
+
+func TestAuthResponseFallsBackToIPTuple(t *testing.T) {
+	manager := newConntrackMgr()
+	conn := &l3TunnelConn{
+		closeCh: make(chan struct{}), conntrackMgr: manager,
+		writeFrameHook: func([]byte) error { return nil },
+	}
+	meta := packetMeta{
+		atype: 4, proto: 17,
+		srcIP: net.IPv4(192, 0, 2, 1), dstIP: net.IPv4(198, 51, 100, 2),
+		srcPort: 12345, dstPort: 53, key: "flow",
+	}
+	ct := manager.getOrCreate(meta.key, "app", "group")
+	if _, err := manager.cachePacket(ct, meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(authResponseIP{Data: authResponseIPData{
+		ConnectToken: "token",
+		IP: authIP{
+			Atype: authIPType(meta.atype), Protocol: meta.proto,
+			SrcAddr: meta.srcIP.String(), SrcPort: meta.srcPort,
+			DestAddr: meta.dstIP.String(), DestPort: meta.dstPort,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.handleAuthResp(0, response)
+
+	token, authErr, authenticated := manager.authResult(ct)
+	if !authenticated || authErr != nil || token != "token" {
+		t.Fatalf("auth result = token %q, err %v, authenticated %t", token, authErr, authenticated)
+	}
+}
+
+func TestAuthSuccessAcceptsEmptyConnectToken(t *testing.T) {
+	manager := newConntrackMgr()
+	frames := make([][]byte, 0, 1)
+	conn := &l3TunnelConn{
+		closeCh:      make(chan struct{}),
+		conntrackMgr: manager,
+		writeFrameHook: func(frame []byte) error {
+			frames = append(frames, append([]byte(nil), frame...))
+			return nil
+		},
+	}
+	ct := manager.getOrCreate("flow", "app", "group")
+	packet := makeUDPPacket(12345, 53)
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, packet); err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(authResponseIP{
+		Data: authResponseIPData{ConntrackHash: ct.authID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.handleAuthResp(0, response)
+
+	token, authErr, authenticated := manager.authResult(ct)
+	if !authenticated || authErr != nil || token != "" {
+		t.Fatalf("auth result = token %q, err %v, authenticated %t", token, authErr, authenticated)
+	}
+	if len(frames) != 1 || len(frames[0]) < 3 || frames[0][1] != cmdDataReq || frames[0][2] != 0 {
+		t.Fatalf("empty-token data frames = %x", frames)
+	}
+}
+
+func TestAuthResponsePreservesConnectTokenBytes(t *testing.T) {
+	manager := newConntrackMgr()
+	var frame []byte
+	conn := &l3TunnelConn{
+		closeCh:      make(chan struct{}),
+		conntrackMgr: manager,
+		writeFrameHook: func(data []byte) error {
+			frame = append([]byte(nil), data...)
+			return nil
+		},
+	}
+	ct := manager.getOrCreate("flow", "app", "group")
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, makeUDPPacket(12345, 53)); err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(authResponseIP{
+		Data: authResponseIPData{ConntrackHash: ct.authID, ConnectToken: " token "},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn.handleAuthResp(0, response)
+
+	if len(frame) < 3 || frame[2] != 7 || string(frame[3:10]) != " token " {
+		t.Fatalf("encoded token was altered: %x", frame)
+	}
+}
+
+func TestPendingPacketCacheMatchesBinaryLimitAndAuthTimeoutRetries(t *testing.T) {
 	manager := newConntrackMgr()
 	ct := manager.getOrCreate("flow", "app", "group")
 	meta := packetMeta{key: ct.key}
+	packet := make([]byte, 300)
 	for i := 0; i < defaultPendingPacketLimit; i++ {
-		if _, err := manager.cachePacket(ct, meta, []byte{byte(i)}); err != nil {
+		packet[0] = byte(i)
+		if _, err := manager.cachePacket(ct, meta, packet); err != nil {
 			t.Fatalf("cachePacket(%d) error = %v", i, err)
 		}
 	}
@@ -869,12 +1205,12 @@ func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
 	manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
 	conn := &l3TunnelConn{closeCh: make(chan struct{}), authWake: make(chan struct{}, 1), conntrackMgr: manager}
 	response, err := json.Marshal(authResponseIP{
-		Code: authServerBusyCode, Data: authResponseIPData{ConntrackHash: ct.authID},
+		Data: authResponseIPData{ConntrackHash: ct.authID},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn.handleAuthResp(0, response)
+	conn.handleAuthResp(authRetryStatusMin, response)
 
 	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
 	if len(jobs) != 0 {
@@ -887,13 +1223,103 @@ func TestAuthServerBusyWaitsBeforeRetry(t *testing.T) {
 	}
 }
 
+func TestAuthStatus84RetriesImmediately(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	ct := manager.getOrCreate("flow", "app", "group")
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 1 {
+		t.Fatalf("initial auth jobs = %d, want 1", len(jobs))
+	}
+	manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
+	conn := &l3TunnelConn{closeCh: make(chan struct{}), authWake: make(chan struct{}, 1), conntrackMgr: manager}
+	response, err := json.Marshal(authResponseIP{
+		Data: authResponseIPData{ConntrackHash: ct.authID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.handleAuthResp(authImmediateRetryStatus, response)
+
+	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
+	if len(jobs) != 1 || jobs[0].conntrack != ct {
+		t.Fatalf("immediate retry jobs = %v, want conntrack", jobs)
+	}
+	select {
+	case <-conn.authWake:
+	default:
+		t.Fatal("immediate retry did not wake auth scheduler")
+	}
+}
+
+func TestAuthServerRetriesDoNotConsumeTimeoutBudget(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	ct := manager.getOrCreate("flow", "app", "group")
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	for attempt := 0; attempt < defaultAuthMaxAttempts+1; attempt++ {
+		jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+		if len(jobs) != 1 || jobs[0].conntrack != ct {
+			t.Fatalf("server retry %d jobs = %v, want conntrack", attempt, jobs)
+		}
+		manager.markAuthSent(ct.authID, now.Add(defaultAuthTimeout))
+		if !manager.retryAuth(ct.authID, 0) {
+			t.Fatalf("server retry %d exhausted timeout budget", attempt)
+		}
+	}
+	if ct.authTimeouts != 0 {
+		t.Fatalf("auth timeouts after server retries = %d, want 0", ct.authTimeouts)
+	}
+}
+
+func TestAuthServerRetryPreservesConsumedTimeoutBudget(t *testing.T) {
+	now := time.Unix(1000, 0)
+	manager := newConntrackMgr()
+	manager.now = func() time.Time { return now }
+	ct := manager.getOrCreate("flow", "app", "group")
+	if _, err := manager.cachePacket(ct, packetMeta{key: ct.key}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, _ := manager.nextAuthBatch(defaultAuthBatchSize)
+	manager.markAuthSent(jobs[0].conntrack.authID, now)
+	if expired := manager.expireAuth(now, errL3TunnelAuthTimeout); expired != 0 {
+		t.Fatalf("first timeout expired conntrack count = %d, want 0", expired)
+	}
+	jobs, _ = manager.nextAuthBatch(defaultAuthBatchSize)
+	manager.markAuthSent(jobs[0].conntrack.authID, now.Add(defaultAuthTimeout))
+	if !manager.retryAuth(ct.authID, 0) {
+		t.Fatal("server retry was rejected")
+	}
+	if ct.authTimeouts != 1 {
+		t.Fatalf("auth timeouts after server retry = %d, want 1", ct.authTimeouts)
+	}
+}
+
 func TestAuthBusyMessageWithoutBusyCodeIsNotRetried(t *testing.T) {
 	resp := authResponseIP{Code: 1, Message: "server busy, try again"}
 	if isRetryableAuthResponse(0, resp) {
 		t.Fatal("free-form busy message was treated as retryable")
 	}
-	if !isRetryableAuthResponse(authServerBusyCode, authResponseIP{}) {
-		t.Fatal("outer busy status was not treated as retryable")
+	if isRetryableAuthResponse(0, authResponseIP{Code: authRetryStatusMin}) {
+		t.Fatal("JSON code was treated as a framing status")
+	}
+	for status := byte(authRetryStatusMin); status <= authRetryStatusMax; status++ {
+		if !isRetryableAuthResponse(status, authResponseIP{}) {
+			t.Fatalf("outer retry status 0x%02x was not treated as retryable", status)
+		}
+	}
+	if isRetryableAuthResponse(authRetryStatusMin-1, authResponseIP{}) ||
+		isRetryableAuthResponse(authRetryStatusMax+1, authResponseIP{}) {
+		t.Fatal("status outside the binary retry range was treated as retryable")
 	}
 }
 
@@ -1066,7 +1492,7 @@ func TestInitialVIPHeaderValidation(t *testing.T) {
 		{name: "dual stack", header: []byte{l3Version, 0x00, 0x00, 0x05}, length: 22, ok: true},
 		{name: "wrong version", header: []byte{0x04, 0x00, 0x00, 0x01}},
 		{name: "failed status", header: []byte{l3Version, 0x05, 0x00, 0x01}},
-		{name: "invalid reserved byte", header: []byte{l3Version, 0x00, 0x01, 0x01}},
+		{name: "nonzero response flag", header: []byte{l3Version, 0x00, 0x01, 0x01}, length: 6, ok: true},
 		{name: "unknown type", header: []byte{l3Version, 0x00, 0x00, 0xff}},
 	}
 	for _, tt := range tests {
