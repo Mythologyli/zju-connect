@@ -315,7 +315,15 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 		return 0, nil
 	}
 	if c.raw {
-		return c.reader.Read(b)
+		n, err := c.reader.Read(b)
+		if n > 0 {
+			log.DebugPrintf("TCP tunnel received %d raw bytes", n)
+			log.DebugDumpHex(b[:n])
+		}
+		if err != nil {
+			log.DebugPrintf("TCP tunnel raw read ended after %d bytes: %v", n, err)
+		}
+		return n, err
 	}
 	if len(c.readBuf) > 0 {
 		n := copy(b, c.readBuf)
@@ -370,7 +378,17 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 		return 0, nil
 	}
 	if c.raw {
-		return c.tlsConn.Write(b)
+		n, err := c.tlsConn.Write(b)
+		if n > 0 {
+			log.DebugPrintf("TCP tunnel sent %d raw bytes", n)
+			log.DebugDumpHex(b[:n])
+		}
+		if err != nil {
+			log.DebugPrintf("TCP tunnel raw write failed after %d bytes: %v", n, err)
+		} else if n != len(b) {
+			log.DebugPrintf("TCP tunnel raw write was short: sent %d of %d bytes", n, len(b))
+		}
+		return n, err
 	}
 
 	written := 0
