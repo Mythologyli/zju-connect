@@ -264,4 +264,4 @@
 
 ### Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=mythologyli/zju-connect&type=date&legend=top-left)](https://www.star-history.com/?repos=mythologyli%2Fzju-connect&type=date&legend=bottom-right)
+[![Star History Chart](https://star-history.dera.page/svg?repos=mythologyli/zju-connect&type=date&legend=top-left)](https://star-history.dera.page/#mythologyli/zju-connect&type=date&legend=bottom-right)
