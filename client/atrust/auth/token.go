@@ -30,14 +30,8 @@ func (s *Session) completeTOTP() (authStep, error) {
 		}
 	} else {
 		log.Print("Please enter the TOTP token: ")
-		out, err := exec.Command("osascript", "-e", `tell application "System Events"`, "-e", `activate`, "-e", `set res to text returned of (display dialog "服务器需要二次验证\n请输入手机上的 TOTP 动态口令 (6位数字):" default answer "" with title "EZ4Connect 二次验证")`, "-e", `return res`, "-e", `end tell`).Output()
-		if err == nil {
-			token = strings.TrimSpace(string(out))
-		}
-		if token == "" {
-			if _, err := fmt.Scanln(&token); err != nil {
-				return authStep{}, err
-			}
+		if _, err := fmt.Scanln(&token); err != nil {
+			return authStep{}, err
 		}
 	}
 
