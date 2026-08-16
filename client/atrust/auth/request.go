@@ -275,8 +275,8 @@ func authStepFromData(data authStepData) authStep {
 			case "auth/totp", "auth/radius", "auth/challenge":
 				step.Service = selected.AuthType
 			}
-			if selected.AuthType == "auth/token" && selected.SubType != "" {
-				step.Service = "auth/" + selected.SubType
+			if selected.AuthType == "auth/token" && selected.SubType == "totp" {
+				step.Service = "auth/totp"
 			}
 		}
 	}
