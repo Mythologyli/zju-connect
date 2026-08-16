@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
