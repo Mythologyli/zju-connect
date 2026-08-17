@@ -11,6 +11,8 @@ import (
 
 var ErrResourceNotFound = errors.New("resource not found")
 
+type DialContextFunc func(context.Context, string, string) (net.Conn, error)
+
 type IPResource struct {
 	IPMin           net.IP
 	IPMax           net.IP

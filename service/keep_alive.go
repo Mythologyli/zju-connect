@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"time"
 
@@ -21,9 +20,7 @@ const (
 func KeepAlive(ctx context.Context, resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL string) {
 	if keepAliveURL != "" {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.DialContext = func(ctx context.Context, net, addr string) (net.Conn, error) {
-			return dialer.Dial(ctx, net, addr)
-		}
+		transport.DialContext = dialer.Dial
 		transport.ResponseHeaderTimeout = keepAliveRequestTimeout
 		client := &http.Client{
 			Transport: transport,

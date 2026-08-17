@@ -17,6 +17,7 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
+	"github.com/mythologyli/zju-connect/internal/keylog"
 	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
@@ -56,16 +57,19 @@ type Client struct {
 	lifecycleCancel  context.CancelFunc
 	closeOnce        sync.Once
 	underlayDialer   *underlay.Dialer
+	tlsKeyLogWriter  io.Writer
 	tcpTunnelZeroRTT bool
 }
 
-func NewClient(username, sid, deviceID, signKey string) *Client {
+func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
 		Username:        username,
 		SID:             sid,
 		DeviceID:        deviceID,
 		SignKey:         signKey,
+		underlayDialer:  underlayDialer,
+		tlsKeyLogWriter: tlsKeyLogWriter,
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
@@ -171,15 +175,30 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool) ([]auth.AuthInfo, error) {
+func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, localDNSServer, debugTLSLogFile string) (authInfo []auth.AuthInfo, err error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface, localDNSServer)
+	if err != nil {
+		return nil, err
+	}
+	defer dialer.Close()
+	tlsKeyLogWriter, err := keylog.Open(debugTLSLogFile)
+	if err != nil {
+		return nil, fmt.Errorf("open TLS key log: %w", err)
+	}
+	defer func() {
+		if tlsKeyLogWriter != nil {
+			if closeErr := tlsKeyLogWriter.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close TLS key log: %w", closeErr))
+			}
+		}
+	}()
+	sess := auth.NewSession(serverHost, tlsKeyLogWriter, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
 
@@ -197,7 +216,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return tunnel.NewL3Conn()
 }
 
-func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool) error {
+func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, localDNSServer, debugTLSLogFile string) (err error) {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -218,8 +237,23 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	} else {
 		serverHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	dialer := newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	dialer, err := newUnderlayDialer(bindInterface, autoDetectInterface, localDNSServer)
+	if err != nil {
+		return err
+	}
+	defer dialer.Close()
+	tlsKeyLogWriter, err := keylog.Open(debugTLSLogFile)
+	if err != nil {
+		return fmt.Errorf("open TLS key log: %w", err)
+	}
+	defer func() {
+		if tlsKeyLogWriter != nil {
+			if closeErr := tlsKeyLogWriter.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close TLS key log: %w", closeErr))
+			}
+		}
+	}()
+	sess := auth.NewSession(serverHost, tlsKeyLogWriter, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
@@ -247,17 +281,11 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int, bindInterface string, autoDetectInterface bool) ([]byte, error) {
-	c.serverAddress = serverAddress
-	serverHost := net.JoinHostPort(serverAddress, fmt.Sprint(serverPort))
-	c.underlayDialer = newUnderlayDialer(serverHost, bindInterface, autoDetectInterface)
-	if interfaceName := c.underlayDialer.InterfaceName(); interfaceName != "" {
-		log.Printf("Underlay interface: %s", interfaceName)
-	} else if !autoDetectInterface {
-		log.Println("Underlay interface auto detection disabled; using system routing")
-	} else {
-		log.Println("Warning: failed to detect underlay interface; using system routing")
+func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
+	if c.underlayDialer == nil {
+		return nil, errors.New("underlay dialer is required")
 	}
+	c.serverAddress = serverAddress
 
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
@@ -277,7 +305,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	} else {
 		authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
+	sess := auth.NewSession(authServerHost, c.tlsKeyLogWriter, c.underlayDialer.DialContext)
 	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
 	serverVersionInfo, err := resolveServerVersionInfo(clientAuthData.ServerVersionInfo, serverVersionInfo, manifestErr)
 	if err != nil {
@@ -373,7 +401,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
-	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext)
+	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
 
 	err = c.getIP()
 	if err != nil {
@@ -396,10 +424,11 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	return authData, nil
 }
 
-func newUnderlayDialer(serverHost, bindInterface string, autoDetectInterface bool) *underlay.Dialer {
-	return underlay.New(serverHost, underlay.Options{
-		InterfaceName: bindInterface,
-		AutoDetect:    autoDetectInterface,
+func newUnderlayDialer(bindInterface string, autoDetectInterface bool, localDNSServer string) (*underlay.Dialer, error) {
+	return underlay.New(underlay.Options{
+		InterfaceName:  bindInterface,
+		AutoDetect:     autoDetectInterface,
+		LocalDNSServer: localDNSServer,
 	})
 }
 

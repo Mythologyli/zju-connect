@@ -20,6 +20,8 @@ import (
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/keylog"
+	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
@@ -40,14 +42,35 @@ func main() {
 	if conf.DebugDump {
 		log.EnableDebug()
 	}
-
 	if errs := hook_func.ExecInitialFunc(context.Background(), conf); errs != nil {
 		for _, err := range errs {
 			log.Printf("Initial ZJU-Connect failed: %s", err)
 		}
 		os.Exit(1)
 	}
-
+	if conf.Protocol != "easyconnect" && conf.Protocol != "atrust" {
+		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
+	}
+	underlayDialer, underlayErr := underlay.New(underlay.Options{
+		InterfaceName:  conf.BindInterface,
+		AutoDetect:     conf.AutoDetectInterface,
+		DebugPCAPFile:  conf.DebugPCAPFile,
+		LocalDNSServer: conf.LocalDNSServer,
+	})
+	if underlayErr != nil {
+		log.Fatalf("Create underlay dialer: %v", underlayErr)
+	}
+	tlsKeyLogWriter, tlsKeyLogErr := keylog.Open(conf.DebugTLSLogFile)
+	if tlsKeyLogErr != nil {
+		_ = underlayDialer.Close()
+		log.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
+	}
+	if conf.DebugPCAPFile != "" {
+		log.Printf("VPN underlay PCAP capture enabled: %s", conf.DebugPCAPFile)
+	}
+	if conf.DebugTLSLogFile != "" {
+		log.Printf("TLS key logging enabled: %s", conf.DebugTLSLogFile)
+	}
 	var vpnClient client.Client
 	switch conf.Protocol {
 	case "easyconnect":
@@ -80,11 +103,18 @@ func main() {
 			!conf.DisableMultiLine,
 			!conf.DisableServerConfig,
 			!conf.SkipDomainResource,
+			underlayDialer,
+			tlsKeyLogWriter,
 		)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		err := vpnClient.(*easyconnectclient.Client).Setup(conf.GraphCodeFile, conf.BindInterface, conf.AutoDetectInterface)
+		err := vpnClient.(*easyconnectclient.Client).Setup(conf.GraphCodeFile)
 		if err != nil {
+			vpnClient.(*easyconnectclient.Client).Close()
+			_ = underlayDialer.Close()
+			if tlsKeyLogWriter != nil {
+				_ = tlsKeyLogWriter.Close()
+			}
 			log.Fatalf("VPN client setup error: %s", err)
 		}
 	case "atrust":
@@ -107,7 +137,7 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey)
+		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer, tlsKeyLogWriter)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(
@@ -125,10 +155,13 @@ func main() {
 			clientData,
 			resourceData,
 			conf.UpdateBestNodesInterval,
-			conf.BindInterface,
-			conf.AutoDetectInterface,
 		)
 		if err != nil {
+			vpnClient.(*atrustclient.Client).Close()
+			_ = underlayDialer.Close()
+			if tlsKeyLogWriter != nil {
+				_ = tlsKeyLogWriter.Close()
+			}
 			log.Fatalf("VPN client setup error: %s", err)
 		}
 
@@ -139,8 +172,6 @@ func main() {
 			}
 			log.Printf("Client data saved to %s", conf.ClientDataFile)
 		}
-	default:
-		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
 	}
 
 	log.Printf("VPN client started")
@@ -148,6 +179,14 @@ func main() {
 		hook_func.RegisterTerminalFunc("CloseVPNClient", func(ctx context.Context) error {
 			closer.Close()
 			return nil
+		})
+	}
+	hook_func.RegisterTerminalFunc("CloseUnderlayDialer", func(ctx context.Context) error {
+		return underlayDialer.Close()
+	})
+	if tlsKeyLogWriter != nil {
+		hook_func.RegisterTerminalFunc("CloseTLSKeyLog", func(ctx context.Context) error {
+			return tlsKeyLogWriter.Close()
 		})
 	}
 

@@ -5,11 +5,13 @@ import (
 	"sync"
 
 	"github.com/mythologyli/zju-connect/client/easyconnect"
+	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack/tun"
 )
 
 var vpnClient *easyconnect.Client
+var vpnUnderlay *underlay.Dialer
 var vpnClientMu sync.Mutex
 var loginMu sync.Mutex
 
@@ -34,12 +36,20 @@ func Logout() {
 		vpnClient.Close()
 		vpnClient = nil
 	}
+	if vpnUnderlay != nil {
+		_ = vpnUnderlay.Close()
+		vpnUnderlay = nil
+	}
 }
 
 func login(server string, username string, password string) string {
 	loginMu.Lock()
 	defer loginMu.Unlock()
 
+	newUnderlay, err := underlay.New(underlay.Options{AutoDetect: false})
+	if err != nil {
+		return ""
+	}
 	newClient := easyconnect.NewClient(
 		server,
 		username,
@@ -50,6 +60,8 @@ func login(server string, username string, password string) string {
 		false,
 		false,
 		false,
+		newUnderlay,
+		nil,
 	)
 
 	// Close the old client and clear vpnClient to nil during setup so that
@@ -57,15 +69,21 @@ func login(server string, username string, password string) string {
 	// operating on an uninitialized client.
 	vpnClientMu.Lock()
 	old := vpnClient
+	oldUnderlay := vpnUnderlay
 	vpnClient = nil
+	vpnUnderlay = nil
 	vpnClientMu.Unlock()
 	if old != nil {
 		old.Close()
 	}
+	if oldUnderlay != nil {
+		_ = oldUnderlay.Close()
+	}
 
-	err := newClient.Setup("", "", false)
+	err = newClient.Setup("")
 	if err != nil {
 		newClient.Close()
+		_ = newUnderlay.Close()
 		return ""
 	}
 
@@ -74,11 +92,13 @@ func login(server string, username string, password string) string {
 	clientIP, err := newClient.IP()
 	if err != nil {
 		newClient.Close()
+		_ = newUnderlay.Close()
 		return ""
 	}
 
 	vpnClientMu.Lock()
 	vpnClient = newClient
+	vpnUnderlay = newUnderlay
 	vpnClientMu.Unlock()
 
 	return clientIP.String()

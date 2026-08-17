@@ -145,11 +145,17 @@
 
 + `dns-server-bind`: DNS server listening address, default is empty (disabled). For example, set to `127.0.0.1:53`, then you can send DNS requests to `127.0.0.1:53`
 
++ `local-dns-server`: Local DNS server used to resolve the VPN server hostname, as IP or IP:port; when empty, the system DNS is used, routable DNS addresses are bound to the detected underlay interface, and local DNS stubs keep their loopback route
+
 + `dns-hijack`: Hijack DNS requests when TUN mode is enabled, it's recommended to add this argument when using TUN mode
 
 + `fake-ip`: Enable Fake IP mode. Works with dns-hijack. Don't enable it if you are using EasyConnect protocol
 
 + `debug-dump`: Whether to enable debugging, generally no need to add this argument
+
++ `debug-pcap-file`: Reconstruct a PCAP from data read and written on VPN underlay TCP connections; a full capture queue blocks network I/O, kernel handshakes and retransmissions are omitted, and TLS payloads remain encrypted
+
++ `debug-tls-log-file`: Export TLS session secrets in NSS key log format for decrypting `debug-pcap-file` traffic in Wireshark. The file contains session secrets and must only be used for debugging and stored securely
 
 + `bind-interface`: Manually bind VPN underlay connections to this network interface for either EasyConnect or aTrust. A non-empty value takes precedence over automatic detection.
 

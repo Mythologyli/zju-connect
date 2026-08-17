@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -15,12 +17,18 @@ type TCPing struct {
 	target *Target
 	done   chan struct{}
 	result *Result
-	dial   func(context.Context, string, string) (net.Conn, error)
+	dial   client.DialContextFunc
+	keyLog io.Writer
 }
 
 // SetDialContext overrides the system dialer used by TCPing.
-func (tcping *TCPing) SetDialContext(dial func(context.Context, string, string) (net.Conn, error)) {
+func (tcping *TCPing) SetDialContext(dial client.DialContextFunc) {
 	tcping.dial = dial
+}
+
+// SetKeyLogWriter records probe TLS secrets in NSS key log format.
+func (tcping *TCPing) SetKeyLogWriter(writer io.Writer) {
+	tcping.keyLog = writer
 }
 
 var _ Pinger = (*TCPing)(nil)
@@ -112,6 +120,7 @@ func (tcping TCPing) ping() (time.Duration, net.Addr, error) {
 		tlsConn := tls.Client(conn, &tls.Config{
 			ServerName:         tcping.target.Host,
 			InsecureSkipVerify: true,
+			KeyLogWriter:       tcping.keyLog,
 		})
 		err = tlsConn.HandshakeContext(ctx)
 		tlsConn.Close()

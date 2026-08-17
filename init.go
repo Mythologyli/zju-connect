@@ -69,11 +69,14 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.AddRoute = getTOMLVal(confTOML.AddRoute, false)
 	conf.DNSTTL = getTOMLVal(confTOML.DNSTTL, uint64(3600))
 	conf.DebugDump = getTOMLVal(confTOML.DebugDump, false)
+	conf.DebugPCAPFile = getTOMLVal(confTOML.DebugPCAPFile, "")
+	conf.DebugTLSLogFile = getTOMLVal(confTOML.DebugTLSLogFile, "")
 	conf.DisableKeepAlive = getTOMLVal(confTOML.DisableKeepAlive, false)
 	conf.KeepAliveURL = getTOMLVal(confTOML.KeepAliveURL, "")
 	conf.RemoteDNSServer = getTOMLVal(confTOML.RemoteDNSServer, "auto")
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "auto")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
+	conf.LocalDNSServer = getTOMLVal(confTOML.LocalDNSServer, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.FakeIP = getTOMLVal(confTOML.FakeIP, false)
 	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
@@ -171,11 +174,14 @@ func init() {
 	flag.BoolVar(&conf.AddRoute, "add-route", false, "Add route from rules for TUN interface")
 	flag.Uint64Var(&conf.DNSTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&conf.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
+	flag.StringVar(&conf.DebugPCAPFile, "debug-pcap-file", "", "Save reconstructed VPN underlay TCP traffic to a PCAP file (debug only)")
+	flag.StringVar(&conf.DebugTLSLogFile, "debug-tls-log-file", "", "Save TLS session secrets in NSS key log format (debug only)")
 	flag.BoolVar(&conf.DisableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
 	flag.StringVar(&conf.KeepAliveURL, "keep-alive-url", "", "Keep alive URL, default is empty (use DNS keep alive)")
 	flag.StringVar(&conf.RemoteDNSServer, "zju-dns-server", "auto", "Remote DNS server address. Set to 'auto' to use remote DNS server provided by server") // TODO: rename to remote-dns-server
 	flag.StringVar(&conf.SecondaryDNSServer, "secondary-dns-server", "auto", "Secondary DNS server address. Use auto for the server policy value")
 	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
+	flag.StringVar(&conf.LocalDNSServer, "local-dns-server", "", "DNS server used to resolve the VPN server hostname (IP or IP:port)")
 	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect. False by default.")
 	flag.BoolVar(&conf.FakeIP, "fake-ip", false, "Enable Fake IP for DNS hijack")
 	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "Graph Check Code File")
@@ -216,7 +222,7 @@ func init() {
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
-		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface)
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
 			os.Exit(1)
@@ -245,7 +251,7 @@ func init() {
 			os.Exit(1)
 		}
 
-		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface)
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
 			os.Exit(1)

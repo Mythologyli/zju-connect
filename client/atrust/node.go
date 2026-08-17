@@ -2,11 +2,12 @@ package atrust
 
 import (
 	"context"
-	"net"
+	"io"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/ping"
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -20,9 +21,9 @@ type NodeGroup struct {
 
 type nodeGroupsProbeFunc func(map[string][]string) map[string]string
 
-func getBestNodes(nodeGroups map[string]NodeGroup, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
+func getBestNodes(nodeGroups map[string]NodeGroup, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
 	return selectBestNodes(nodeGroups, func(nodeGroups map[string][]string) map[string]string {
-		return getBestReachableNodes(nodeGroups, dialContext)
+		return getBestReachableNodes(nodeGroups, dialContext, keyLogWriter)
 	})
 }
 
@@ -49,7 +50,7 @@ func selectBestNodes(nodeGroups map[string]NodeGroup, probe nodeGroupsProbeFunc)
 	return bestNodes
 }
 
-func getBestReachableNodes(nodeGroups map[string][]string, dialContext func(context.Context, string, string) (net.Conn, error)) map[string]string {
+func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 0 {
@@ -66,6 +67,7 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext func(cont
 
 				tcping := ping.NewTCPing()
 				tcping.SetDialContext(dialContext)
+				tcping.SetKeyLogWriter(keyLogWriter)
 				target := ping.Target{
 					Protocol: ping.TCP,
 					Host:     host,
@@ -128,7 +130,7 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 		case <-ticker.C:
 		}
 
-		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext)
+		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()

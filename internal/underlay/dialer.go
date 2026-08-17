@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
 	tun "github.com/mythologyli/sing-tun"
+	"github.com/mythologyli/zju-connect/log"
 	"github.com/sagernet/sing/common/logger"
 )
 
@@ -17,11 +19,13 @@ import (
 // server before the TUN interface was installed. This prevents VPN underlay
 // connections from being captured by the TUN interface itself.
 type Dialer struct {
-	mu            sync.RWMutex
-	interfaceName string
-	autoDetect    bool
-	excludedIPs   []net.IP
-	requireBound  bool
+	mu             sync.RWMutex
+	interfaceName  string
+	autoDetect     bool
+	excludedIPs    []net.IP
+	requireBound   bool
+	capture        *pcapCapture
+	localDNSServer string
 }
 
 type Options struct {
@@ -29,6 +33,11 @@ type Options struct {
 	// It takes precedence over AutoDetect.
 	InterfaceName string
 	AutoDetect    bool
+	// DebugPCAPFile records application-visible TCP traffic on underlay sockets.
+	DebugPCAPFile string
+	// LocalDNSServer overrides the system DNS for VPN server hostname resolution.
+	// It must be an IP address with an optional port.
+	LocalDNSServer string
 }
 
 func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
@@ -36,7 +45,11 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, co
 	if err != nil {
 		return nil, err
 	}
-	config = config.Clone()
+	if config == nil {
+		config = &tls.Config{}
+	} else {
+		config = config.Clone()
+	}
 	if config.ServerName == "" {
 		host, _, splitErr := net.SplitHostPort(address)
 		if splitErr == nil {
@@ -51,18 +64,40 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, co
 	return tlsConn, nil
 }
 
-func New(serverAddress string, options ...Options) *Dialer {
+func New(options ...Options) (*Dialer, error) {
 	option := Options{AutoDetect: true}
 	if len(options) > 0 {
 		option = options[0]
 	}
+	d := &Dialer{autoDetect: option.AutoDetect}
+	localDNSServer, err := normalizeLocalDNSServer(option.LocalDNSServer)
+	if err != nil {
+		return nil, err
+	}
+	d.localDNSServer = localDNSServer
 	if option.InterfaceName != "" {
-		return &Dialer{interfaceName: option.InterfaceName}
+		d.updateInterfaceName(option.InterfaceName)
+		d.autoDetect = false
 	}
-	if !option.AutoDetect {
-		return &Dialer{}
+	if option.DebugPCAPFile != "" {
+		capture, err := newPCAPCapture(option.DebugPCAPFile)
+		if err != nil {
+			return nil, fmt.Errorf("initialize underlay PCAP capture: %w", err)
+		}
+		d.capture = capture
 	}
-	return &Dialer{interfaceName: detectInterface(serverAddress), autoDetect: true}
+	return d, nil
+}
+
+// Close flushes and closes the optional packet capture.
+func (d *Dialer) Close() error {
+	if d == nil {
+		return nil
+	}
+	if d.capture != nil {
+		return d.capture.Close()
+	}
+	return nil
 }
 
 func (d *Dialer) InterfaceName() string {
@@ -90,44 +125,119 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	if d == nil {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
-
+	interfaceName := d.ensureInterface(address)
 	d.mu.RLock()
-	interfaceName := d.interfaceName
 	autoDetect := d.autoDetect
 	requireBound := d.requireBound
 	d.mu.RUnlock()
 	if autoDetect && requireBound && interfaceName == "" {
-		interfaceName = d.refreshInterface("")
+		interfaceName = d.refreshInterface()
 		if interfaceName == "" {
 			return nil, fmt.Errorf("no usable underlay interface")
 		}
 	}
 
-	conn, err := dialOnInterface(ctx, network, address, interfaceName)
+	conn, err := dialOnInterface(ctx, network, address, interfaceName, d.localDNSServer)
 	if err == nil {
-		return conn, nil
+		return d.wrapCapture(conn), nil
 	}
 
-	refreshedInterface := d.refreshInterface(interfaceName)
+	refreshedInterface := d.refreshInterface()
 	if refreshedInterface == "" || refreshedInterface == interfaceName {
 		return nil, err
 	}
 
-	conn, retryErr := dialOnInterface(ctx, network, address, refreshedInterface)
+	conn, retryErr := dialOnInterface(ctx, network, address, refreshedInterface, d.localDNSServer)
 	if retryErr != nil {
 		return nil, fmt.Errorf("dial underlay via %q failed after %q failed: %w", refreshedInterface, interfaceName, retryErr)
 	}
-	return conn, nil
+	return d.wrapCapture(conn), nil
 }
 
-func dialContextOnInterface(ctx context.Context, network, address, interfaceName string) (net.Conn, error) {
+func (d *Dialer) ensureInterface(address string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.autoDetect || d.interfaceName != "" {
+		return d.interfaceName
+	}
+	if interfaceName := detectInterface(address); usableInterface(interfaceName, d.excludedIPs) {
+		d.updateInterfaceName(interfaceName)
+	}
+	return d.interfaceName
+}
+
+func (d *Dialer) updateInterfaceName(interfaceName string) {
+	if interfaceName == "" || interfaceName == d.interfaceName {
+		return
+	}
+	d.interfaceName = interfaceName
+	log.Printf("Underlay interface: %s", interfaceName)
+}
+
+func (d *Dialer) wrapCapture(conn net.Conn) net.Conn {
+	if d.capture == nil {
+		return conn
+	}
+	return d.capture.Wrap(conn)
+}
+
+func dialContextOnInterface(ctx context.Context, network, address, interfaceName, localDNSServer string) (net.Conn, error) {
 	nd := &net.Dialer{}
 	if interfaceName != "" {
 		if err := bindInterface(nd, interfaceName); err != nil {
 			return nil, fmt.Errorf("bind underlay interface %q: %w", interfaceName, err)
 		}
 	}
+	if interfaceName != "" || localDNSServer != "" {
+		nd.Resolver = newUnderlayResolver(interfaceName, localDNSServer)
+	}
 	return nd.DialContext(ctx, network, address)
+}
+
+func newUnderlayResolver(interfaceName, localDNSServer string) *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, systemDNSServer string) (net.Conn, error) {
+			target := systemDNSServer
+			if localDNSServer != "" {
+				target = localDNSServer
+			}
+			dialer := &net.Dialer{}
+			if interfaceName != "" && !isLoopbackAddress(target) {
+				if err := bindInterface(dialer, interfaceName); err != nil {
+					return nil, fmt.Errorf("bind local DNS interface %q: %w", interfaceName, err)
+				}
+			}
+			return dialer.DialContext(ctx, network, target)
+		},
+	}
+}
+
+func isLoopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func normalizeLocalDNSServer(address string) (string, error) {
+	if address == "" {
+		return "", nil
+	}
+	if ip := net.ParseIP(address); ip != nil {
+		return net.JoinHostPort(address, "53"), nil
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) == nil {
+		return "", fmt.Errorf("local DNS server must be an IP address with an optional port: %q", address)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", fmt.Errorf("invalid local DNS server port in %q", address)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 var dialOnInterface = dialContextOnInterface
@@ -138,16 +248,16 @@ func (d *Dialer) DialTimeout(network, address string, timeout time.Duration) (ne
 	return d.DialContext(ctx, network, address)
 }
 
-func detectInterface(serverAddress string) string {
+func detectInterface(targetAddress string) string {
 	if interfaceName := findDefaultInterface(); usableInterface(interfaceName, nil) {
 		return interfaceName
 	}
 
 	// This fallback is primarily for platforms without a default-interface
-	// monitor. New runs before the TUN interface is installed.
-	host, port, err := net.SplitHostPort(serverAddress)
+	// monitor. The first DialContext runs before the TUN interface is installed.
+	host, port, err := net.SplitHostPort(targetAddress)
 	if err != nil {
-		host = serverAddress
+		host = targetAddress
 		port = "443"
 	}
 	conn, err := net.DialTimeout("udp", net.JoinHostPort(host, port), 3*time.Second)
@@ -185,7 +295,7 @@ func detectInterface(serverAddress string) string {
 	return ""
 }
 
-func (d *Dialer) refreshInterface(previous string) string {
+func (d *Dialer) refreshInterface() string {
 	d.mu.RLock()
 	autoDetect := d.autoDetect
 	d.mu.RUnlock()
@@ -199,9 +309,7 @@ func (d *Dialer) refreshInterface(previous string) string {
 	if !usableInterface(interfaceName, d.excludedIPs) {
 		return ""
 	}
-	if interfaceName != previous {
-		d.interfaceName = interfaceName
-	}
+	d.updateInterfaceName(interfaceName)
 	return interfaceName
 }
 
