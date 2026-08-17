@@ -33,6 +33,7 @@ type (
 		GraphCodeFile       string
 		DebugDump           bool
 		DebugPCAPFile       string
+		DebugTLSLogFile     string
 		BindInterface       string
 		AutoDetectInterface bool
 
@@ -110,6 +111,7 @@ type (
 		GraphCodeFile           *string                    `toml:"graph_code_file"`
 		DebugDump               *bool                      `toml:"debug_dump"`
 		DebugPCAPFile           *string                    `toml:"debug_pcap_file"`
+		DebugTLSLogFile         *string                    `toml:"debug_tls_log_file"`
 		PortForwarding          []SinglePortForwardingTOML `toml:"port_forwarding"`
 		CustomDNS               []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain       []string                   `toml:"custom_proxy_domain"`

@@ -25,6 +25,7 @@ dns_hijack = false
 fake_ip = false
 debug_dump = false
 debug_pcap_file = "" # Reconstruct encrypted VPN underlay TCP traffic in this PCAP file (debug only)
+debug_tls_log_file = "" # Export TLS session secrets in NSS key log format (debug only)
 bind_interface = ""
 auto_detect_interface = false
 

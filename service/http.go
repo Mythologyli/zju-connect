@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
@@ -52,7 +53,7 @@ type httpTunnel struct {
 }
 
 type httpProxy struct {
-	dialContext func(context.Context, string, string) (net.Conn, error)
+	dialContext client.DialContextFunc
 	client      *http.Client
 	tunnelsMu   sync.Mutex
 	tunnels     map[*httpTunnel]struct{}
@@ -64,9 +65,7 @@ func newHTTPProxy(dialer *dial.Dialer) *httpProxy {
 		tunnels:     make(map[*httpTunnel]struct{}),
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = func(ctx context.Context, net, addr string) (net.Conn, error) {
-		return proxy.dialContext(ctx, net, addr)
-	}
+	transport.DialContext = proxy.dialContext
 	transport.MaxIdleConns = httpProxyMaxIdleConns
 	transport.MaxIdleConnsPerHost = httpProxyMaxIdleConnsPerHost
 	transport.MaxConnsPerHost = httpProxyMaxConnsPerHost

@@ -70,6 +70,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSTTL = getTOMLVal(confTOML.DNSTTL, uint64(3600))
 	conf.DebugDump = getTOMLVal(confTOML.DebugDump, false)
 	conf.DebugPCAPFile = getTOMLVal(confTOML.DebugPCAPFile, "")
+	conf.DebugTLSLogFile = getTOMLVal(confTOML.DebugTLSLogFile, "")
 	conf.DisableKeepAlive = getTOMLVal(confTOML.DisableKeepAlive, false)
 	conf.KeepAliveURL = getTOMLVal(confTOML.KeepAliveURL, "")
 	conf.RemoteDNSServer = getTOMLVal(confTOML.RemoteDNSServer, "auto")
@@ -174,6 +175,7 @@ func init() {
 	flag.Uint64Var(&conf.DNSTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
 	flag.BoolVar(&conf.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
 	flag.StringVar(&conf.DebugPCAPFile, "debug-pcap-file", "", "Save reconstructed VPN underlay TCP traffic to a PCAP file (debug only)")
+	flag.StringVar(&conf.DebugTLSLogFile, "debug-tls-log-file", "", "Save TLS session secrets in NSS key log format (debug only)")
 	flag.BoolVar(&conf.DisableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
 	flag.StringVar(&conf.KeepAliveURL, "keep-alive-url", "", "Keep alive URL, default is empty (use DNS keep alive)")
 	flag.StringVar(&conf.RemoteDNSServer, "zju-dns-server", "auto", "Remote DNS server address. Set to 'auto' to use remote DNS server provided by server") // TODO: rename to remote-dns-server
@@ -220,7 +222,7 @@ func init() {
 			os.Exit(1)
 		}
 		log.SetOutput(io.Discard) // suppress log
-		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer)
+		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
 			os.Exit(1)
@@ -249,7 +251,7 @@ func init() {
 			os.Exit(1)
 		}
 
-		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer)
+		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
 			os.Exit(1)

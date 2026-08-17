@@ -61,6 +61,7 @@ func login(server string, username string, password string) string {
 		false,
 		false,
 		newUnderlay,
+		nil,
 	)
 
 	// Close the old client and clear vpnClient to nil during setup so that

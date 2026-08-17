@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -35,6 +36,7 @@ type Client struct {
 
 	httpClient        *http.Client
 	underlayDialer    *underlay.Dialer
+	tlsKeyLogWriter   io.Writer
 	rawRequestTimeout time.Duration
 
 	twfID string
@@ -61,7 +63,7 @@ type Client struct {
 	closeOnce          sync.Once
 }
 
-func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer *underlay.Dialer) *Client {
+func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	c := &Client{
 		server:            server,
@@ -74,6 +76,7 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 		useDomainResource: useDomainResource,
 		httpClient:        &http.Client{Timeout: easyConnectHTTPTimeout},
 		underlayDialer:    underlayDialer,
+		tlsKeyLogWriter:   tlsKeyLogWriter,
 		rawRequestTimeout: easyConnectRawRequestTimeout,
 		twfID:             twfID,
 		lifecycleCtx:      lifecycleCtx,
@@ -189,7 +192,7 @@ func (c *Client) setup(graphCodeFile string) error {
 			} else {
 				log.Printf("Line list: %v", c.lineList)
 
-				bestLine, err := findBestLine(c.lineList, c.dialContext)
+				bestLine, err := findBestLine(c.lineList, c.dialContext, c.tlsKeyLogWriter)
 				if err != nil {
 					log.Printf("Error occurred while finding best line: %v", err)
 				} else {
@@ -265,6 +268,9 @@ func (c *Client) setHTTPTransport(tlsConfig *tls.Config) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = c.dialContext
 	transport.TLSClientConfig = tlsConfig.Clone()
+	if c.tlsKeyLogWriter != nil {
+		transport.TLSClientConfig.KeyLogWriter = c.tlsKeyLogWriter
+	}
 	transport.ResponseHeaderTimeout = easyConnectResponseHeaderTimeout
 	c.httpClient.Transport = transport
 }

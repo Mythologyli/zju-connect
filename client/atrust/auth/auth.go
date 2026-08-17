@@ -1,13 +1,12 @@
 package auth
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	mathrand "math/rand"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -110,9 +110,12 @@ type Session struct {
 	response map[string]json.RawMessage
 }
 
-func NewSession(server string, dialContext ...func(context.Context, string, string) (net.Conn, error)) *Session {
+func NewSession(server string, tlsKeyLogWriter io.Writer, dialContext ...client.DialContextFunc) *Session {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			KeyLogWriter:       tlsKeyLogWriter,
+		},
 	}
 	if len(dialContext) > 0 && dialContext[0] != nil {
 		tr.DialContext = dialContext[0]

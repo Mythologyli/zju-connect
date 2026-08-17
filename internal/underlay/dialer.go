@@ -45,7 +45,11 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, co
 	if err != nil {
 		return nil, err
 	}
-	config = config.Clone()
+	if config == nil {
+		config = &tls.Config{}
+	} else {
+		config = config.Clone()
+	}
 	if config.ServerName == "" {
 		host, _, splitErr := net.SplitHostPort(address)
 		if splitErr == nil {
@@ -85,12 +89,15 @@ func New(options ...Options) (*Dialer, error) {
 	return d, nil
 }
 
-// Close flushes and closes the optional capture file.
+// Close flushes and closes the optional packet capture.
 func (d *Dialer) Close() error {
-	if d == nil || d.capture == nil {
+	if d == nil {
 		return nil
 	}
-	return d.capture.Close()
+	if d.capture != nil {
+		return d.capture.Close()
+	}
+	return nil
 }
 
 func (d *Dialer) InterfaceName() string {

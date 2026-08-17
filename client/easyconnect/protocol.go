@@ -60,7 +60,10 @@ func (c *Client) tlsConn(ctx context.Context) (*tls.UConn, error) {
 
 	// Use uTLS to construct a weird TLS Client Hello (required by Sangfor)
 	// The VPN and HTTP Server share port 443, Sangfor uses a special SessionID to distinguish them
-	conn := tls.UClient(dialConn, &tls.Config{InsecureSkipVerify: true}, tls.HelloCustom)
+	conn := tls.UClient(dialConn, &tls.Config{
+		InsecureSkipVerify: true,
+		KeyLogWriter:       c.tlsKeyLogWriter,
+	}, tls.HelloCustom)
 
 	random := make([]byte, 32)
 	_, _ = rand.Read(random) // Ignore err

@@ -1,9 +1,12 @@
 package atrust
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestTunnelTLSConfigMatchesOfficialTransport(t *testing.T) {
-	config := tunnelTLSConfig()
+	config := tunnelTLSConfig(nil)
 
 	if !config.InsecureSkipVerify {
 		t.Fatal("tunnel certificate verification must be disabled")
@@ -16,5 +19,13 @@ func TestTunnelTLSConfigMatchesOfficialTransport(t *testing.T) {
 	}
 	if config.MinVersion != 0 || config.MaxVersion != 0 {
 		t.Fatal("official tunnel transport does not override Go's TLS version defaults")
+	}
+}
+
+func TestTunnelTLSConfigUsesKeyLogWriter(t *testing.T) {
+	var writer bytes.Buffer
+	config := tunnelTLSConfig(&writer)
+	if config.KeyLogWriter != &writer {
+		t.Fatal("tunnel TLS config did not receive the client key-log writer")
 	}
 }

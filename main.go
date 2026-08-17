@@ -20,6 +20,7 @@ import (
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"github.com/mythologyli/zju-connect/internal/keylog"
 	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
@@ -59,8 +60,16 @@ func main() {
 	if underlayErr != nil {
 		log.Fatalf("Create underlay dialer: %v", underlayErr)
 	}
+	tlsKeyLogWriter, tlsKeyLogErr := keylog.Open(conf.DebugTLSLogFile)
+	if tlsKeyLogErr != nil {
+		_ = underlayDialer.Close()
+		log.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
+	}
 	if conf.DebugPCAPFile != "" {
 		log.Printf("VPN underlay PCAP capture enabled: %s", conf.DebugPCAPFile)
+	}
+	if conf.DebugTLSLogFile != "" {
+		log.Printf("TLS key logging enabled: %s", conf.DebugTLSLogFile)
 	}
 	var vpnClient client.Client
 	switch conf.Protocol {
@@ -95,6 +104,7 @@ func main() {
 			!conf.DisableServerConfig,
 			!conf.SkipDomainResource,
 			underlayDialer,
+			tlsKeyLogWriter,
 		)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
@@ -102,6 +112,9 @@ func main() {
 		if err != nil {
 			vpnClient.(*easyconnectclient.Client).Close()
 			_ = underlayDialer.Close()
+			if tlsKeyLogWriter != nil {
+				_ = tlsKeyLogWriter.Close()
+			}
 			log.Fatalf("VPN client setup error: %s", err)
 		}
 	case "atrust":
@@ -124,7 +137,7 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer)
+		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer, tlsKeyLogWriter)
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(
@@ -146,6 +159,9 @@ func main() {
 		if err != nil {
 			vpnClient.(*atrustclient.Client).Close()
 			_ = underlayDialer.Close()
+			if tlsKeyLogWriter != nil {
+				_ = tlsKeyLogWriter.Close()
+			}
 			log.Fatalf("VPN client setup error: %s", err)
 		}
 
@@ -168,6 +184,11 @@ func main() {
 	hook_func.RegisterTerminalFunc("CloseUnderlayDialer", func(ctx context.Context) error {
 		return underlayDialer.Close()
 	})
+	if tlsKeyLogWriter != nil {
+		hook_func.RegisterTerminalFunc("CloseTLSKeyLog", func(ctx context.Context) error {
+			return tlsKeyLogWriter.Close()
+		})
+	}
 
 	ipResources, err := vpnClient.IPResources()
 	if err != nil && !conf.DisableServerConfig {

@@ -593,7 +593,10 @@ func (c *Client) requestToken() error {
 	defer func(dialConn net.Conn) {
 		_ = dialConn.Close()
 	}(dialConn)
-	conn := utls.UClient(dialConn, &utls.Config{InsecureSkipVerify: true}, utls.HelloGolang)
+	conn := utls.UClient(dialConn, &utls.Config{
+		InsecureSkipVerify: true,
+		KeyLogWriter:       c.tlsKeyLogWriter,
+	}, utls.HelloGolang)
 	defer func(conn *utls.UConn) {
 		_ = conn.Close()
 	}(conn)

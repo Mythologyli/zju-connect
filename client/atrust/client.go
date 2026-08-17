@@ -17,6 +17,7 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
+	"github.com/mythologyli/zju-connect/internal/keylog"
 	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
@@ -56,10 +57,11 @@ type Client struct {
 	lifecycleCancel  context.CancelFunc
 	closeOnce        sync.Once
 	underlayDialer   *underlay.Dialer
+	tlsKeyLogWriter  io.Writer
 	tcpTunnelZeroRTT bool
 }
 
-func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer) *Client {
+func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
 		Username:        username,
@@ -67,6 +69,7 @@ func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay
 		DeviceID:        deviceID,
 		SignKey:         signKey,
 		underlayDialer:  underlayDialer,
+		tlsKeyLogWriter: tlsKeyLogWriter,
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
@@ -172,7 +175,7 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b)[:n])
 }
 
-func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, localDNSServer string) ([]auth.AuthInfo, error) {
+func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string, autoDetectInterface bool, localDNSServer, debugTLSLogFile string) (authInfo []auth.AuthInfo, err error) {
 	var serverHost string
 	if serverPort == 443 {
 		serverHost = serverAddress
@@ -184,7 +187,18 @@ func GetAuthInfoList(serverAddress string, serverPort int, bindInterface string,
 		return nil, err
 	}
 	defer dialer.Close()
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	tlsKeyLogWriter, err := keylog.Open(debugTLSLogFile)
+	if err != nil {
+		return nil, fmt.Errorf("open TLS key log: %w", err)
+	}
+	defer func() {
+		if tlsKeyLogWriter != nil {
+			if closeErr := tlsKeyLogWriter.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close TLS key log: %w", closeErr))
+			}
+		}
+	}()
+	sess := auth.NewSession(serverHost, tlsKeyLogWriter, dialer.DialContext)
 	return sess.GetAuthInfoList()
 }
 
@@ -202,7 +216,7 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	return tunnel.NewL3Conn()
 }
 
-func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, localDNSServer string) error {
+func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted bool, bindInterface string, autoDetectInterface bool, localDNSServer, debugTLSLogFile string) (err error) {
 	var clientAuthData auth.ClientAuthData
 	if authData != nil {
 		err := json.Unmarshal(authData, &clientAuthData)
@@ -228,7 +242,18 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 		return err
 	}
 	defer dialer.Close()
-	sess := auth.NewSession(serverHost, dialer.DialContext)
+	tlsKeyLogWriter, err := keylog.Open(debugTLSLogFile)
+	if err != nil {
+		return fmt.Errorf("open TLS key log: %w", err)
+	}
+	defer func() {
+		if tlsKeyLogWriter != nil {
+			if closeErr := tlsKeyLogWriter.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close TLS key log: %w", closeErr))
+			}
+		}
+	}()
+	sess := auth.NewSession(serverHost, tlsKeyLogWriter, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
 		DeviceID: clientAuthData.DeviceID,
@@ -280,7 +305,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	} else {
 		authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
 	}
-	sess := auth.NewSession(authServerHost, c.underlayDialer.DialContext)
+	sess := auth.NewSession(authServerHost, c.tlsKeyLogWriter, c.underlayDialer.DialContext)
 	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
 	serverVersionInfo, err := resolveServerVersionInfo(clientAuthData.ServerVersionInfo, serverVersionInfo, manifestErr)
 	if err != nil {
@@ -376,7 +401,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
-	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext)
+	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
 
 	err = c.getIP()
 	if err != nil {

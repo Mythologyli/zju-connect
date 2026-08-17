@@ -79,7 +79,7 @@ func TestForwardFromConnPreservesPacket(t *testing.T) {
 }
 
 func TestGetConnCoalescesConcurrentConnects(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
 		client:     client,
@@ -159,7 +159,7 @@ func TestTunnelAuthUsesContextDeadline(t *testing.T) {
 }
 
 func TestTunnelReconnectUsesFixedIntervalUntilSuccessAndSharesResult(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
 		client:            client,
@@ -213,7 +213,7 @@ func TestTunnelReconnectUsesFixedIntervalUntilSuccessAndSharesResult(t *testing.
 }
 
 func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
 		client:            client,
@@ -258,7 +258,7 @@ func TestReconnectDoesNotRaceForegroundConnect(t *testing.T) {
 }
 
 func TestTunnelReconnectStopsWhenTunnelCloses(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
 		client:            client,
@@ -292,7 +292,7 @@ func TestTunnelReconnectStopsWhenTunnelCloses(t *testing.T) {
 }
 
 func TestTunnelReconnectPreservesConntrackAndToken(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	tunnel := &L3Tunnel{
 		client:            client,
@@ -414,7 +414,7 @@ func TestTunnelRecoversFromReadAndHeartbeatFailures(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			client := NewClient("user", "sid", "device", "", nil)
+			client := NewClient("user", "sid", "device", "", nil, nil)
 			client.BestNodes = map[string]string{"group": "node:443"}
 			manager := newConntrackMgr()
 			oldConn := &l3TunnelConn{
@@ -460,7 +460,7 @@ func TestTunnelRecoversFromReadAndHeartbeatFailures(t *testing.T) {
 }
 
 func TestTunnelRecoversFromDataWriteFailure(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.BestNodes = map[string]string{"group": "node:443"}
 	manager := newConntrackMgr()
 	packet := zctcpip.IPv4Packet(makeUDPPacket(12345, 53))
@@ -1768,7 +1768,7 @@ func TestConntrackKeyIncludesTransportProtocol(t *testing.T) {
 }
 
 func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	client.setIP(net.IPv4(192, 0, 2, 1))
 	var applied net.IP
 	client.SetIPUpdateHandler(func(ip net.IP) error {
@@ -1795,7 +1795,7 @@ func TestUpdateVIPAppliesIPv4ToTunnelAndClient(t *testing.T) {
 }
 
 func TestUpdateVIPKeepsOldAddressWhenStackRejectsUpdate(t *testing.T) {
-	client := NewClient("user", "sid", "device", "", nil)
+	client := NewClient("user", "sid", "device", "", nil, nil)
 	oldIP := net.IPv4(192, 0, 2, 1)
 	client.setIP(oldIP)
 	client.SetIPUpdateHandler(func(net.IP) error { return errors.New("apply failed") })
