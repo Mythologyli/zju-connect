@@ -13,8 +13,7 @@ import (
 
 const (
 	defaultConntrackMaxEntries = 16384
-	defaultPendingPacketLimit  = 64
-	defaultPendingByteLimit    = 256 * 1024
+	defaultPendingPacketLimit  = 1024
 	tcpOutboundSynTTL          = 60 * time.Second
 	tcpInboundSynTTL           = 120 * time.Second
 	tcpSynAckTTL               = 60 * time.Second
@@ -56,13 +55,12 @@ type conntrack struct {
 	authCh       chan struct{}
 	authErr      error
 	authStarted  uint32
-	authAttempts int
+	authTimeouts int
 	authMeta     packetMeta
 	authDeadline time.Time
 	authRetryAt  time.Time
 	sendMu       sync.Mutex
 	pending      [][]byte
-	pendingBytes int
 	lastSeen     time.Time
 	expiresAt    time.Time
 	tcpState     uint8
@@ -102,6 +100,19 @@ func (m *conntrackMgr) getByID(authID uint64) *conntrack {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.byID[authID]
+}
+
+func (m *conntrackMgr) getByAuthResponseIP(ip authIP) *conntrack {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ct := range m.byKey {
+		meta := ct.authMeta
+		if authIPType(meta.atype) == ip.Atype && meta.srcPort == ip.SrcPort && meta.dstPort == ip.DestPort &&
+			meta.srcIP.Equal(net.ParseIP(ip.SrcAddr)) && meta.dstIP.Equal(net.ParseIP(ip.DestAddr)) {
+			return ct
+		}
+	}
+	return nil
 }
 
 func (m *conntrackMgr) getOrCreate(key, appID, nodeGroupID string) *conntrack {
@@ -272,7 +283,6 @@ func (m *conntrackMgr) completeAuth(authID uint64, token string, err error) (*co
 	}
 	packets := ct.pending
 	ct.pending = nil
-	ct.pendingBytes = 0
 	if token != "" {
 		ct.connectToken = token
 	}
@@ -301,13 +311,12 @@ func (m *conntrackMgr) cachePacket(ct *conntrack, meta packetMeta, packet []byte
 		return false, ct.authErr
 	default:
 	}
-	if len(ct.pending) >= defaultPendingPacketLimit || ct.pendingBytes+len(packet) > defaultPendingByteLimit {
+	if len(ct.pending) >= defaultPendingPacketLimit {
 		return false, errPendingPacketCacheFull
 	}
 	ct.authMeta = meta
 	copyOfPacket := append([]byte(nil), packet...)
 	ct.pending = append(ct.pending, copyOfPacket)
-	ct.pendingBytes += len(copyOfPacket)
 	return true, nil
 }
 
@@ -349,7 +358,6 @@ func (m *conntrackMgr) markAuthSent(authID uint64, deadline time.Time) {
 		case <-ct.authCh:
 		default:
 			ct.authDeadline = deadline
-			ct.authAttempts++
 		}
 	}
 	m.mu.Unlock()
@@ -363,7 +371,8 @@ func (m *conntrackMgr) expireAuth(now time.Time, err error) int {
 		next := element.Next()
 		ct := element.Value.(*conntrack)
 		if !ct.authDeadline.IsZero() && !now.Before(ct.authDeadline) {
-			if ct.authAttempts < defaultAuthMaxAttempts {
+			ct.authTimeouts++
+			if ct.authTimeouts < defaultAuthMaxAttempts {
 				ct.authStarted = 0
 				ct.authDeadline = time.Time{}
 				ct.authRetryAt = now
@@ -381,7 +390,7 @@ func (m *conntrackMgr) retryAuth(authID uint64, delay time.Duration) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ct := m.byID[authID]
-	if ct == nil || ct.authAttempts >= defaultAuthMaxAttempts {
+	if ct == nil {
 		return false
 	}
 	select {
@@ -433,7 +442,6 @@ func (m *conntrackMgr) removeOldestLocked() {
 func (m *conntrackMgr) removeLocked(ct *conntrack, err error) {
 	m.removeIndexesLocked(ct)
 	ct.pending = nil
-	ct.pendingBytes = 0
 	select {
 	case <-ct.authCh:
 	default:

@@ -17,16 +17,7 @@ type ClientResource struct {
 		AppList struct {
 			Data struct {
 				AppInfo []struct {
-					Apps []struct {
-						ID          string
-						NodeGroupID string
-						AddressList []struct {
-							Protocol string
-							Port     string
-							Host     string
-							IP       []string
-						}
-					}
+					Apps []resourceApp
 				}
 
 				Config struct {
@@ -49,6 +40,14 @@ type ClientResource struct {
 		SDPPolicy struct {
 			Data struct {
 				ClientOption struct {
+					Tun0RTT struct {
+						MaxIdleConnNum    int64 `json:"maxIdleConnNum"`
+						MaxIdleLingerTime int64 `json:"maxIdleLingerTime"`
+						MinIdleConnNum    int64 `json:"minIdleConnNum"`
+						Enable            bool  `json:"enable"`
+						PreConnNum        int64 `json:"preConnNum"`
+					} `json:"tun0rtt"`
+
 					DNSOption struct {
 						FirstDNS  string
 						SecondDNS string
@@ -62,6 +61,21 @@ type ClientResource struct {
 			}
 		}
 	}
+}
+
+type resourceApp struct {
+	ID              string
+	NodeGroupID     string
+	AccessModel     string
+	EnableTCPPrefL3 bool
+	AddressList     []resourceAddress
+}
+
+type resourceAddress struct {
+	Protocol string
+	Port     string
+	Host     string
+	IP       []string
 }
 
 func (c *Client) parseResource(resource []byte) error {
@@ -80,6 +94,10 @@ func (c *Client) parseResource(resource []byte) error {
 
 	for _, app := range clientResource.Data.AppList.Data.AppInfo {
 		for _, appItem := range app.Apps {
+			if appItem.AccessModel != "L3VPN" {
+				log.DebugPrintf("Ignore unsupported aTrust access model %q for app %s", appItem.AccessModel, appItem.ID)
+				continue
+			}
 			for _, address := range appItem.AddressList {
 				if address.Protocol == "tcp" || address.Protocol == "udp" || address.Protocol == "all" {
 					// Handle port
@@ -129,13 +147,14 @@ func (c *Client) parseResource(resource []byte) error {
 								ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix(hostStr))
 
 								c.ipResources = append(c.ipResources, client.IPResource{
-									IPMin:       ip4.To16(),
-									IPMax:       ipMax4.To16(),
-									PortMin:     portMin,
-									PortMax:     portMax,
-									Protocol:    address.Protocol,
-									AppID:       appItem.ID,
-									NodeGroupID: appItem.NodeGroupID,
+									IPMin:           ip4.To16(),
+									IPMax:           ipMax4.To16(),
+									PortMin:         portMin,
+									PortMax:         portMax,
+									Protocol:        address.Protocol,
+									AppID:           appItem.ID,
+									NodeGroupID:     appItem.NodeGroupID,
+									EnableTCPPrefL3: appItem.EnableTCPPrefL3,
 								})
 
 								log.DebugPrintf("Add CIDR: %s (%s ~ %s), Port range: %d ~ %d, [%s]", hostStr, ip4, ipMax4, portMin, portMax, address.Protocol)
@@ -151,13 +170,14 @@ func (c *Client) parseResource(resource []byte) error {
 									ipSetBuilder.AddRange(netaddr.IPRangeFrom(netaddr.MustParseIP(ipMin.String()), netaddr.MustParseIP(ipMax.String())))
 
 									c.ipResources = append(c.ipResources, client.IPResource{
-										IPMin:       ipMin,
-										IPMax:       ipMax,
-										PortMin:     portMin,
-										PortMax:     portMax,
-										Protocol:    address.Protocol,
-										AppID:       appItem.ID,
-										NodeGroupID: appItem.NodeGroupID,
+										IPMin:           ipMin,
+										IPMax:           ipMax,
+										PortMin:         portMin,
+										PortMax:         portMax,
+										Protocol:        address.Protocol,
+										AppID:           appItem.ID,
+										NodeGroupID:     appItem.NodeGroupID,
+										EnableTCPPrefL3: appItem.EnableTCPPrefL3,
 									})
 
 									log.DebugPrintf("Add IP range: %s ~ %s, Port range: %d ~ %d, [%s]", ipMin, ipMax, portMin, portMax, address.Protocol)
@@ -176,13 +196,14 @@ func (c *Client) parseResource(resource []byte) error {
 							ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
 
 							c.ipResources = append(c.ipResources, client.IPResource{
-								IPMin:       ip,
-								IPMax:       ip,
-								PortMin:     portMin,
-								PortMax:     portMax,
-								Protocol:    address.Protocol,
-								AppID:       appItem.ID,
-								NodeGroupID: appItem.NodeGroupID,
+								IPMin:           ip,
+								IPMax:           ip,
+								PortMin:         portMin,
+								PortMax:         portMax,
+								Protocol:        address.Protocol,
+								AppID:           appItem.ID,
+								NodeGroupID:     appItem.NodeGroupID,
+								EnableTCPPrefL3: appItem.EnableTCPPrefL3,
 							})
 
 							log.DebugPrintf("Add IP: %s, Port range: %d ~ %d, [%s]", ip, portMin, portMax, address.Protocol)
@@ -198,11 +219,12 @@ func (c *Client) parseResource(resource []byte) error {
 							continue
 						}
 						c.domainResources[domain] = append(c.domainResources[domain], client.DomainResource{
-							PortMin:     portMin,
-							PortMax:     portMax,
-							Protocol:    address.Protocol,
-							AppID:       appItem.ID,
-							NodeGroupID: appItem.NodeGroupID,
+							PortMin:         portMin,
+							PortMax:         portMax,
+							Protocol:        address.Protocol,
+							AppID:           appItem.ID,
+							NodeGroupID:     appItem.NodeGroupID,
+							EnableTCPPrefL3: appItem.EnableTCPPrefL3,
 						})
 
 						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", hostStr, portMin, portMax, address.Protocol)
@@ -221,6 +243,11 @@ func (c *Client) parseResource(resource []byte) error {
 								if ip.To4() != nil {
 									ipSetBuilder.Add(netaddr.MustParseIP(ip.String()))
 									c.dnsResource[hostStr] = append(c.dnsResource[hostStr], ip)
+									c.ipResources = append(c.ipResources, client.IPResource{
+										IPMin: ip, IPMax: ip, PortMin: portMin, PortMax: portMax,
+										Protocol: address.Protocol, AppID: appItem.ID, NodeGroupID: appItem.NodeGroupID,
+										EnableTCPPrefL3: appItem.EnableTCPPrefL3,
+									})
 									log.DebugPrintf("Add DNS rule: %s -> %s", hostStr, ipStr)
 								} else {
 									log.DebugPrintf("IPv6 address found: %s, skipping", ip)
@@ -252,7 +279,6 @@ func (c *Client) parseResource(resource []byte) error {
 		c.dnsServer = ""
 		log.DebugPrintf("No DNS server found")
 	}
-
 	c.MajorNodeGroup = clientResource.Data.AppList.Data.Config.NodeGroupConf.MajorNodeGroup.ID
 	c.NodeGroups = make(map[string]NodeGroup)
 	for _, nodeGroup := range clientResource.Data.AppList.Data.Config.NodeGroupConf.NodeGroupList {

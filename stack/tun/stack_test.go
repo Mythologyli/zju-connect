@@ -3,7 +3,9 @@
 package tun
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 
@@ -17,6 +19,19 @@ import (
 type recordingNetworkDispatcher struct {
 	packet *stack.PacketBuffer
 }
+
+type recordingL3Conn struct {
+	packet []byte
+}
+
+func (*recordingL3Conn) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (c *recordingL3Conn) Write(packet []byte) (int, error) {
+	c.packet = append(c.packet[:0], packet...)
+	return len(packet), nil
+}
+
+func (*recordingL3Conn) Close() error { return nil }
 
 func TestStaticResourceMatchBoundaries(t *testing.T) {
 	s := &Stack{ipResources: []client.IPResource{
@@ -104,7 +119,7 @@ func TestProcessIPV4TCPReleasesPacketBuffer(t *testing.T) {
 	tcpPacket.SetSourcePort(12345)
 	tcpPacket.SetDestinationPort(443)
 
-	if err := s.processIPV4TCP(packet, tcpPacket); err != nil {
+	if err := s.processIPV4TCP(packet, tcpPacket, true); err != nil {
 		t.Fatalf("processIPV4TCP() error = %v", err)
 	}
 	if dispatcher.packet == nil {
@@ -112,5 +127,36 @@ func TestProcessIPV4TCPReleasesPacketBuffer(t *testing.T) {
 	}
 	if refs := dispatcher.packet.ReadRefs(); refs != 0 {
 		t.Fatalf("PacketBuffer refs after delivery = %d, want 0", refs)
+	}
+}
+
+func TestProcessIPV4TCPPreferringL3BypassesTCPListener(t *testing.T) {
+	dispatcher := &recordingNetworkDispatcher{}
+	l3Conn := &recordingL3Conn{}
+	s := &Stack{
+		endpoint:            &Endpoint{client: &atrust.Client{}},
+		tcpListenerEndpoint: &TCPListenerEndpoint{dispatcher: dispatcher},
+		l3Conn:              l3Conn,
+	}
+
+	packet := make(zctcpip.IPv4Packet, zctcpip.IPv4HeaderSize+zctcpip.TCPHeaderSize)
+	packet[0] = zctcpip.IPv4Version << 4
+	packet.SetHeaderLen(zctcpip.IPv4HeaderSize)
+	packet.SetTotalLength(uint16(len(packet)))
+	packet.SetProtocol(zctcpip.TCP)
+	packet.SetSourceIP(net.IPv4(192, 0, 2, 1))
+	packet.SetDestinationIP(net.IPv4(198, 51, 100, 1))
+	tcpPacket := zctcpip.TCPPacket(packet.Payload())
+	tcpPacket.SetSourcePort(12345)
+	tcpPacket.SetDestinationPort(443)
+
+	if err := s.processIPV4TCP(packet, tcpPacket, false); err != nil {
+		t.Fatalf("processIPV4TCP() error = %v", err)
+	}
+	if dispatcher.packet != nil {
+		t.Fatal("TCP-prefers-L3 packet was delivered to TCP listener")
+	}
+	if !bytes.Equal(l3Conn.packet, packet) {
+		t.Fatalf("L3 packet = %x, want %x", l3Conn.packet, packet)
 	}
 }

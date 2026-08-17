@@ -70,7 +70,18 @@ var (
 	ContextKeyFakeIP         = contextKey("FAKE_IP")
 	ContextKeyResolveHost    = contextKey("RESOLVE_HOST")
 	ContextKeyDomainResource = contextKey("DOMAIN_RESOURCE")
+	ContextKeyIPResource     = contextKey("IP_RESOURCE")
 )
+
+func TCPPrefersL3(ctx context.Context) bool {
+	if resource, ok := ctx.Value(ContextKeyDomainResource).(client.DomainResource); ok {
+		return resource.EnableTCPPrefL3
+	}
+	if resource, ok := ctx.Value(ContextKeyIPResource).(client.IPResource); ok {
+		return resource.EnableTCPPrefL3
+	}
+	return false
+}
 
 // Resolve ip address. If the host could be visited via VPN, this function set a DOMAIN_RESOURCE value in context. If resolve success, this function set a RESOLVE_HOST value in context.
 func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Context, resIP net.IP, resErr error) {

@@ -36,6 +36,19 @@ func TestIndexCanPreserveLastMatchingResource(t *testing.T) {
 	}
 }
 
+func TestIndexCanFilterMatchingResources(t *testing.T) {
+	index := New([]client.IPResource{
+		{IPMin: net.IPv4(10, 0, 0, 42), IPMax: net.IPv4(10, 0, 0, 42), PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "tcp-tunnel"},
+		{IPMin: net.IPv4(10, 0, 0, 42), IPMax: net.IPv4(10, 0, 0, 42), PortMin: 443, PortMax: 443, Protocol: "tcp", AppID: "l3", EnableTCPPrefL3: true},
+	})
+	resource, ok := index.MatchLastWhere(net.IPv4(10, 0, 0, 42), "tcp", 443, func(resource client.IPResource) bool {
+		return !resource.EnableTCPPrefL3
+	})
+	if !ok || resource.AppID != "tcp-tunnel" {
+		t.Fatalf("filtered match = (%#v, %t), want tcp-tunnel", resource, ok)
+	}
+}
+
 func TestNilIndexDoesNotMatch(t *testing.T) {
 	var index *Index
 	if _, ok := index.Match(net.IPv4(10, 0, 0, 1), "tcp", 443); ok {

@@ -57,7 +57,6 @@ type (
 		SignKey                 string
 		ResourceFile            string
 		UpdateBestNodesInterval int
-		SkipTCPTunnelWait       bool
 	}
 
 	SinglePortForwarding struct {
@@ -121,7 +120,6 @@ type (
 		SignKey                 *string                    `toml:"sign_key"`
 		ResourceFile            *string                    `toml:"resource_file"`
 		UpdateBestNodesInterval *int                       `toml:"update_best_nodes_interval"`
-		SkipTCPTunnelWait       *bool                      `toml:"skip_tcp_tunnel_wait"`
 		BindInterface           *string                    `toml:"bind_interface"`
 		AutoDetectInterface     *bool                      `toml:"auto_detect_interface"`
 	}

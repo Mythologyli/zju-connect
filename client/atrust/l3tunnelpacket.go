@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zctcpip"
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -28,7 +29,7 @@ func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 		return fmt.Errorf("protocol %d: %w", packet.Protocol(), client.ErrResourceNotFound)
 	}
 
-	resource, ok := t.resourceIndex.Match(packet.DestinationIP(), protocol, port)
+	resource, ok := matchL3IPResource(t.resourceIndex, packet.DestinationIP(), protocol, port)
 	if ok {
 		return t.writePacket(packet, resource.AppID, resource.NodeGroupID)
 	}
@@ -37,6 +38,12 @@ func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {
 		return fmt.Errorf("%s:%d, [%s]: %w", packet.DestinationIP(), port, protocol, client.ErrResourceNotFound)
 	}
 	return fmt.Errorf("%s, [%s]: %w", packet.DestinationIP(), protocol, client.ErrResourceNotFound)
+}
+
+func matchL3IPResource(index *ipresource.Index, destination net.IP, protocol string, port int) (client.IPResource, bool) {
+	return index.MatchWhere(destination, protocol, port, func(resource client.IPResource) bool {
+		return protocol != "tcp" || resource.EnableTCPPrefL3
+	})
 }
 
 func (t *L3Tunnel) writePacket(packet zctcpip.IPv4Packet, appID, nodeGroupID string) error {

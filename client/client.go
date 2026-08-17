@@ -12,30 +12,36 @@ import (
 var ErrResourceNotFound = errors.New("resource not found")
 
 type IPResource struct {
-	IPMin       net.IP
-	IPMax       net.IP
-	PortMin     int
-	PortMax     int
-	Protocol    string
-	AppID       string
-	NodeGroupID string
+	IPMin           net.IP
+	IPMax           net.IP
+	PortMin         int
+	PortMax         int
+	Protocol        string
+	AppID           string
+	NodeGroupID     string
+	EnableTCPPrefL3 bool
 }
 
 type DomainResource struct {
-	PortMin     int
-	PortMax     int
-	Protocol    string
-	AppID       string
-	NodeGroupID string
+	PortMin         int
+	PortMax         int
+	Protocol        string
+	AppID           string
+	NodeGroupID     string
+	EnableTCPPrefL3 bool
 }
 
 type DomainResources map[string][]DomainResource
 
 func MatchDomainResource(resources []DomainResource, network string, port int) (DomainResource, bool) {
+	return MatchDomainResourceWhere(resources, network, port, nil)
+}
+
+func MatchDomainResourceWhere(resources []DomainResource, network string, port int, accept func(DomainResource) bool) (DomainResource, bool) {
 	for _, resource := range resources {
 		protocolMatches := resource.Protocol == network || resource.Protocol == "all"
 		portMatches := network == "icmp" || resource.PortMin <= port && port <= resource.PortMax
-		if protocolMatches && portMatches {
+		if protocolMatches && portMatches && (accept == nil || accept(resource)) {
 			return resource, true
 		}
 	}

@@ -34,14 +34,16 @@ const (
 	cmdHeartbeatResp = 0x95
 	cmdSecondVipResp = 0x96
 
-	defaultHeartbeatInterval  = 10 * time.Second
+	defaultHeartbeatInterval  = 5 * time.Second
 	defaultHeartbeatMissLimit = 3
-	defaultAuthTimeout        = 8 * time.Second
+	defaultAuthTimeout        = 5 * time.Second
 	defaultAuthScanInterval   = 250 * time.Millisecond
 	defaultAuthRetryWait      = 10 * time.Second
 	defaultAuthMaxAttempts    = 3
 	defaultAuthBatchSize      = 64
-	authServerBusyCode        = 0x86
+	authImmediateRetryStatus  = 0x84
+	authRetryStatusMin        = 0x85
+	authRetryStatusMax        = 0x87
 )
 
 var errL3TunnelAuthTimeout = errors.New("l3-tunnel auth timeout")
@@ -78,6 +80,7 @@ type l3TunnelConn struct {
 	heartbeatInterval  time.Duration
 	heartbeatMissLimit int32
 	heartbeatMisses    int32
+	heartbeatHasWrite  uint32
 	authWake           chan struct{}
 	writeFrameHook     func([]byte) error
 	dataStream         []byte
@@ -95,15 +98,17 @@ type authIP struct {
 type authRequestIP struct {
 	Sid           string    `json:"sid"`
 	AppID         string    `json:"appId"`
+	ProcHash      string    `json:"procHash,omitempty"`
+	AppToken      string    `json:"appToken,omitempty"`
 	URL           string    `json:"url"`
 	DeviceID      string    `json:"deviceId"`
 	ConnectionID  string    `json:"connectionId"`
+	RCAppliedInfo int       `json:"rcAppliedInfo"`
+	Lang          string    `json:"lang"`
 	Env           *trustEnv `json:"env,omitempty"`
 	ConntrackHash uint64    `json:"conntrackHash"`
-	Lang          string    `json:"lang"`
 	IP            authIP    `json:"ip"`
 	Domain        string    `json:"domain,omitempty"`
-	ProcHash      string    `json:"procHash,omitempty"`
 	XRequestSig   string    `json:"xRequestSig"`
 }
 
@@ -119,7 +124,6 @@ type authResponseIPData struct {
 	Vip4Type      string `json:"vip4Type,omitempty"`
 	ConntrackHash uint64 `json:"conntrackHash"`
 	ConnectToken  string `json:"connectToken,omitempty"`
-	Token         string `json:"token,omitempty"`
 	IP            authIP `json:"ip"`
 }
 
@@ -169,7 +173,7 @@ type frame struct {
 	payload []byte
 }
 
-func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, onVIP func([]net.IP)) (*l3TunnelConn, error) {
+func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, conntrackMgr *conntrackMgr, onVIP func([]net.IP)) (*l3TunnelConn, error) {
 	tlsConn, err := dialTLS(ctx, "tcp", addr, tunnelTLSConfig())
 	if err != nil {
 		return nil, err
@@ -187,7 +191,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 		reader:             bufio.NewReader(tlsConn),
 		incoming:           make(chan []byte, 128),
 		closeCh:            make(chan struct{}),
-		conntrackMgr:       newConntrackMgr(),
+		conntrackMgr:       conntrackMgr,
 		signKey:            signKey,
 		info:               info,
 		onVIP:              onVIP,
@@ -226,7 +230,6 @@ func (c *l3TunnelConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
-		c.conntrackMgr.close()
 		err = c.tlsConn.Close()
 	})
 	return err
@@ -268,6 +271,7 @@ func (c *l3TunnelConn) readLoop() {
 			c.handleSecondVipResp(fr.status, fr.payload)
 		case cmdHeartbeatResp:
 			log.DebugPrintf("l3-tunnel recv heartbeat")
+			atomic.StoreUint32(&c.heartbeatHasWrite, 0)
 			atomic.StoreInt32(&c.heartbeatMisses, 0)
 		default:
 			log.DebugPrintf("l3-tunnel ignore cmd 0x%02x", fr.cmd)
@@ -321,12 +325,17 @@ func (c *l3TunnelConn) heartbeatLoop() {
 		select {
 		case <-ticker.C:
 			c.conntrackMgr.removeExpired()
+			if atomic.SwapUint32(&c.heartbeatHasWrite, 0) != 0 {
+				atomic.StoreInt32(&c.heartbeatMisses, 0)
+				continue
+			}
 			misses := atomic.LoadInt32(&c.heartbeatMisses)
 			if misses >= missLimit {
 				log.DebugPrintf("l3-tunnel heartbeat timed out after %d missed responses", misses)
 				_ = c.Close()
 				return
 			}
+			atomic.AddInt32(&c.heartbeatMisses, 1)
 			if !c.sendHeartbeat() {
 				return
 			}
@@ -337,7 +346,6 @@ func (c *l3TunnelConn) heartbeatLoop() {
 }
 
 func (c *l3TunnelConn) sendHeartbeat() bool {
-	atomic.AddInt32(&c.heartbeatMisses, 1)
 	if err := c.writeFrame([]byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}); err != nil {
 		log.DebugPrintf("l3-tunnel heartbeat write failed: %v", err)
 		_ = c.Close()
@@ -347,87 +355,48 @@ func (c *l3TunnelConn) sendHeartbeat() bool {
 }
 
 func (c *l3TunnelConn) readFrame() (frame, error) {
-	for {
-		header := make([]byte, 2)
-		if _, err := io.ReadFull(c.reader, header); err != nil {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(c.reader, header); err != nil {
+		return frame{}, err
+	}
+	if header[0] != l3Version {
+		logFrame("recv unknown", header)
+		return frame{}, fmt.Errorf("unexpected L3 tunnel version 0x%02x", header[0])
+	}
+
+	cmd := header[1]
+	switch cmd {
+	case cmdAuthResp, cmdSecondVipResp:
+		statusLen := make([]byte, 3)
+		if _, err := io.ReadFull(c.reader, statusLen); err != nil {
 			return frame{}, err
 		}
-		if header[0] == l3Version {
-			cmd := header[1]
-
-			if cmd == cmdAuthResp || cmd == cmdSecondVipResp {
-				statusLen := make([]byte, 3)
-				if _, err := io.ReadFull(c.reader, statusLen); err != nil {
-					return frame{}, err
-				}
-				status := statusLen[0]
-				payloadLen := int(binary.BigEndian.Uint16(statusLen[1:3]))
-				payload := make([]byte, payloadLen)
-				if payloadLen > 0 {
-					if _, err := io.ReadFull(c.reader, payload); err != nil {
-						return frame{}, err
-					}
-				}
-				if log.DebugEnabled() {
-					raw := append(append(header, statusLen...), payload...)
-					logFrame("recv", raw)
-				}
-				return frame{cmd: cmd, status: status, payload: payload}, nil
-			}
-			if cmd == cmdDataResp {
-				payload, err := readDataRespPayload(c.reader)
-				if err != nil {
-					return frame{}, err
-				}
-				if log.DebugEnabled() {
-					lenBytes := make([]byte, 2)
-					binary.BigEndian.PutUint16(lenBytes, uint16(len(payload)))
-					raw := append(append(append([]byte{}, header...), lenBytes...), payload...)
-					logFrame("recv", raw)
-					log.DebugPrintf("l3-tunnel recv data resp payloadLen=%d", len(payload))
-				}
-				return frame{cmd: cmd, payload: payload}, nil
-			}
-
-			lenBytes := make([]byte, 2)
-			if _, err := io.ReadFull(c.reader, lenBytes); err != nil {
-				return frame{}, err
-			}
-			payloadLen := int(binary.BigEndian.Uint16(lenBytes))
-			payload := make([]byte, payloadLen)
-			if payloadLen > 0 {
-				if _, err := io.ReadFull(c.reader, payload); err != nil {
-					return frame{}, err
-				}
-			}
-			if log.DebugEnabled() {
-				raw := append(append(header, lenBytes...), payload...)
-				logFrame("recv", raw)
-			}
-			return frame{cmd: cmd, payload: payload}, nil
+		status := statusLen[0]
+		payloadLen := int(binary.BigEndian.Uint16(statusLen[1:3]))
+		payload := make([]byte, payloadLen)
+		if _, err := io.ReadFull(c.reader, payload); err != nil {
+			return frame{}, err
 		}
-
-		if header[0] == 0x53 && header[1] == 0x00 {
-			lenBytes := make([]byte, 2)
-			if _, err := io.ReadFull(c.reader, lenBytes); err != nil {
-				return frame{}, err
-			}
-			payloadLen := int(binary.BigEndian.Uint16(lenBytes))
-			payload := make([]byte, payloadLen)
-			if payloadLen > 0 {
-				if _, err := io.ReadFull(c.reader, payload); err != nil {
-					return frame{}, err
-				}
-			}
-			if log.DebugEnabled() {
-				raw := append(append(header, lenBytes...), payload...)
-				logFrame("recv protocol", raw)
-			}
-			continue
+		if log.DebugEnabled() {
+			raw := append(append(header, statusLen...), payload...)
+			logFrame("recv", raw)
 		}
-
+		return frame{cmd: cmd, status: status, payload: payload}, nil
+	case cmdDataResp, cmdHeartbeatResp:
+		payload, err := readDataRespPayload(c.reader)
+		if err != nil {
+			return frame{}, err
+		}
+		if log.DebugEnabled() {
+			lenBytes := make([]byte, 2)
+			binary.BigEndian.PutUint16(lenBytes, uint16(len(payload)))
+			raw := append(append(append([]byte{}, header...), lenBytes...), payload...)
+			logFrame("recv", raw)
+		}
+		return frame{cmd: cmd, payload: payload}, nil
+	default:
 		logFrame("recv unknown", header)
-		return frame{}, fmt.Errorf("unexpected header: 0x%02x 0x%02x", header[0], header[1])
+		return frame{}, fmt.Errorf("unexpected L3 tunnel command 0x%02x", cmd)
 	}
 }
 
@@ -467,9 +436,6 @@ func (c *l3TunnelConn) WritePacket(meta packetMeta, appID, nodeGroupID string, p
 }
 
 func (c *l3TunnelConn) writeAuthenticatedPacket(ct *conntrack, meta packetMeta, appID, nodeGroupID, token string, pkt []byte) error {
-	if token == "" {
-		return fmt.Errorf("l3-tunnel missing connect token for %s", ct.key)
-	}
 	if len(token) > 0xFF {
 		return fmt.Errorf("l3-tunnel connect token too long: %d", len(token))
 	}
@@ -552,40 +518,35 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 		c.markAuthErrorFromPayload(payload, err)
 		return
 	}
-	if resp.Data.ConntrackHash == 0 {
+	ct := c.conntrackMgr.getByID(resp.Data.ConntrackHash)
+	if ct == nil {
+		ct = c.conntrackMgr.getByAuthResponseIP(resp.Data.IP)
+	}
+	if ct == nil {
 		c.markAuthErrorFromPayload(payload, fmt.Errorf("missing conntrack hash"))
 		return
 	}
+	authID := ct.authID
 	if status != 0 {
-		if isRetryableAuthResponse(status, resp) {
-			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
+		if status == authImmediateRetryStatus {
+			c.scheduleAuthRetry(authID, 0)
 			return
 		}
-		c.completeAuthentication(resp.Data.ConntrackHash, "", fmt.Errorf("auth status %d: %s", status, resp.Message))
+		if isRetryableAuthResponse(status, resp) {
+			c.scheduleAuthRetry(authID, defaultAuthRetryWait)
+			return
+		}
+		c.completeAuthentication(authID, "", fmt.Errorf("auth status %d: %s", status, resp.Message))
 		return
 	}
 
-	var err error
-	if resp.Code != 0 {
-		if isRetryableAuthResponse(status, resp) {
-			c.scheduleAuthRetry(resp.Data.ConntrackHash, defaultAuthRetryWait)
-			return
-		}
-		err = fmt.Errorf("auth failed: %d %s", resp.Code, resp.Message)
-	}
-	token := strings.TrimSpace(resp.Data.ConnectToken)
-	if token == "" {
-		token = strings.TrimSpace(resp.Data.Token)
-	}
-	if err == nil && token == "" {
-		err = fmt.Errorf("missing connect token")
-	}
+	token := resp.Data.ConnectToken
 	log.DebugPrintf("l3-tunnel auth resp code=%d conntrack=%d tokenLen=%d", resp.Code, resp.Data.ConntrackHash, len(token))
-	c.completeAuthentication(resp.Data.ConntrackHash, token, err)
+	c.completeAuthentication(authID, token, nil)
 }
 
 func isRetryableAuthResponse(status byte, resp authResponseIP) bool {
-	return status == authServerBusyCode || resp.Code == authServerBusyCode
+	return status >= authRetryStatusMin && status <= authRetryStatusMax
 }
 
 func (c *l3TunnelConn) scheduleAuthRetry(authID uint64, delay time.Duration) {
@@ -638,7 +599,11 @@ func (c *l3TunnelConn) completeAuthentication(authID uint64, token string, authE
 
 func (c *l3TunnelConn) writeFrame(data []byte) error {
 	if c.writeFrameHook != nil {
-		return c.writeFrameHook(data)
+		err := c.writeFrameHook(data)
+		if err == nil {
+			atomic.StoreUint32(&c.heartbeatHasWrite, 1)
+		}
+		return err
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -646,6 +611,9 @@ func (c *l3TunnelConn) writeFrame(data []byte) error {
 	n, err := c.tlsConn.Write(data)
 	if err == nil && n != len(data) {
 		return io.ErrShortWrite
+	}
+	if err == nil {
+		atomic.StoreUint32(&c.heartbeatHasWrite, 1)
 	}
 	return err
 }
@@ -807,8 +775,6 @@ func readDataRespPayload(r *bufio.Reader) ([]byte, error) {
 	return payload, nil
 }
 
-const maxIncomingIPPacketSize = 1500
-
 func splitIncomingIPPackets(stream []byte) ([][]byte, []byte, error) {
 	var packets [][]byte
 	for len(stream) > 0 {
@@ -830,9 +796,6 @@ func splitIncomingIPPackets(stream []byte) ([][]byte, []byte, error) {
 			packetLen = 40 + int(binary.BigEndian.Uint16(stream[4:6]))
 		default:
 			return nil, nil, fmt.Errorf("unexpected IP version %d", stream[0]>>4)
-		}
-		if packetLen > maxIncomingIPPacketSize {
-			return nil, nil, fmt.Errorf("IP packet length %d exceeds %d", packetLen, maxIncomingIPPacketSize)
 		}
 		if len(stream) < packetLen {
 			return packets, stream, nil
@@ -1007,9 +970,6 @@ func parseInitialVIPHeader(header []byte) (int, error) {
 	}
 	if header[1] != 0 {
 		return 0, fmt.Errorf("l3-tunnel vip status %d", header[1])
-	}
-	if header[2] != 0 {
-		return 0, fmt.Errorf("l3-tunnel invalid vip reserved byte %d", header[2])
 	}
 	switch header[3] {
 	case 1:
