@@ -337,6 +337,14 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
 
+		if authType == "" {
+			if username != "" && password != "" {
+				authType = "auth/psw"
+			} else if phone != "" {
+				authType = "auth/smsCheckCode"
+			}
+		}
+
 		var err error
 		var loginMethod auth.LoginMethod
 		switch authType {
