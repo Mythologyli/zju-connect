@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"net"
 	"sync"
@@ -9,11 +10,13 @@ import (
 )
 
 const (
-	defaultTCPTunnelMaxIdle    = 6
-	defaultTCPTunnelIdleTTL    = 5 * time.Minute
-	defaultTCPTunnelMinAlive   = 10 * time.Millisecond
-	tcpTunnelAliveProbeTimeout = 15 * time.Microsecond
-	tcpTunnelPoolTickInterval  = 15 * time.Second
+	defaultTCPTunnelMaxIdle     = 6
+	defaultTCPTunnelIdleTTL     = 5 * time.Minute
+	defaultTCPTunnelMinAlive    = 10 * time.Millisecond
+	defaultTCPTunnelPreConn     = 1
+	defaultTCPTunnelConnTimeout = 3 * time.Second
+	tcpTunnelAliveProbeTimeout  = 15 * time.Microsecond
+	tcpTunnelPoolTickInterval   = 15 * time.Second
 )
 
 type tcpTunnelTransport struct {
@@ -49,34 +52,40 @@ type tcpTunnelPool struct {
 	enabled bool
 	maxIdle int
 	minIdle int
+	preConn int
 	idleTTL time.Duration
 	closed  bool
 
-	active    map[string]int
-	idleSince map[string]time.Time
-	stop      chan struct{}
-	done      chan struct{}
-	closeOnce sync.Once
+	active     map[string]int
+	connecting map[string]int
+	idleSince  map[string]time.Time
+	stop       chan struct{}
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 func newTCPTunnelPool() *tcpTunnelPool {
 	p := &tcpTunnelPool{
-		idle:      make(map[string][]*tcpTunnelTransport),
-		active:    make(map[string]int),
-		idleSince: make(map[string]time.Time),
-		stop:      make(chan struct{}),
-		done:      make(chan struct{}),
+		idle:       make(map[string][]*tcpTunnelTransport),
+		active:     make(map[string]int),
+		connecting: make(map[string]int),
+		idleSince:  make(map[string]time.Time),
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	go p.runAging()
 	return p
 }
 
-func (p *tcpTunnelPool) configure(enabled bool, maxIdle, minIdle int, idleTTL time.Duration) {
+func (p *tcpTunnelPool) configure(enabled bool, maxIdle, minIdle, preConn int, idleTTL time.Duration) {
 	if maxIdle == 0 {
 		maxIdle = defaultTCPTunnelMaxIdle
 	}
 	if idleTTL <= 0 {
 		idleTTL = defaultTCPTunnelIdleTTL
+	}
+	if preConn <= 0 {
+		preConn = defaultTCPTunnelPreConn
 	}
 
 	p.mu.Lock()
@@ -87,6 +96,7 @@ func (p *tcpTunnelPool) configure(enabled bool, maxIdle, minIdle int, idleTTL ti
 	} else {
 		p.minIdle = 0
 	}
+	p.preConn = preConn
 	p.idleTTL = idleTTL
 	var discarded []*tcpTunnelTransport
 	if !p.enabled {
@@ -104,6 +114,96 @@ func (p *tcpTunnelPool) configure(enabled bool, maxIdle, minIdle int, idleTTL ti
 				p.idle[key] = transports[len(transports)-maxIdle:]
 			}
 		}
+	}
+	p.mu.Unlock()
+	closeTCPTunnelTransports(discarded)
+}
+
+type tcpTunnelPreconnectDial func(context.Context, string) (net.Conn, error)
+
+func (p *tcpTunnelPool) preconnect(ctx context.Context, nodeAddr string, dial tcpTunnelPreconnectDial) {
+	p.mu.Lock()
+	if p.closed || !p.enabled || p.preConn <= 0 {
+		p.mu.Unlock()
+		return
+	}
+
+	now := time.Now()
+	transports := p.idle[nodeAddr]
+	var discarded []*tcpTunnelTransport
+	healthy := transports[:0]
+	for _, transport := range transports {
+		if transport.checkAlive(now) {
+			healthy = append(healthy, transport)
+		} else {
+			discarded = append(discarded, transport)
+		}
+	}
+	if len(healthy) == 0 {
+		delete(p.idle, nodeAddr)
+	} else {
+		p.idle[nodeAddr] = healthy
+	}
+	if len(healthy) >= p.preConn || p.connecting[nodeAddr] >= p.preConn {
+		p.mu.Unlock()
+		closeTCPTunnelTransports(discarded)
+		return
+	}
+
+	toStart := p.preConn - p.connecting[nodeAddr]
+	p.connecting[nodeAddr] = p.preConn
+	p.mu.Unlock()
+	closeTCPTunnelTransports(discarded)
+
+	var wg sync.WaitGroup
+	wg.Add(toStart)
+	for range toStart {
+		go func() {
+			defer wg.Done()
+			conn, err := dial(ctx, nodeAddr)
+			if err != nil {
+				p.finishPreconnect(nodeAddr, nil)
+				return
+			}
+			p.finishPreconnect(nodeAddr, &tcpTunnelTransport{
+				conn: conn, reader: bufio.NewReader(conn), nodeAddr: nodeAddr, reusedAt: time.Now(),
+			})
+		}()
+	}
+	wg.Wait()
+}
+
+func (p *tcpTunnelPool) finishPreconnect(nodeAddr string, transport *tcpTunnelTransport) {
+	p.mu.Lock()
+	if p.connecting[nodeAddr] > 1 {
+		p.connecting[nodeAddr]--
+	} else {
+		delete(p.connecting, nodeAddr)
+	}
+	if transport == nil {
+		p.mu.Unlock()
+		return
+	}
+	if p.closed || !p.enabled || p.maxIdle < 0 {
+		p.mu.Unlock()
+		_ = transport.conn.Close()
+		return
+	}
+
+	transports := append(p.idle[nodeAddr], transport)
+	if _, ok := p.idleSince[nodeAddr]; !ok {
+		p.idleSince[nodeAddr] = time.Now()
+	}
+	var discarded []*tcpTunnelTransport
+	if len(transports) > p.maxIdle {
+		overflow := len(transports) - p.maxIdle
+		discarded = transports[:overflow]
+		transports = transports[overflow:]
+	}
+	if len(transports) == 0 {
+		delete(p.idle, nodeAddr)
+	} else {
+		p.idle[nodeAddr] = transports
 	}
 	p.mu.Unlock()
 	closeTCPTunnelTransports(discarded)

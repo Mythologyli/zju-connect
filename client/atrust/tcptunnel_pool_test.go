@@ -2,10 +2,12 @@ package atrust
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -17,7 +19,7 @@ func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
 		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443", reusedAt: time.Now(),
 	}
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, 0, time.Minute)
+	pool.configure(true, 1, 0, 1, time.Minute)
 	serverErr := make(chan error, 1)
 	go func() {
 		for range 2 {
@@ -59,7 +61,7 @@ func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
 
 func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, 0, time.Second)
+	pool.configure(true, 1, 0, 1, time.Second)
 	conn := &recordingConn{}
 	now := time.Now()
 	transport := &tcpTunnelTransport{
@@ -76,7 +78,7 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsDeadTransportOnAcquire(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, 0, time.Minute)
+	pool.configure(true, 1, 0, 1, time.Minute)
 	client, server := net.Pipe()
 	now := time.Now()
 	transport := &tcpTunnelTransport{
@@ -96,7 +98,7 @@ func TestTCPTunnelPoolRejectsDeadTransportOnAcquire(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsDeadTransportOnRelease(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, 0, time.Minute)
+	pool.configure(true, 1, 0, 1, time.Minute)
 	client, server := net.Pipe()
 	if err := server.Close(); err != nil {
 		t.Fatal(err)
@@ -113,7 +115,7 @@ func TestTCPTunnelPoolRejectsDeadTransportOnRelease(t *testing.T) {
 
 func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 0, 0, 0)
+	pool.configure(true, 0, 0, 0, 0)
 
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -126,12 +128,43 @@ func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
 	if pool.idleTTL != defaultTCPTunnelIdleTTL {
 		t.Fatalf("idleTTL = %s, want %s", pool.idleTTL, defaultTCPTunnelIdleTTL)
 	}
+	if pool.preConn != defaultTCPTunnelPreConn {
+		t.Fatalf("preConn = %d, want %d", pool.preConn, defaultTCPTunnelPreConn)
+	}
+}
+
+func TestTCPTunnelPoolPreconnectsConfiguredInitialCount(t *testing.T) {
+	pool := newTCPTunnelPool()
+	defer pool.close()
+	pool.configure(true, 4, 0, 2, time.Minute)
+
+	var dialCount atomic.Int32
+	dial := func(context.Context, string) (net.Conn, error) {
+		dialCount.Add(1)
+		return &recordingConn{}, nil
+	}
+	pool.preconnect(context.Background(), "node.example:443", dial)
+
+	pool.mu.Lock()
+	idleCount := len(pool.idle["node.example:443"])
+	pool.mu.Unlock()
+	if idleCount != 2 {
+		t.Fatalf("idle transport count = %d, want 2", idleCount)
+	}
+	if got := dialCount.Load(); got != 2 {
+		t.Fatalf("dial count = %d, want 2", got)
+	}
+
+	pool.preconnect(context.Background(), "node.example:443", dial)
+	if got := dialCount.Load(); got != 2 {
+		t.Fatalf("second preconnect dial count = %d, want 2", got)
+	}
 }
 
 func TestTCPTunnelPoolAgingKeepsConfiguredMinimum(t *testing.T) {
 	pool := newTCPTunnelPool()
 	defer pool.close()
-	pool.configure(true, 3, 1, time.Second)
+	pool.configure(true, 3, 1, 1, time.Second)
 	now := time.Now()
 	transports := make([]*tcpTunnelTransport, 3)
 	conns := make([]*recordingConn, 3)
@@ -161,7 +194,7 @@ func TestTCPTunnelPoolAgingKeepsConfiguredMinimum(t *testing.T) {
 func TestTCPTunnelPoolDoesNotAgeWhileLeaseIsActive(t *testing.T) {
 	pool := newTCPTunnelPool()
 	defer pool.close()
-	pool.configure(true, 2, 0, time.Second)
+	pool.configure(true, 2, 0, 1, time.Second)
 	now := time.Now()
 	conns := []*recordingConn{{}, {}}
 	for _, conn := range conns {
@@ -186,7 +219,7 @@ func TestTCPTunnelPoolDoesNotAgeWhileLeaseIsActive(t *testing.T) {
 
 func TestTCPTunnelPoolKeepsNewestAndAcquiresOldestAtCapacity(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 2, 0, time.Minute)
+	pool.configure(true, 2, 0, 1, time.Minute)
 	now := time.Now()
 	transports := make([]*tcpTunnelTransport, 3)
 	conns := make([]*recordingConn, 3)
@@ -215,7 +248,7 @@ func TestTCPTunnelPoolKeepsNewestAndAcquiresOldestAtCapacity(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsBufferedTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, 0, time.Minute)
+	pool.configure(true, 1, 0, 1, time.Minute)
 	reader := bufio.NewReaderSize(strings.NewReader("x"), 1)
 	if _, err := reader.Peek(1); err != nil {
 		t.Fatal(err)

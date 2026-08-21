@@ -3,8 +3,10 @@ package atrust
 import (
 	"context"
 	"io"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -137,6 +139,7 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 		if c.tcpTunnelPool != nil {
 			c.tcpTunnelPool.retainNodes(bestNodes)
 		}
+		go c.preconnectTCPTunnels(ctx, bestNodes)
 
 		c.l3TunnelMu.Lock()
 		tunnel := c.l3Tunnel
@@ -145,4 +148,30 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 			tunnel.evictStaleConns(bestNodes, c.MajorNodeGroup)
 		}
 	}
+}
+
+func (c *Client) preconnectTCPTunnels(ctx context.Context, bestNodes map[string]string) {
+	if !c.tcpTunnelZeroRTT || c.tcpTunnelPool == nil || c.underlayDialer == nil {
+		return
+	}
+	uniqueNodes := make(map[string]struct{}, len(bestNodes))
+	for _, nodeAddr := range bestNodes {
+		if nodeAddr != "" {
+			uniqueNodes[nodeAddr] = struct{}{}
+		}
+	}
+
+	var wg sync.WaitGroup
+	for nodeAddr := range uniqueNodes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dialCtx, cancel := context.WithTimeout(ctx, defaultTCPTunnelConnTimeout)
+			defer cancel()
+			c.tcpTunnelPool.preconnect(dialCtx, nodeAddr, func(ctx context.Context, address string) (net.Conn, error) {
+				return c.underlayDialer.DialTLSContext(ctx, "tcp", address, tunnelTLSConfig(c.tlsKeyLogWriter))
+			})
+		}()
+	}
+	wg.Wait()
 }

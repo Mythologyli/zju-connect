@@ -82,7 +82,7 @@ func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay
 func (c *Client) SetTCPTunnelPoolDisabled(disabled bool) {
 	c.tcpPoolDisabled = disabled
 	if disabled && c.tcpTunnelPool != nil {
-		c.tcpTunnelPool.configure(false, 0, 0, 0)
+		c.tcpTunnelPool.configure(false, 0, 0, 0, 0)
 	}
 }
 
@@ -424,6 +424,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
 	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
+	go c.preconnectTCPTunnels(c.lifecycleCtx, c.BestNodes)
 
 	err = c.getIP()
 	if err != nil {
