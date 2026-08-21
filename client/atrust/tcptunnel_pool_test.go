@@ -1,0 +1,90 @@
+package atrust
+
+import (
+	"bufio"
+	"errors"
+	"io"
+	"net"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+	transport := &tcpTunnelTransport{
+		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443",
+	}
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	serverErr := make(chan error, 1)
+	go func() {
+		for range 2 {
+			if _, err := server.Write([]byte{0x01, 0x01, 0x00, 0x00}); err != nil {
+				serverErr <- err
+				return
+			}
+			var closeFrame [4]byte
+			if _, err := io.ReadFull(server, closeFrame[:]); err != nil {
+				serverErr <- err
+				return
+			}
+		}
+		serverErr <- nil
+	}()
+
+	for lease := 0; lease < 2; lease++ {
+		if lease > 0 {
+			if got := pool.acquire(transport.nodeAddr, time.Now()); got != transport {
+				t.Fatalf("lease %d acquired transport %p, want %p", lease, got, transport)
+			}
+		}
+		conn := &tcpTunnelConn{
+			tlsConn: transport.conn, reader: transport.reader, reuse: true,
+			transport: transport, pool: pool,
+		}
+		if n, err := conn.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("lease %d Read() = (%d, %v), want logical EOF", lease, n, err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("lease %d Close(): %v", lease, err)
+		}
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatal(err)
+	}
+	pool.close()
+}
+
+func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Second)
+	conn := &recordingConn{}
+	transport := &tcpTunnelTransport{
+		conn: conn, reader: bufio.NewReader(conn), nodeAddr: "node.example:443",
+	}
+	now := time.Now()
+	if !pool.release(transport, now) {
+		t.Fatal("release rejected clean transport")
+	}
+	if got := pool.acquire(transport.nodeAddr, now.Add(time.Second)); got != nil {
+		t.Fatal("expired transport was returned")
+	}
+	if !conn.closed {
+		t.Fatal("expired transport was not closed")
+	}
+}
+
+func TestTCPTunnelPoolRejectsBufferedTransport(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	reader := bufio.NewReaderSize(strings.NewReader("x"), 1)
+	if _, err := reader.Peek(1); err != nil {
+		t.Fatal(err)
+	}
+	transport := &tcpTunnelTransport{conn: &recordingConn{}, reader: reader, nodeAddr: "node.example:443"}
+	if pool.release(transport, time.Now()) {
+		t.Fatal("transport with buffered data entered pool")
+	}
+}

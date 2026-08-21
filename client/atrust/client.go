@@ -59,11 +59,13 @@ type Client struct {
 	underlayDialer   *underlay.Dialer
 	tlsKeyLogWriter  io.Writer
 	tcpTunnelZeroRTT bool
+	tcpTunnelPool    *tcpTunnelPool
+	tcpPoolDisabled  bool
 }
 
 func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
-	return &Client{
+	c := &Client{
 		Username:        username,
 		SID:             sid,
 		DeviceID:        deviceID,
@@ -73,11 +75,23 @@ func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
+	c.tcpTunnelPool = newTCPTunnelPool()
+	return c
+}
+
+func (c *Client) SetTCPTunnelPoolDisabled(disabled bool) {
+	c.tcpPoolDisabled = disabled
+	if disabled && c.tcpTunnelPool != nil {
+		c.tcpTunnelPool.configure(false, 0, 0)
+	}
 }
 
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		c.lifecycleCancel()
+		if c.tcpTunnelPool != nil {
+			c.tcpTunnelPool.close()
+		}
 		c.l3TunnelMu.Lock()
 		tunnel := c.l3Tunnel
 		c.l3TunnelMu.Unlock()

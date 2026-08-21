@@ -333,6 +333,54 @@ func TestTCPTunnelNonReuseHalfCloseUsesTransport(t *testing.T) {
 	}
 }
 
+func TestTCPTunnelCloseReturnsCleanLogicalConnectionToPool(t *testing.T) {
+	underlying := &recordingConn{}
+	reader := bufio.NewReader(bytes.NewReader([]byte{0x01, 0x01, 0x00, 0x00}))
+	transport := &tcpTunnelTransport{conn: underlying, reader: reader, nodeAddr: "node.example:443"}
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	conn := &tcpTunnelConn{
+		tlsConn: underlying, reader: reader, reuse: true,
+		transport: transport, pool: pool,
+	}
+
+	if n, err := conn.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("Read() = (%d, %v), want logical EOF", n, err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if underlying.closed {
+		t.Fatal("clean reusable transport was closed")
+	}
+	if got := pool.acquire(transport.nodeAddr, time.Now()); got != transport {
+		t.Fatalf("pool acquire = %p, want %p", got, transport)
+	}
+}
+
+func TestTCPTunnelCloseDiscardsTransportWithActiveOperation(t *testing.T) {
+	underlying := &recordingConn{}
+	reader := bufio.NewReader(bytes.NewReader(nil))
+	transport := &tcpTunnelTransport{conn: underlying, reader: reader, nodeAddr: "node.example:443"}
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	conn := &tcpTunnelConn{
+		tlsConn: underlying, reader: reader, reuse: true,
+		readClosed: true, activeOps: 1,
+		transport: transport, pool: pool,
+	}
+
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !underlying.closed {
+		t.Fatal("transport with active operation was not closed")
+	}
+	if got := pool.acquire(transport.nodeAddr, time.Now()); got != nil {
+		t.Fatal("transport with active operation entered pool")
+	}
+}
+
 func TestTCPTunnelHandshakeDeadlineUsesEarlierContextDeadline(t *testing.T) {
 	now := time.Now()
 	ctxDeadline := now.Add(2 * time.Second)

@@ -65,6 +65,7 @@ cas_ticket = ""
 oauth2_code = ""
 phone = ""
 update_best_nodes_interval = 300
+disable_tcp_tunnel_pool = false
 sid = ""
 device_id = ""
 sign_key = ""

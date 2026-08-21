@@ -134,6 +134,9 @@ func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval in
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()
+		if c.tcpTunnelPool != nil {
+			c.tcpTunnelPool.retainNodes(bestNodes)
+		}
 
 		c.l3TunnelMu.Lock()
 		tunnel := c.l3Tunnel

@@ -31,8 +31,65 @@ type tcpTunnelConn struct {
 	reuse   bool
 	raw     bool
 
+	stateMu     sync.Mutex
+	activeOps   int
+	closed      bool
+	readClosed  bool
+	writeClosed bool
+	fatal       bool
+	transport   *tcpTunnelTransport
+	pool        *tcpTunnelPool
+
 	closeWriteOnce sync.Once
 	closeWriteErr  error
+}
+
+func (c *tcpTunnelConn) beginRead() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	if c.readClosed {
+		return io.EOF
+	}
+	c.activeOps++
+	return nil
+}
+
+func (c *tcpTunnelConn) beginWrite() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	if c.writeClosed {
+		return io.ErrClosedPipe
+	}
+	c.activeOps++
+	return nil
+}
+
+func (c *tcpTunnelConn) endOp() {
+	c.stateMu.Lock()
+	c.activeOps--
+	c.stateMu.Unlock()
+}
+
+func (c *tcpTunnelConn) beginControl() error {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	c.activeOps++
+	return nil
+}
+
+func (c *tcpTunnelConn) markFatal() {
+	c.stateMu.Lock()
+	c.fatal = true
+	c.stateMu.Unlock()
 }
 
 const tcpTunnelHandshakeTimeout = 18 * time.Second
@@ -324,6 +381,10 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
+	if err := c.beginRead(); err != nil {
+		return 0, err
+	}
+	defer c.endOp()
 	if c.raw {
 		n, err := c.reader.Read(b)
 		if n > 0 {
@@ -331,6 +392,7 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 			log.DebugDumpHex(b[:n])
 		}
 		if err != nil {
+			c.markFatal()
 			log.DebugPrintf("TCP tunnel raw read ended after %d bytes: %v", n, err)
 		}
 		return n, err
@@ -344,6 +406,7 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 	for {
 		var header [4]byte
 		if _, err := io.ReadFull(c.reader, header[:]); err != nil {
+			c.markFatal()
 			log.DebugPrintf("TCP tunnel read ended: %v", err)
 			return 0, err
 		}
@@ -355,6 +418,7 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 			}
 			if length <= len(b) {
 				if _, err := io.ReadFull(c.reader, b[:length]); err != nil {
+					c.markFatal()
 					return 0, err
 				}
 				log.DebugPrintf("TCP tunnel received %d bytes", length)
@@ -364,6 +428,7 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 
 			payload := make([]byte, length)
 			if _, err := io.ReadFull(c.reader, payload); err != nil {
+				c.markFatal()
 				return 0, err
 			}
 			log.DebugPrintf("TCP tunnel received %d bytes", length)
@@ -372,9 +437,13 @@ func (c *tcpTunnelConn) Read(b []byte) (int, error) {
 			c.readBuf = payload[n:]
 			return n, nil
 		case header[0] == 0x01 && header[1] == 0x01:
+			c.stateMu.Lock()
+			c.readClosed = true
+			c.stateMu.Unlock()
 			log.DebugPrint("TCP tunnel closed by server")
 			return 0, io.EOF
 		default:
+			c.markFatal()
 			return 0, fmt.Errorf("unexpected TCP tunnel data frame header: % x", header)
 		}
 	}
@@ -387,6 +456,10 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
+	if err := c.beginWrite(); err != nil {
+		return 0, err
+	}
+	defer c.endOp()
 	if c.raw {
 		n, err := c.tlsConn.Write(b)
 		if n > 0 {
@@ -394,6 +467,7 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 			log.DebugDumpHex(b[:n])
 		}
 		if err != nil {
+			c.markFatal()
 			log.DebugPrintf("TCP tunnel raw write failed after %d bytes: %v", n, err)
 		} else if n != len(b) {
 			log.DebugPrintf("TCP tunnel raw write was short: sent %d of %d bytes", n, len(b))
@@ -410,6 +484,7 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 		binary.BigEndian.PutUint16(frame[2:4], uint16(chunkSize))
 		copy(frame[4:], chunk)
 		if err := writeTCPTunnelHandshakeMessage(c.tlsConn, frame); err != nil {
+			c.markFatal()
 			log.DebugPrintf("TCP tunnel write failed after %d bytes: %v", written, err)
 			return written, err
 		}
@@ -422,6 +497,22 @@ func (c *tcpTunnelConn) Write(b []byte) (int, error) {
 
 func (c *tcpTunnelConn) Close() error {
 	writeErr := c.CloseWrite()
+
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		return writeErr
+	}
+	c.closed = true
+	canPool := c.reuse && c.readClosed && c.writeClosed && !c.fatal && c.activeOps == 0
+	c.stateMu.Unlock()
+
+	if canPool && c.transport != nil && c.pool != nil {
+		if err := c.tlsConn.SetDeadline(time.Time{}); err == nil && c.pool.release(c.transport, time.Now()) {
+			log.DebugPrintf("Returned TCP tunnel transport to pool: %s", c.transport.nodeAddr)
+			return writeErr
+		}
+	}
 	closeErr := c.tlsConn.Close()
 	if writeErr != nil {
 		return writeErr
@@ -430,6 +521,11 @@ func (c *tcpTunnelConn) Close() error {
 }
 
 func (c *tcpTunnelConn) CloseRead() error {
+	if err := c.beginControl(); err != nil {
+		return err
+	}
+	defer c.endOp()
+	c.markFatal()
 	if conn, ok := c.tlsConn.(interface{ CloseRead() error }); ok {
 		return conn.CloseRead()
 	}
@@ -442,11 +538,16 @@ func (c *tcpTunnelConn) CloseWrite() error {
 		defer c.writeMu.Unlock()
 		if c.reuse {
 			c.closeWriteErr = writeTCPTunnelHandshakeMessage(c.tlsConn, []byte{0x01, 0x01, 0x00, 0x00})
-			return
-		}
-		if conn, ok := c.tlsConn.(interface{ CloseWrite() error }); ok {
+		} else if conn, ok := c.tlsConn.(interface{ CloseWrite() error }); ok {
 			c.closeWriteErr = conn.CloseWrite()
 		}
+		c.stateMu.Lock()
+		if c.closeWriteErr == nil {
+			c.writeClosed = true
+		} else {
+			c.fatal = true
+		}
+		c.stateMu.Unlock()
 	})
 	return c.closeWriteErr
 }
@@ -460,14 +561,26 @@ func (c *tcpTunnelConn) RemoteAddr() net.Addr {
 }
 
 func (c *tcpTunnelConn) SetDeadline(t time.Time) error {
+	if err := c.beginControl(); err != nil {
+		return err
+	}
+	defer c.endOp()
 	return c.tlsConn.SetDeadline(t)
 }
 
 func (c *tcpTunnelConn) SetReadDeadline(t time.Time) error {
+	if err := c.beginControl(); err != nil {
+		return err
+	}
+	defer c.endOp()
 	return c.tlsConn.SetReadDeadline(t)
 }
 
 func (c *tcpTunnelConn) SetWriteDeadline(t time.Time) error {
+	if err := c.beginControl(); err != nil {
+		return err
+	}
+	defer c.endOp()
 	return c.tlsConn.SetWriteDeadline(t)
 }
 
@@ -536,10 +649,24 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	if nodeAddr == "" {
 		return nil, fmt.Errorf("no available aTrust node for group %q", nodeGroupID)
 	}
-	conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", nodeAddr, tunnelTLSConfig(c.tlsKeyLogWriter))
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
+	var transport *tcpTunnelTransport
+	if c.tcpTunnelZeroRTT && c.tcpTunnelPool != nil {
+		transport = c.tcpTunnelPool.acquire(nodeAddr, time.Now())
 	}
+	if transport == nil {
+		conn, err := c.underlayDialer.DialTLSContext(ctx, "tcp", nodeAddr, tunnelTLSConfig(c.tlsKeyLogWriter))
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to aTrust server: %w", err)
+		}
+		transport = &tcpTunnelTransport{
+			conn:     conn,
+			reader:   bufio.NewReader(conn),
+			nodeAddr: nodeAddr,
+		}
+	} else {
+		log.DebugPrintf("Reusing TCP tunnel transport from pool: %s", nodeAddr)
+	}
+	conn := transport.conn
 	if err := conn.SetReadDeadline(tcpTunnelHandshakeDeadline(ctx, time.Now())); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to set tcp tunnel handshake timeout: %w", err)
@@ -610,9 +737,11 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	log.DebugDumpHex(destMsg)
 
 	tunnelConn := &tcpTunnelConn{
-		tlsConn: conn,
-		reader:  bufio.NewReader(conn),
-		raw:     !c.tcpTunnelZeroRTT,
+		tlsConn:   conn,
+		reader:    transport.reader,
+		raw:       !c.tcpTunnelZeroRTT,
+		transport: transport,
+		pool:      c.tcpTunnelPool,
 	}
 	reuse, waitErr := waitForTCPConnectReply(ctx, conn, tunnelConn.reader)
 	clearDeadlineErr := conn.SetReadDeadline(time.Time{})

@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
@@ -85,6 +86,15 @@ func (c *Client) parseResource(resource []byte) error {
 	err := json.Unmarshal(resource, &clientResource)
 	if err != nil {
 		return err
+	}
+
+	poolPolicy := clientResource.Data.SDPPolicy.Data.ClientOption.Tun0RTT
+	if c.tcpTunnelPool != nil {
+		c.tcpTunnelPool.configure(
+			poolPolicy.Enable && !c.tcpPoolDisabled,
+			int(poolPolicy.MaxIdleConnNum),
+			time.Duration(poolPolicy.MaxIdleLingerTime)*time.Millisecond,
+		)
 	}
 
 	ipSetBuilder := netaddr.IPSetBuilder{}

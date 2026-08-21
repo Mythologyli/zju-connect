@@ -137,7 +137,9 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer, tlsKeyLogWriter)
+		atrustClient := atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer, tlsKeyLogWriter)
+		atrustClient.SetTCPTunnelPoolDisabled(conf.DisableTCPTunnelPool)
+		vpnClient = atrustClient
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(

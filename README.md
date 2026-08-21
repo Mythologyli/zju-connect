@@ -208,6 +208,8 @@
 
 + `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
 
++ `disable-tcp-tunnel-pool`: 禁用 aTrust TCP 隧道连接池复用，默认为 `false`。一般无需添加，仅建议在排查连接复用兼容性问题时使用
+
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 
 + `trust-device`: 设置当前设备为授信终端（需要已登录的 `-client-data-file`），不启用隧道

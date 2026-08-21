@@ -197,6 +197,7 @@
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
 + `phone`: Phone number used for SMS verification code login.
 + `update-best-nodes-interval`: Interval for updating the optimal line automatically, in seconds, default is `300`. Set to `0` to disable automatic optimal line selection.
++ `disable-tcp-tunnel-pool`: Disable aTrust TCP tunnel connection pooling. Defaults to `false`; this is generally only needed when troubleshooting connection reuse compatibility.
 + `auth-info`: Only get aTrust authentication information without logging in, generally no need to add this argument. Can be used to check supported authentication methods.
 + `trust-device`: Trust the current device (requires logged-in `-client-data-file`), does not start the tunnel.
 + `untrust-device`: Untrust the current device (requires logged-in `-client-data-file`), does not start the tunnel.

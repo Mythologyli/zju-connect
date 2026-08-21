@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 )
@@ -50,6 +51,33 @@ func TestParseResourceDoesNotOverrideTCPTunnelZeroRTT(t *testing.T) {
 	}
 	if !c.tcpTunnelZeroRTT {
 		t.Fatal("SDP tunnel pool policy overrode the manifest zero-RTT capability")
+	}
+}
+
+func TestParseResourceConfiguresTCPTunnelPool(t *testing.T) {
+	c := NewClient("", "", "", "", nil, nil)
+	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":true,"maxIdleConnNum":3,"maxIdleLingerTime":2500}}}}}}`)
+	if err := c.parseResource(policy); err != nil {
+		t.Fatal(err)
+	}
+	c.tcpTunnelPool.mu.Lock()
+	defer c.tcpTunnelPool.mu.Unlock()
+	if !c.tcpTunnelPool.enabled || c.tcpTunnelPool.maxIdle != 3 || c.tcpTunnelPool.idleTTL != 2500*time.Millisecond {
+		t.Fatalf("pool config = enabled:%t max:%d ttl:%s", c.tcpTunnelPool.enabled, c.tcpTunnelPool.maxIdle, c.tcpTunnelPool.idleTTL)
+	}
+}
+
+func TestDisableTCPTunnelPoolOverridesServerPolicy(t *testing.T) {
+	c := NewClient("", "", "", "", nil, nil)
+	c.SetTCPTunnelPoolDisabled(true)
+	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":true,"maxIdleConnNum":3,"maxIdleLingerTime":2500}}}}}}`)
+	if err := c.parseResource(policy); err != nil {
+		t.Fatal(err)
+	}
+	c.tcpTunnelPool.mu.Lock()
+	defer c.tcpTunnelPool.mu.Unlock()
+	if c.tcpTunnelPool.enabled {
+		t.Fatal("disabled TCP tunnel pool was enabled by server policy")
 	}
 }
 
