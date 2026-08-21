@@ -492,7 +492,7 @@ func TestEncodeTCPTunnelDestinationCopiesZeroRTTToRSV(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			want := []byte{0x05, 0x01, test.rsv, 0x01, 10, 75, 11, 237, 0x00, 0x50}
-			got, err := encodeTCPTunnelDestination(net.IPv4(10, 75, 11, 237), 80, test.zeroRTT)
+			got, err := encodeTCPTunnelDestination(net.IPv4(10, 75, 11, 237), "", 80, test.zeroRTT)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -500,6 +500,27 @@ func TestEncodeTCPTunnelDestinationCopiesZeroRTTToRSV(t *testing.T) {
 				t.Fatalf("destination = % x, want % x", got, want)
 			}
 		})
+	}
+}
+
+func TestEncodeTCPTunnelDestinationUsesDomainAddress(t *testing.T) {
+	domain := "service.internal"
+	want := append([]byte{0x05, 0x01, 0x01, 0x03, byte(len(domain))}, domain...)
+	want = append(want, 0x01, 0xBB)
+
+	got, err := encodeTCPTunnelDestination(nil, domain, 443, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("domain destination = % x, want % x", got, want)
+	}
+}
+
+func TestEncodeTCPTunnelDestinationRejectsOversizedDomain(t *testing.T) {
+	domain := strings.Repeat("a", 0x100)
+	if _, err := encodeTCPTunnelDestination(nil, domain, 443, false); err == nil || !strings.Contains(err.Error(), "domain too long") {
+		t.Fatalf("encodeTCPTunnelDestination() error = %v, want domain length error", err)
 	}
 }
 

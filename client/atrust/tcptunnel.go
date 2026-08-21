@@ -139,16 +139,26 @@ func writeTCPTunnelInitialMessages(writer io.Writer, initMsg, destMsg []byte) er
 	return nil
 }
 
-func encodeTCPTunnelDestination(destIP net.IP, port int, zeroRTT bool) ([]byte, error) {
-	ipv4 := destIP.To4()
-	if ipv4 == nil {
-		return nil, fmt.Errorf("invalid IPv4 address")
-	}
+func encodeTCPTunnelDestination(destIP net.IP, domain string, port int, zeroRTT bool) ([]byte, error) {
 	rsv := byte(0)
 	if zeroRTT {
 		rsv = 1
 	}
-	msg := append([]byte{0x05, 0x01, rsv, 0x01}, ipv4...)
+	msg := []byte{0x05, 0x01, rsv}
+	if domain != "" {
+		if len(domain) > 0xFF {
+			return nil, fmt.Errorf("tcp tunnel destination domain too long: %d bytes", len(domain))
+		}
+		msg = append(msg, 0x03, byte(len(domain)))
+		msg = append(msg, domain...)
+	} else {
+		ipv4 := destIP.To4()
+		if ipv4 == nil {
+			return nil, fmt.Errorf("invalid IPv4 address")
+		}
+		msg = append(msg, 0x01)
+		msg = append(msg, ipv4...)
+	}
 	return binary.BigEndian.AppendUint16(msg, uint16(port)), nil
 }
 
@@ -586,7 +596,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	initHeader := []byte{0x05, 0x01, 0x81, 0x53, 0x03}
 	initMsg := append(initHeader, lenBytes[:]...)
 	initMsg = append(initMsg, msgBytes...)
-	destMsg, err := encodeTCPTunnelDestination(addr.IP, addr.Port, c.tcpTunnelZeroRTT)
+	destMsg, err := encodeTCPTunnelDestination(addr.IP, domain, addr.Port, c.tcpTunnelZeroRTT)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
