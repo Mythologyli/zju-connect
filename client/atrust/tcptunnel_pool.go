@@ -75,7 +75,10 @@ func (p *tcpTunnelPool) configure(enabled bool, maxIdle int, idleTTL time.Durati
 		}
 	} else {
 		for key, transports := range p.idle {
-			if len(transports) > maxIdle {
+			if maxIdle < 0 {
+				discarded = append(discarded, transports...)
+				delete(p.idle, key)
+			} else if len(transports) > maxIdle {
 				discarded = append(discarded, transports[:len(transports)-maxIdle]...)
 				p.idle[key] = transports[len(transports)-maxIdle:]
 			}
@@ -95,9 +98,8 @@ func (p *tcpTunnelPool) acquire(nodeAddr string, now time.Time) *tcpTunnelTransp
 	transports := p.idle[nodeAddr]
 	var discarded []*tcpTunnelTransport
 	for len(transports) > 0 {
-		last := len(transports) - 1
-		transport := transports[last]
-		transports = transports[:last]
+		transport := transports[0]
+		transports = transports[1:]
 		if p.idleTTL > 0 && now.Sub(transport.idleAt) >= p.idleTTL {
 			discarded = append(discarded, transport)
 			continue
@@ -133,13 +135,21 @@ func (p *tcpTunnelPool) release(transport *tcpTunnelTransport, now time.Time) bo
 		return false
 	}
 	transports := p.idle[transport.nodeAddr]
-	if len(transports) >= p.maxIdle {
-		p.mu.Unlock()
-		return false
-	}
 	transport.idleAt = now
-	p.idle[transport.nodeAddr] = append(transports, transport)
+	transports = append(transports, transport)
+	var discarded []*tcpTunnelTransport
+	if p.maxIdle < 0 {
+		discarded = transports
+		delete(p.idle, transport.nodeAddr)
+	} else if len(transports) > p.maxIdle {
+		overflow := len(transports) - p.maxIdle
+		discarded = transports[:overflow]
+		p.idle[transport.nodeAddr] = transports[overflow:]
+	} else {
+		p.idle[transport.nodeAddr] = transports
+	}
 	p.mu.Unlock()
+	closeTCPTunnelTransports(discarded)
 	return true
 }
 

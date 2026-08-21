@@ -130,6 +130,35 @@ func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
 	}
 }
 
+func TestTCPTunnelPoolKeepsNewestAndAcquiresOldestAtCapacity(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 2, time.Minute)
+	now := time.Now()
+	transports := make([]*tcpTunnelTransport, 3)
+	conns := make([]*recordingConn, 3)
+	for i := range transports {
+		conns[i] = &recordingConn{}
+		transports[i] = &tcpTunnelTransport{
+			conn: conns[i], reader: bufio.NewReader(conns[i]), nodeAddr: "node.example:443", reusedAt: now,
+		}
+		if !pool.release(transports[i], now) {
+			t.Fatalf("release %d rejected", i)
+		}
+	}
+	if !conns[0].closed {
+		t.Fatal("oldest transport was not closed on overflow")
+	}
+	if conns[1].closed || conns[2].closed {
+		t.Fatal("newer transport was closed on overflow")
+	}
+	if got := pool.acquire("node.example:443", now); got != transports[1] {
+		t.Fatalf("first acquire = %p, want oldest retained %p", got, transports[1])
+	}
+	if got := pool.acquire("node.example:443", now); got != transports[2] {
+		t.Fatalf("second acquire = %p, want newest retained %p", got, transports[2])
+	}
+}
+
 func TestTCPTunnelPoolRejectsBufferedTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
 	pool.configure(true, 1, time.Minute)
