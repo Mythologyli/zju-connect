@@ -67,6 +67,19 @@ func TestParseResourceConfiguresTCPTunnelPool(t *testing.T) {
 	}
 }
 
+func TestParseResourceUsesTCPTunnelPoolDefaults(t *testing.T) {
+	c := NewClient("", "", "", "", nil, nil)
+	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":true}}}}}}`)
+	if err := c.parseResource(policy); err != nil {
+		t.Fatal(err)
+	}
+	c.tcpTunnelPool.mu.Lock()
+	defer c.tcpTunnelPool.mu.Unlock()
+	if !c.tcpTunnelPool.enabled || c.tcpTunnelPool.maxIdle != defaultTCPTunnelMaxIdle || c.tcpTunnelPool.idleTTL != defaultTCPTunnelIdleTTL {
+		t.Fatalf("pool config = enabled:%t max:%d ttl:%s", c.tcpTunnelPool.enabled, c.tcpTunnelPool.maxIdle, c.tcpTunnelPool.idleTTL)
+	}
+}
+
 func TestDisableTCPTunnelPoolOverridesServerPolicy(t *testing.T) {
 	c := NewClient("", "", "", "", nil, nil)
 	c.SetTCPTunnelPoolDisabled(true)

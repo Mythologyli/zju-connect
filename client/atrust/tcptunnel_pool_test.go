@@ -76,6 +76,23 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	}
 }
 
+func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 0, 0)
+
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if !pool.enabled {
+		t.Fatal("zero max idle disabled the pool")
+	}
+	if pool.maxIdle != defaultTCPTunnelMaxIdle {
+		t.Fatalf("maxIdle = %d, want %d", pool.maxIdle, defaultTCPTunnelMaxIdle)
+	}
+	if pool.idleTTL != defaultTCPTunnelIdleTTL {
+		t.Fatalf("idleTTL = %s, want %s", pool.idleTTL, defaultTCPTunnelIdleTTL)
+	}
+}
+
 func TestTCPTunnelPoolRejectsBufferedTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
 	pool.configure(true, 1, time.Minute)

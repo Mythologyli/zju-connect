@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	defaultTCPTunnelMaxIdle = 6
+	defaultTCPTunnelIdleTTL = 5 * time.Minute
+)
+
 type tcpTunnelTransport struct {
 	conn     net.Conn
 	reader   *bufio.Reader
@@ -28,8 +33,15 @@ func newTCPTunnelPool() *tcpTunnelPool {
 }
 
 func (p *tcpTunnelPool) configure(enabled bool, maxIdle int, idleTTL time.Duration) {
+	if maxIdle == 0 {
+		maxIdle = defaultTCPTunnelMaxIdle
+	}
+	if idleTTL <= 0 {
+		idleTTL = defaultTCPTunnelIdleTTL
+	}
+
 	p.mu.Lock()
-	p.enabled = enabled && maxIdle > 0
+	p.enabled = enabled
 	p.maxIdle = maxIdle
 	p.idleTTL = idleTTL
 	var discarded []*tcpTunnelTransport
