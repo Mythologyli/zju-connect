@@ -336,9 +336,9 @@ func TestTCPTunnelNonReuseHalfCloseUsesTransport(t *testing.T) {
 func TestTCPTunnelCloseReturnsCleanLogicalConnectionToPool(t *testing.T) {
 	underlying := &recordingConn{}
 	reader := bufio.NewReader(bytes.NewReader([]byte{0x01, 0x01, 0x00, 0x00}))
-	transport := &tcpTunnelTransport{conn: underlying, reader: reader, nodeAddr: "node.example:443"}
+	transport := &tcpTunnelTransport{conn: underlying, reader: reader, nodeAddr: "node.example:443", reusedAt: time.Now()}
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	conn := &tcpTunnelConn{
 		tlsConn: underlying, reader: reader, reuse: true,
 		transport: transport, pool: pool,
@@ -363,7 +363,7 @@ func TestTCPTunnelCloseDiscardsTransportWithActiveOperation(t *testing.T) {
 	reader := bufio.NewReader(bytes.NewReader(nil))
 	transport := &tcpTunnelTransport{conn: underlying, reader: reader, nodeAddr: "node.example:443"}
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	conn := &tcpTunnelConn{
 		tlsConn: underlying, reader: reader, reuse: true,
 		readClosed: true, activeOps: 1,

@@ -93,6 +93,7 @@ func (c *Client) parseResource(resource []byte) error {
 		c.tcpTunnelPool.configure(
 			poolPolicy.Enable && !c.tcpPoolDisabled,
 			int(poolPolicy.MaxIdleConnNum),
+			int(poolPolicy.MinIdleConnNum),
 			time.Duration(poolPolicy.MaxIdleLingerTime)*time.Millisecond,
 		)
 	}

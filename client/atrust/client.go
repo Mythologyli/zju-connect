@@ -82,7 +82,7 @@ func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay
 func (c *Client) SetTCPTunnelPoolDisabled(disabled bool) {
 	c.tcpPoolDisabled = disabled
 	if disabled && c.tcpTunnelPool != nil {
-		c.tcpTunnelPool.configure(false, 0, 0)
+		c.tcpTunnelPool.configure(false, 0, 0, 0)
 	}
 }
 

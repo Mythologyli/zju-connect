@@ -513,6 +513,9 @@ func (c *tcpTunnelConn) Close() error {
 			return writeErr
 		}
 	}
+	if c.pool != nil {
+		c.pool.endLease(c.transport, time.Now())
+	}
 	closeErr := c.tlsConn.Close()
 	if writeErr != nil {
 		return writeErr
@@ -650,6 +653,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, fmt.Errorf("no available aTrust node for group %q", nodeGroupID)
 	}
 	var transport *tcpTunnelTransport
+	newTransport := false
 	if c.tcpTunnelZeroRTT && c.tcpTunnelPool != nil {
 		transport = c.tcpTunnelPool.acquire(nodeAddr, time.Now())
 	}
@@ -664,9 +668,19 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 			nodeAddr: nodeAddr,
 			reusedAt: time.Now(),
 		}
+		newTransport = true
 	} else {
 		log.DebugPrintf("Reusing TCP tunnel transport from pool: %s", nodeAddr)
 	}
+	if newTransport && c.tcpTunnelZeroRTT && c.tcpTunnelPool != nil {
+		c.tcpTunnelPool.beginLease(transport, time.Now())
+	}
+	leaseTransferred := false
+	defer func() {
+		if !leaseTransferred && c.tcpTunnelPool != nil {
+			c.tcpTunnelPool.endLease(transport, time.Now())
+		}
+	}()
 	conn := transport.conn
 	if err := conn.SetReadDeadline(tcpTunnelHandshakeDeadline(ctx, time.Now())); err != nil {
 		_ = conn.Close()
@@ -755,5 +769,6 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, fmt.Errorf("failed to clear tcp tunnel handshake timeout: %w", clearDeadlineErr)
 	}
 	tunnelConn.reuse = c.tcpTunnelZeroRTT && reuse
+	leaseTransferred = true
 	return tunnelConn, nil
 }

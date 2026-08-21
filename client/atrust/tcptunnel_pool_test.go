@@ -17,7 +17,7 @@ func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
 		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443", reusedAt: time.Now(),
 	}
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	serverErr := make(chan error, 1)
 	go func() {
 		for range 2 {
@@ -59,7 +59,7 @@ func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
 
 func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Second)
+	pool.configure(true, 1, 0, time.Second)
 	conn := &recordingConn{}
 	now := time.Now()
 	transport := &tcpTunnelTransport{
@@ -68,9 +68,7 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	if !pool.release(transport, now) {
 		t.Fatal("release rejected clean transport")
 	}
-	if got := pool.acquire(transport.nodeAddr, now.Add(time.Second)); got != nil {
-		t.Fatal("expired transport was returned")
-	}
+	pool.age(now.Add(time.Second + time.Nanosecond))
 	if !conn.closed {
 		t.Fatal("expired transport was not closed")
 	}
@@ -78,7 +76,7 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsDeadTransportOnAcquire(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	client, server := net.Pipe()
 	now := time.Now()
 	transport := &tcpTunnelTransport{
@@ -98,7 +96,7 @@ func TestTCPTunnelPoolRejectsDeadTransportOnAcquire(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsDeadTransportOnRelease(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	client, server := net.Pipe()
 	if err := server.Close(); err != nil {
 		t.Fatal(err)
@@ -115,7 +113,7 @@ func TestTCPTunnelPoolRejectsDeadTransportOnRelease(t *testing.T) {
 
 func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 0, 0)
+	pool.configure(true, 0, 0, 0)
 
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -130,9 +128,65 @@ func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {
 	}
 }
 
+func TestTCPTunnelPoolAgingKeepsConfiguredMinimum(t *testing.T) {
+	pool := newTCPTunnelPool()
+	defer pool.close()
+	pool.configure(true, 3, 1, time.Second)
+	now := time.Now()
+	transports := make([]*tcpTunnelTransport, 3)
+	conns := make([]*recordingConn, 3)
+	for i := range transports {
+		conns[i] = &recordingConn{}
+		transports[i] = &tcpTunnelTransport{
+			conn: conns[i], reader: bufio.NewReader(conns[i]), nodeAddr: "node.example:443", reusedAt: now,
+		}
+		if !pool.release(transports[i], now) {
+			t.Fatalf("release %d rejected", i)
+		}
+	}
+
+	pool.age(now.Add(time.Second))
+	if conns[0].closed || conns[1].closed || conns[2].closed {
+		t.Fatal("aging ran at the exact linger boundary")
+	}
+	pool.age(now.Add(time.Second + time.Nanosecond))
+	if !conns[0].closed || !conns[1].closed {
+		t.Fatal("aging did not close oldest transports")
+	}
+	if conns[2].closed {
+		t.Fatal("aging closed the configured minimum idle transport")
+	}
+}
+
+func TestTCPTunnelPoolDoesNotAgeWhileLeaseIsActive(t *testing.T) {
+	pool := newTCPTunnelPool()
+	defer pool.close()
+	pool.configure(true, 2, 0, time.Second)
+	now := time.Now()
+	conns := []*recordingConn{{}, {}}
+	for _, conn := range conns {
+		transport := &tcpTunnelTransport{
+			conn: conn, reader: bufio.NewReader(conn), nodeAddr: "node.example:443", reusedAt: now,
+		}
+		if !pool.release(transport, now) {
+			t.Fatal("release rejected transport")
+		}
+	}
+	active := pool.acquire("node.example:443", now)
+	if active == nil {
+		t.Fatal("failed to acquire active lease")
+	}
+	pool.age(now.Add(2 * time.Second))
+	if conns[0].closed || conns[1].closed {
+		t.Fatal("aging closed transports while a lease was active")
+	}
+	pool.endLease(active, now)
+	_ = active.conn.Close()
+}
+
 func TestTCPTunnelPoolKeepsNewestAndAcquiresOldestAtCapacity(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 2, time.Minute)
+	pool.configure(true, 2, 0, time.Minute)
 	now := time.Now()
 	transports := make([]*tcpTunnelTransport, 3)
 	conns := make([]*recordingConn, 3)
@@ -161,7 +215,7 @@ func TestTCPTunnelPoolKeepsNewestAndAcquiresOldestAtCapacity(t *testing.T) {
 
 func TestTCPTunnelPoolRejectsBufferedTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
-	pool.configure(true, 1, time.Minute)
+	pool.configure(true, 1, 0, time.Minute)
 	reader := bufio.NewReaderSize(strings.NewReader("x"), 1)
 	if _, err := reader.Peek(1); err != nil {
 		t.Fatal(err)

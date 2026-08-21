@@ -56,14 +56,14 @@ func TestParseResourceDoesNotOverrideTCPTunnelZeroRTT(t *testing.T) {
 
 func TestParseResourceConfiguresTCPTunnelPool(t *testing.T) {
 	c := NewClient("", "", "", "", nil, nil)
-	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":true,"maxIdleConnNum":3,"maxIdleLingerTime":2500}}}}}}`)
+	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":true,"maxIdleConnNum":3,"minIdleConnNum":2,"maxIdleLingerTime":2500}}}}}}`)
 	if err := c.parseResource(policy); err != nil {
 		t.Fatal(err)
 	}
 	c.tcpTunnelPool.mu.Lock()
 	defer c.tcpTunnelPool.mu.Unlock()
-	if !c.tcpTunnelPool.enabled || c.tcpTunnelPool.maxIdle != 3 || c.tcpTunnelPool.idleTTL != 2500*time.Millisecond {
-		t.Fatalf("pool config = enabled:%t max:%d ttl:%s", c.tcpTunnelPool.enabled, c.tcpTunnelPool.maxIdle, c.tcpTunnelPool.idleTTL)
+	if !c.tcpTunnelPool.enabled || c.tcpTunnelPool.maxIdle != 3 || c.tcpTunnelPool.minIdle != 2 || c.tcpTunnelPool.idleTTL != 2500*time.Millisecond {
+		t.Fatalf("pool config = enabled:%t max:%d min:%d ttl:%s", c.tcpTunnelPool.enabled, c.tcpTunnelPool.maxIdle, c.tcpTunnelPool.minIdle, c.tcpTunnelPool.idleTTL)
 	}
 }
 
