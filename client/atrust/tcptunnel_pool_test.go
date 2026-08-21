@@ -14,7 +14,7 @@ func TestTCPTunnelTransportSupportsSequentialLogicalLeases(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()
 	transport := &tcpTunnelTransport{
-		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443",
+		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443", reusedAt: time.Now(),
 	}
 	pool := newTCPTunnelPool()
 	pool.configure(true, 1, time.Minute)
@@ -61,10 +61,10 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	pool := newTCPTunnelPool()
 	pool.configure(true, 1, time.Second)
 	conn := &recordingConn{}
-	transport := &tcpTunnelTransport{
-		conn: conn, reader: bufio.NewReader(conn), nodeAddr: "node.example:443",
-	}
 	now := time.Now()
+	transport := &tcpTunnelTransport{
+		conn: conn, reader: bufio.NewReader(conn), nodeAddr: "node.example:443", reusedAt: now,
+	}
 	if !pool.release(transport, now) {
 		t.Fatal("release rejected clean transport")
 	}
@@ -74,6 +74,43 @@ func TestTCPTunnelPoolExpiresIdleTransport(t *testing.T) {
 	if !conn.closed {
 		t.Fatal("expired transport was not closed")
 	}
+}
+
+func TestTCPTunnelPoolRejectsDeadTransportOnAcquire(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	client, server := net.Pipe()
+	now := time.Now()
+	transport := &tcpTunnelTransport{
+		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443", reusedAt: now,
+	}
+	if !pool.release(transport, now) {
+		t.Fatal("release rejected live transport")
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	transport.reusedAt = now.Add(-defaultTCPTunnelMinAlive)
+	if got := pool.acquire(transport.nodeAddr, time.Now()); got != nil {
+		t.Fatal("dead transport was returned")
+	}
+}
+
+func TestTCPTunnelPoolRejectsDeadTransportOnRelease(t *testing.T) {
+	pool := newTCPTunnelPool()
+	pool.configure(true, 1, time.Minute)
+	client, server := net.Pipe()
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	transport := &tcpTunnelTransport{
+		conn: client, reader: bufio.NewReader(client), nodeAddr: "node.example:443",
+		reusedAt: time.Now().Add(-defaultTCPTunnelMinAlive),
+	}
+	if pool.release(transport, time.Now()) {
+		t.Fatal("dead transport entered pool")
+	}
+	_ = client.Close()
 }
 
 func TestTCPTunnelPoolUsesBinaryDefaultsForZeroPolicyValues(t *testing.T) {

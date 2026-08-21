@@ -2,14 +2,17 @@ package atrust
 
 import (
 	"bufio"
+	"errors"
 	"net"
 	"sync"
 	"time"
 )
 
 const (
-	defaultTCPTunnelMaxIdle = 6
-	defaultTCPTunnelIdleTTL = 5 * time.Minute
+	defaultTCPTunnelMaxIdle    = 6
+	defaultTCPTunnelIdleTTL    = 5 * time.Minute
+	defaultTCPTunnelMinAlive   = 10 * time.Millisecond
+	tcpTunnelAliveProbeTimeout = 15 * time.Microsecond
 )
 
 type tcpTunnelTransport struct {
@@ -17,6 +20,26 @@ type tcpTunnelTransport struct {
 	reader   *bufio.Reader
 	nodeAddr string
 	idleAt   time.Time
+	reusedAt time.Time
+}
+
+func (t *tcpTunnelTransport) checkAlive(now time.Time) bool {
+	if t == nil || t.reader.Buffered() != 0 {
+		return false
+	}
+	if now.Sub(t.reusedAt) < defaultTCPTunnelMinAlive {
+		return true
+	}
+	if err := t.conn.SetReadDeadline(now.Add(tcpTunnelAliveProbeTimeout)); err != nil {
+		return false
+	}
+	_, readErr := t.reader.Peek(1)
+	clearErr := t.conn.SetReadDeadline(time.Time{})
+	if clearErr != nil {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(readErr, &netErr) && netErr.Timeout()
 }
 
 type tcpTunnelPool struct {
@@ -79,6 +102,11 @@ func (p *tcpTunnelPool) acquire(nodeAddr string, now time.Time) *tcpTunnelTransp
 			discarded = append(discarded, transport)
 			continue
 		}
+		if !transport.checkAlive(now) {
+			discarded = append(discarded, transport)
+			continue
+		}
+		transport.reusedAt = now
 		if len(transports) == 0 {
 			delete(p.idle, nodeAddr)
 		} else {
@@ -95,7 +123,7 @@ func (p *tcpTunnelPool) acquire(nodeAddr string, now time.Time) *tcpTunnelTransp
 }
 
 func (p *tcpTunnelPool) release(transport *tcpTunnelTransport, now time.Time) bool {
-	if transport == nil || transport.reader.Buffered() != 0 {
+	if !transport.checkAlive(now) {
 		return false
 	}
 

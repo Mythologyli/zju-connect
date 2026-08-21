@@ -662,6 +662,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 			conn:     conn,
 			reader:   bufio.NewReader(conn),
 			nodeAddr: nodeAddr,
+			reusedAt: time.Now(),
 		}
 	} else {
 		log.DebugPrintf("Reusing TCP tunnel transport from pool: %s", nodeAddr)
