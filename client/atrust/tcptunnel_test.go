@@ -91,7 +91,7 @@ func TestWaitForTCPConnectPreservesBufferedDownstreamData(t *testing.T) {
 	payload := []byte("HTTP/1.1 200 OK\r\n")
 	serverErrCh := make(chan error, 1)
 	go func() {
-		response := append([]byte{0x53, 0x00, 0x00, 0x21}, []byte(`{"code":0,"message":"Successful"}`)...)
+		response := append([]byte{0x05, 0x81, 0x53, 0x00, 0x00, 0x21}, []byte(`{"code":0,"message":"Successful"}`)...)
 		if _, err := server.Write(response); err != nil {
 			serverErrCh <- err
 			return
@@ -414,16 +414,23 @@ func TestTCPTunnelAuthDestinationsMatchResourceType(t *testing.T) {
 	for _, test := range []struct {
 		name         string
 		domain       string
+		addrPretend  bool
 		wantDestAddr string
 		wantDestIP   string
+		wantHost     string
 	}{
-		{name: "IP resource", wantDestAddr: "10.75.11.237:443"},
-		{name: "domain resource", domain: "service.internal", wantDestAddr: "service.internal:443", wantDestIP: "10.75.11.237"},
+		{name: "IP resource", wantDestAddr: "10.75.11.237:443", wantHost: "10.75.11.237"},
+		{name: "analyzed domain resource", domain: "service.internal", wantDestAddr: "service.internal:443", wantDestIP: "10.75.11.237", wantHost: "10.75.11.237"},
+		{name: "pretend domain resource", domain: "service.internal", addrPretend: true, wantDestAddr: "service.internal:443", wantHost: "service.internal"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			destAddr, destIP := tcpTunnelAuthDestinations(addr, test.domain)
+			host := tcpTunnelRealDstHost(addr, test.domain, test.addrPretend)
+			destAddr, destIP := tcpTunnelAuthDestinations(host, addr.Port, test.domain, test.addrPretend)
 			if destAddr != test.wantDestAddr || destIP != test.wantDestIP {
 				t.Fatalf("destinations = (%q, %q), want (%q, %q)", destAddr, destIP, test.wantDestAddr, test.wantDestIP)
+			}
+			if host != test.wantHost {
+				t.Fatalf("destination host = %q, want %q", host, test.wantHost)
 			}
 		})
 	}
@@ -492,7 +499,7 @@ func TestEncodeTCPTunnelDestinationCopiesZeroRTTToRSV(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			want := []byte{0x05, 0x01, test.rsv, 0x01, 10, 75, 11, 237, 0x00, 0x50}
-			got, err := encodeTCPTunnelDestination(net.IPv4(10, 75, 11, 237), 80, test.zeroRTT)
+			got, err := encodeTCPTunnelDestination("10.75.11.237", 80, test.zeroRTT)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -503,40 +510,46 @@ func TestEncodeTCPTunnelDestinationCopiesZeroRTTToRSV(t *testing.T) {
 	}
 }
 
-func TestWaitForTCPAuthPreservesBufferedRawData(t *testing.T) {
-	client, server := net.Pipe()
-	defer client.Close()
-	defer server.Close()
-
-	payload := []byte("HTTP/1.1 200 OK\r\n")
-	serverErrCh := make(chan error, 1)
-	go func() {
-		responseJSON := []byte(`{"code":0,"message":"Successful"}`)
-		response := []byte{0x53, 0x00, 0x00, byte(len(responseJSON))}
-		response = append(response, responseJSON...)
-		response = append(response, payload...)
-		_, err := server.Write(response)
-		serverErrCh <- err
-	}()
-
-	reader := bufio.NewReader(client)
-	if err := waitForTCPAuth(context.Background(), client, reader); err != nil {
-		t.Fatal(err)
-	}
-	conn := &tcpTunnelConn{tlsConn: client, reader: reader, raw: true}
-	got := make([]byte, len(payload))
-	if _, err := io.ReadFull(conn, got); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, payload) {
-		t.Fatalf("raw payload = %q, want %q", got, payload)
-	}
-	if err := <-serverErrCh; err != nil {
-		t.Fatal(err)
+func TestEncodeTCPTunnelDestinationDetectsHostType(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host string
+		want []byte
+	}{
+		{name: "IPv4", host: "10.0.0.1", want: []byte{0x05, 0x01, 0x00, 0x01, 10, 0, 0, 1, 0x01, 0xBB}},
+		{name: "IPv6", host: "2001:db8::1", want: append(append([]byte{0x05, 0x01, 0x00, 0x04}, net.ParseIP("2001:db8::1").To16()...), 0x01, 0xBB)},
+		{name: "domain", host: "service.internal", want: append(append([]byte{0x05, 0x01, 0x00, 0x03, 16}, "service.internal"...), 0x01, 0xBB)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := encodeTCPTunnelDestination(test.host, 443, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, test.want) {
+				t.Fatalf("destination = % x, want % x", got, test.want)
+			}
+		})
 	}
 }
 
-func TestWaitForTCPAuthHandlesSplitResponse(t *testing.T) {
+func TestEncodeTCPTunnelDestinationTruncatesDomainLengthByte(t *testing.T) {
+	host := strings.Repeat("a", 300)
+	got, err := encodeTCPTunnelDestination(host, 80, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[3] != 0x03 || got[4] != byte(len(host)) {
+		t.Fatalf("domain header = % x, want ATYP 03 and truncated length %02x", got[3:5], byte(len(host)))
+	}
+	if !bytes.Equal(got[5:5+len(host)], []byte(host)) {
+		t.Fatal("domain payload was truncated")
+	}
+	if !bytes.Equal(got[len(got)-2:], []byte{0x00, 0x50}) {
+		t.Fatalf("port = % x, want 00 50", got[len(got)-2:])
+	}
+}
+
+func TestWaitForTCPConnectHandlesSplitResponse(t *testing.T) {
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -544,7 +557,8 @@ func TestWaitForTCPAuthHandlesSplitResponse(t *testing.T) {
 	serverErrCh := make(chan error, 1)
 	go func() {
 		responseJSON := []byte(`{"code":0,"message":"Successful"}`)
-		response := append([]byte{0x53, 0x00, 0x00, byte(len(responseJSON))}, responseJSON...)
+		response := append([]byte{0x05, 0x81, 0x53, 0x00, 0x00, byte(len(responseJSON))}, responseJSON...)
+		response = append(response, 0x05, 0x00, 0x00, 0x01, 10, 0, 0, 1, 0x01, 0xBB)
 		for _, b := range response {
 			if _, err := server.Write([]byte{b}); err != nil {
 				serverErrCh <- err
@@ -553,7 +567,7 @@ func TestWaitForTCPAuthHandlesSplitResponse(t *testing.T) {
 		}
 		serverErrCh <- nil
 	}()
-	if err := waitForTCPAuth(context.Background(), client, bufio.NewReader(client)); err != nil {
+	if err := waitForTCPConnect(context.Background(), client, bufio.NewReader(client)); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverErrCh; err != nil {
@@ -561,7 +575,33 @@ func TestWaitForTCPAuthHandlesSplitResponse(t *testing.T) {
 	}
 }
 
-func TestCapturedRawHandshakeConsumesConnectReplyBeforeHTTP(t *testing.T) {
+func TestWaitForTCPConnectRequiresExactlyOneServerHello(t *testing.T) {
+	responseJSON := []byte(`{"code":0,"message":"Successful"}`)
+	authResponse := append([]byte{0x53, 0x00, 0x00, byte(len(responseJSON))}, responseJSON...)
+	connectReply := []byte{0x05, 0x00, 0x00, 0x01, 10, 0, 0, 1, 0x01, 0xBB}
+
+	for _, test := range []struct {
+		name    string
+		prefix  []byte
+		wantErr string
+	}{
+		{name: "missing", wantErr: "unexpected tcp tunnel server hello: 53 00"},
+		{name: "duplicated", prefix: []byte{0x05, 0x81, 0x05, 0x81}, wantErr: "unexpected tcp tunnel auth response: 05 81"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := append(append(append([]byte(nil), test.prefix...), authResponse...), connectReply...)
+			if test.name == "missing" {
+				response = append(append([]byte(nil), authResponse...), connectReply...)
+			}
+			err := waitForTCPConnect(context.Background(), &recordingConn{}, bufio.NewReader(bytes.NewReader(response)))
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("waitForTCPConnect() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestConnectReplyParserPreservesFollowingPayload(t *testing.T) {
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
@@ -759,7 +799,7 @@ func TestWaitForTCPConnectRejectsMalformedResponse(t *testing.T) {
 	}()
 
 	err := waitForTCPConnect(context.Background(), client, bufio.NewReader(client))
-	if err == nil || !strings.Contains(err.Error(), "unexpected tcp tunnel response: 01 00") {
+	if err == nil || !strings.Contains(err.Error(), "unexpected tcp tunnel server hello: 01 00") {
 		t.Fatalf("waitForTCPConnect() error = %v", err)
 	}
 }

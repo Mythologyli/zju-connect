@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -139,16 +140,24 @@ func writeTCPTunnelInitialMessages(writer io.Writer, initMsg, destMsg []byte) er
 	return nil
 }
 
-func encodeTCPTunnelDestination(destIP net.IP, port int, zeroRTT bool) ([]byte, error) {
-	ipv4 := destIP.To4()
-	if ipv4 == nil {
-		return nil, fmt.Errorf("invalid IPv4 address")
-	}
+func encodeTCPTunnelDestination(host string, port int, zeroRTT bool) ([]byte, error) {
 	rsv := byte(0)
 	if zeroRTT {
 		rsv = 1
 	}
-	msg := append([]byte{0x05, 0x01, rsv, 0x01}, ipv4...)
+	msg := []byte{0x05, 0x01, rsv}
+	if ip := net.ParseIP(host); ip != nil {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			msg = append(msg, 0x01)
+			msg = append(msg, ipv4...)
+		} else {
+			msg = append(msg, 0x04)
+			msg = append(msg, ip.To16()...)
+		}
+	} else {
+		msg = append(msg, 0x03, byte(len(host)))
+		msg = append(msg, host...)
+	}
 	return binary.BigEndian.AppendUint16(msg, uint16(port)), nil
 }
 
@@ -194,41 +203,6 @@ func waitForTCPConnect(ctx context.Context, conn net.Conn, reader *bufio.Reader)
 	return err
 }
 
-func waitForTCPAuth(ctx context.Context, conn net.Conn, reader *bufio.Reader) (err error) {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	cancelDone := make(chan struct{})
-	stopCancel := context.AfterFunc(ctx, func() {
-		defer close(cancelDone)
-		_ = conn.Close()
-	})
-	defer func() {
-		if !stopCancel() {
-			<-cancelDone
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = ctxErr
-		}
-	}()
-
-	header := make([]byte, 2)
-	if _, err := io.ReadFull(reader, header); err != nil {
-		return fmt.Errorf("failed to read tcp tunnel response: %w", err)
-	}
-	if header[0] != 0x53 || header[1] != 0x00 {
-		return fmt.Errorf("unexpected tcp tunnel response: %02X %02X", header[0], header[1])
-	}
-	response, err := readTCPProtocolResponse(reader)
-	if err != nil {
-		return fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
-	}
-	log.DebugPrint("Received protocol response:")
-	log.DebugDumpHex([]byte(response))
-	return parseTCPTunnelAuthResponse(response)
-}
-
 func waitForTCPConnectReply(ctx context.Context, conn net.Conn, reader *bufio.Reader) (reuse bool, err error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -248,31 +222,32 @@ func waitForTCPConnectReply(ctx context.Context, conn net.Conn, reader *bufio.Re
 		}
 	}()
 
-	for {
-		header := make([]byte, 2)
-		if _, err := io.ReadFull(reader, header); err != nil {
-			return false, fmt.Errorf("failed to read tcp tunnel response: %w", err)
-		}
-		if log.DebugEnabled() {
-			log.DebugPrintf("Received header: %02X %02X", header[0], header[1])
-		}
-		if header[0] == 0x05 && header[1] == 0x81 {
-			continue
-		}
-		if header[0] != 0x53 || header[1] != 0x00 {
-			return false, fmt.Errorf("unexpected tcp tunnel response: %02X %02X", header[0], header[1])
-		}
+	serverHello := make([]byte, 2)
+	if _, err := io.ReadFull(reader, serverHello); err != nil {
+		return false, fmt.Errorf("failed to read tcp tunnel server hello: %w", err)
+	}
+	if log.DebugEnabled() {
+		log.DebugPrintf("Received server hello: %02X %02X", serverHello[0], serverHello[1])
+	}
+	if serverHello[0] != 0x05 || serverHello[1] != 0x81 {
+		return false, fmt.Errorf("unexpected tcp tunnel server hello: %02X %02X", serverHello[0], serverHello[1])
+	}
 
-		response, err := readTCPProtocolResponse(reader)
-		if err != nil {
-			return false, fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
-		}
-		log.DebugPrint("Received protocol response:")
-		log.DebugDumpHex([]byte(response))
-		if err := parseTCPTunnelAuthResponse(response); err != nil {
-			return false, err
-		}
-		break
+	authHeader := make([]byte, 2)
+	if _, err := io.ReadFull(reader, authHeader); err != nil {
+		return false, fmt.Errorf("failed to read tcp tunnel auth response: %w", err)
+	}
+	if authHeader[0] != 0x53 || authHeader[1] != 0x00 {
+		return false, fmt.Errorf("unexpected tcp tunnel auth response: %02X %02X", authHeader[0], authHeader[1])
+	}
+	response, err := readTCPProtocolResponse(reader)
+	if err != nil {
+		return false, fmt.Errorf("failed to read tcp tunnel protocol response: %w", err)
+	}
+	log.DebugPrint("Received protocol response:")
+	log.DebugDumpHex([]byte(response))
+	if err := parseTCPTunnelAuthResponse(response); err != nil {
+		return false, err
 	}
 
 	status, reuse, err := readSOCKS5ConnectReply(reader)
@@ -482,19 +457,27 @@ func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr) (client.IPRe
 	})
 }
 
-func tcpTunnelAuthDestinations(addr *net.TCPAddr, domain string) (destAddr, destIP string) {
-	destAddr = addr.String()
-	if domain != "" {
-		destAddr = fmt.Sprintf("%s:%d", domain, addr.Port)
-		destIP = addr.IP.String()
+func tcpTunnelAuthDestinations(realDstHost string, port int, domain string, addrPretend bool) (destAddr, destIP string) {
+	destAddr = net.JoinHostPort(realDstHost, strconv.Itoa(port))
+	if !addrPretend && domain != "" {
+		destAddr = net.JoinHostPort(domain, strconv.Itoa(port))
+		destIP = realDstHost
 	}
 	return destAddr, destIP
+}
+
+func tcpTunnelRealDstHost(addr *net.TCPAddr, domain string, addrPretend bool) string {
+	if addrPretend && domain != "" {
+		return domain
+	}
+	return addr.IP.String()
 }
 
 func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
 	appID := ""
 	nodeGroupID := ""
 	domain := ""
+	addrPretend := true
 	if resource, ok := ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource); ok {
 		if resource.EnableTCPPrefL3 {
 			return nil, fmt.Errorf("host:%s port:%d prefers L3 tunnel: %w", addr.IP, addr.Port, client.ErrResourceNotFound)
@@ -504,6 +487,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		if res := ctx.Value(resolve.ContextKeyResolveHost); res != nil {
 			domain = res.(string)
 		}
+		addrPretend = resource.AddrPretend
 	}
 	if appID == "" {
 		resource, ok := matchTCPIPResource(c.resourceIndex, addr)
@@ -542,7 +526,8 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	}
 	procHash := fmt.Sprintf("%X", sha256.Sum256([]byte(procPath)))
 
-	destAddr, destIP := tcpTunnelAuthDestinations(addr, domain)
+	realDstHost := tcpTunnelRealDstHost(addr, domain, addrPretend)
+	destAddr, destIP := tcpTunnelAuthDestinations(realDstHost, addr.Port, domain, addrPretend)
 
 	signKeyBytes, err := hex.DecodeString(c.SignKey)
 	if err != nil {
@@ -586,7 +571,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	initHeader := []byte{0x05, 0x01, 0x81, 0x53, 0x03}
 	initMsg := append(initHeader, lenBytes[:]...)
 	initMsg = append(initMsg, msgBytes...)
-	destMsg, err := encodeTCPTunnelDestination(addr.IP, addr.Port, c.tcpTunnelZeroRTT)
+	destMsg, err := encodeTCPTunnelDestination(realDstHost, addr.Port, c.tcpTunnelZeroRTT)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

@@ -42,6 +42,48 @@ func TestParseResourcePreservesMultipleRulesForDomain(t *testing.T) {
 	}
 }
 
+func TestParseResourcePreservesAddrPretendForDomain(t *testing.T) {
+	policy := []byte(`{"data":{"appList":{"data":{"appInfo":[{"apps":[{"ID":"tcp-app","NodeGroupID":"tcp-group","AccessModel":"L3VPN","addrPretend":true,"AddressList":[{"Protocol":"tcp","Port":"80","Host":"speedtest.zju.edu.cn"}]}]}]}}}}`)
+	c := &Client{}
+	if err := c.parseResource(policy); err != nil {
+		t.Fatalf("parseResource() error = %v", err)
+	}
+
+	resource, ok := client.MatchDomainResource(c.domainResources["speedtest.zju.edu.cn"], "tcp", 80)
+	if !ok || !resource.AddrPretend {
+		t.Fatalf("domain resource = (%#v, %t), want AddrPretend", resource, ok)
+	}
+}
+
+func TestParseResourceAddrPretendDefaultsTrueAndOnlyAcceptsBool(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		field string
+		want  bool
+	}{
+		{name: "absent", want: true},
+		{name: "null is ignored", field: `,"addrPretend":null`, want: true},
+		{name: "explicit true", field: `,"addrPretend":true`, want: true},
+		{name: "explicit false", field: `,"addrPretend":false`, want: false},
+		{name: "zero number is ignored", field: `,"addrPretend":0`, want: true},
+		{name: "nonzero number is ignored", field: `,"addrPretend":1`, want: true},
+		{name: "string is ignored", field: `,"addrPretend":"false"`, want: true},
+		{name: "object is ignored", field: `,"addrPretend":{}`, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			policy := []byte(`{"data":{"appList":{"data":{"appInfo":[{"apps":[{"ID":"app","AccessModel":"L3VPN"` + test.field + `,"AddressList":[{"Protocol":"tcp","Port":"80","Host":"example.com"}]}]}]}}}}`)
+			c := &Client{}
+			if err := c.parseResource(policy); err != nil {
+				t.Fatalf("parseResource() error = %v", err)
+			}
+			resource, ok := client.MatchDomainResource(c.domainResources["example.com"], "tcp", 80)
+			if !ok || resource.AddrPretend != test.want {
+				t.Fatalf("AddrPretend = (%t, %t), want %t", resource.AddrPretend, ok, test.want)
+			}
+		})
+	}
+}
+
 func TestParseResourceDoesNotOverrideTCPTunnelZeroRTT(t *testing.T) {
 	c := &Client{tcpTunnelZeroRTT: true}
 	policy := []byte(`{"data":{"sdpPolicy":{"data":{"clientOption":{"tun0rtt":{"enable":false}}}}}}`)
