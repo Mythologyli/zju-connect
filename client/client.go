@@ -31,6 +31,7 @@ type DomainResource struct {
 	AppID           string
 	NodeGroupID     string
 	EnableTCPPrefL3 bool
+	AddrPretend     bool
 }
 
 type DomainResources map[string][]DomainResource

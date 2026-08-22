@@ -68,6 +68,7 @@ type resourceApp struct {
 	NodeGroupID     string
 	AccessModel     string
 	EnableTCPPrefL3 bool
+	AddrPretend     any `json:"addrPretend"`
 	AddressList     []resourceAddress
 }
 
@@ -76,6 +77,13 @@ type resourceAddress struct {
 	Port     string
 	Host     string
 	IP       []string
+}
+
+func resourceAddrPretend(value any) bool {
+	if value, ok := value.(bool); ok {
+		return value
+	}
+	return true
 }
 
 func (c *Client) parseResource(resource []byte) error {
@@ -225,6 +233,7 @@ func (c *Client) parseResource(resource []byte) error {
 							AppID:           appItem.ID,
 							NodeGroupID:     appItem.NodeGroupID,
 							EnableTCPPrefL3: appItem.EnableTCPPrefL3,
+							AddrPretend:     resourceAddrPretend(appItem.AddrPretend),
 						})
 
 						log.DebugPrintf("Add domain: %s, Port range: %d ~ %d, [%s]", hostStr, portMin, portMax, address.Protocol)
