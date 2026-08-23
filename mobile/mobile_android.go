@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack/tun"
+	"github.com/mythologyli/zju-connect/underlay"
 )
 
 var vpnClient *easyconnect.Client

@@ -13,6 +13,14 @@ var ErrResourceNotFound = errors.New("resource not found")
 
 type DialContextFunc func(context.Context, string, string) (net.Conn, error)
 
+// UnderlayDialer provides network connections used to reach the VPN server.
+// Implementations must be safe for concurrent use. The caller owns the
+// dialer lifecycle; clients do not close it.
+type UnderlayDialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
+	ExcludeIP(ip net.IP)
+}
+
 type IPResource struct {
 	IPMin           net.IP
 	IPMax           net.IP

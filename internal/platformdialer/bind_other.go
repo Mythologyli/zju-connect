@@ -1,6 +1,6 @@
 //go:build !linux && !darwin && !windows
 
-package underlay
+package platformdialer
 
 import "net"
 

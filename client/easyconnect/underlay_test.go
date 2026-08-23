@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/underlay"
+	"github.com/mythologyli/zju-connect/underlay"
 )
 
 func TestInjectedUnderlayUsesManualInterfaceForHTTP(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{InterfaceName: "manual-interface", AutoDetect: true})
 	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, nil)
 
-	if got := client.underlayDialer.InterfaceName(); got != "manual-interface" {
+	if got := dialer.InterfaceName(); got != "manual-interface" {
 		t.Fatalf("underlay interface = %q, want %q", got, "manual-interface")
 	}
 	transport, ok := client.httpClient.Transport.(*http.Transport)

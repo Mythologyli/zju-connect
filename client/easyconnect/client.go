@@ -12,7 +12,6 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -35,7 +34,7 @@ type Client struct {
 	useDomainResource bool
 
 	httpClient        *http.Client
-	underlayDialer    *underlay.Dialer
+	underlayDialer    client.UnderlayDialer
 	tlsKeyLogWriter   io.Writer
 	rawRequestTimeout time.Duration
 
@@ -63,7 +62,7 @@ type Client struct {
 	closeOnce          sync.Once
 }
 
-func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
+func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer client.UnderlayDialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	c := &Client{
 		server:            server,

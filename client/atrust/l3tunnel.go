@@ -63,7 +63,7 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 			username:     aTrustClient.Username,
 		}
 		dialTLS := func(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
-			return aTrustClient.underlayDialer.DialTLSContext(ctx, network, address, tlsConfig(config, aTrustClient.tlsKeyLogWriter))
+			return dialTLSContext(ctx, aTrustClient.underlayDialer, network, address, tlsConfig(config, aTrustClient.tlsKeyLogWriter))
 		}
 		return newL3TunnelConn(ctx, dialTLS, addr, info, aTrustClient.SignKey, conntrackMgr, t.updateVIP)
 	}
@@ -109,7 +109,9 @@ func (t *L3Tunnel) updateVIP(ips []net.IP) {
 		t.ip = append(net.IP(nil), ipv4...)
 		t.vipMu.Unlock()
 		t.client.setIP(ipv4)
-		t.client.underlayDialer.ExcludeIP(ipv4)
+		if t.client.underlayDialer != nil {
+			t.client.underlayDialer.ExcludeIP(ipv4)
+		}
 		log.Printf("Updated l3-tunnel virtual IP: %s", ipv4)
 	}
 }

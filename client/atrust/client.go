@@ -18,8 +18,8 @@ import (
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/keylog"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/underlay"
 	"inet.af/netaddr"
 )
 
@@ -56,12 +56,12 @@ type Client struct {
 	lifecycleCtx     context.Context
 	lifecycleCancel  context.CancelFunc
 	closeOnce        sync.Once
-	underlayDialer   *underlay.Dialer
+	underlayDialer   client.UnderlayDialer
 	tlsKeyLogWriter  io.Writer
 	tcpTunnelZeroRTT bool
 }
 
-func NewClient(username, sid, deviceID, signKey string, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
+func NewClient(username, sid, deviceID, signKey string, underlayDialer client.UnderlayDialer, tlsKeyLogWriter io.Writer) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
 		Username:        username,
