@@ -176,6 +176,99 @@ func TestUnknownConfigurationKeyIsRejected(t *testing.T) {
 	}
 }
 
+func TestLegacyRemoteDNSNamesRemainSupported(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		args    []string
+		environ []string
+		wantDNS string
+	}{
+		{
+			name:    "TOML",
+			config:  "disable_zju_dns = true\nzju_dns_server = \"192.0.2.1\"\n",
+			wantDNS: "192.0.2.1",
+		},
+		{
+			name: "environment",
+			environ: []string{
+				"ZJU_CONNECT_DISABLE_ZJU_DNS=true",
+				"ZJU_CONNECT_ZJU_DNS_SERVER=192.0.2.2",
+			},
+			wantDNS: "192.0.2.2",
+		},
+		{
+			name: "command line",
+			args: []string{
+				"--disable-zju-dns",
+				"--zju-dns-server", "192.0.2.3",
+			},
+			wantDNS: "192.0.2.3",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := test.args
+			if test.config != "" {
+				args = append([]string{"--config", writeConfig(t, test.config)}, args...)
+			}
+			options, _, err := loadStartupOptions(args, func() []string { return test.environ })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !options.Config.DisableRemoteDNS {
+				t.Fatal("DisableRemoteDNS = false, want true")
+			}
+			if options.Config.RemoteDNSServer != test.wantDNS {
+				t.Fatalf("RemoteDNSServer = %q, want %q", options.Config.RemoteDNSServer, test.wantDNS)
+			}
+		})
+	}
+}
+
+func TestCanonicalRemoteDNSConfigNames(t *testing.T) {
+	configFile := writeConfig(t, `
+disable_remote_dns = true
+remote_dns_server = "192.0.2.4"
+`)
+
+	options, _, err := loadStartupOptions([]string{"--config", configFile}, func() []string { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !options.Config.DisableRemoteDNS || options.Config.RemoteDNSServer != "192.0.2.4" {
+		t.Fatalf("canonical remote DNS configuration was not applied: %+v", options.Config)
+	}
+}
+
+func TestRemoteDNSAliasesPreserveSourcePrecedence(t *testing.T) {
+	configFile := writeConfig(t, `
+disable_zju_dns = true
+zju_dns_server = "192.0.2.1"
+`)
+
+	options, _, err := loadStartupOptions([]string{
+		"--config", configFile,
+		"--disable-zju-dns=false",
+		"--remote-dns-server", "192.0.2.3",
+	}, func() []string {
+		return []string{
+			"ZJU_CONNECT_DISABLE_REMOTE_DNS=true",
+			"ZJU_CONNECT_ZJU_DNS_SERVER=192.0.2.2",
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Config.DisableRemoteDNS {
+		t.Fatal("DisableRemoteDNS = true, want explicit CLI false")
+	}
+	if options.Config.RemoteDNSServer != "192.0.2.3" {
+		t.Fatalf("RemoteDNSServer = %q, want CLI value", options.Config.RemoteDNSServer)
+	}
+}
+
 func TestEnvironmentCollectionsUseCLISyntax(t *testing.T) {
 	options, _, err := loadStartupOptions(nil, func() []string {
 		return []string{

@@ -43,13 +43,13 @@
 
   The steps are the same as above, but try setting the running parameters as follows:
 
-  `./zju-connect -server <Server Address> -port <Server Port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto`
+  `./zju-connect -server <Server Address> -port <Server Port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -remote-dns-server auto`
 
   *For details, see this [link](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322).*
 
   If your server requires a graphic captcha, try setting the running parameters as follows:
 
-  `./zju-connect -server <Server Address> -port <Server Port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto -disable-multi-line -graph-code-file graph_code.jpg`
+  `./zju-connect -server <Server Address> -port <Server Port> -username xxx -password xxx -disable-zju-config -skip-domain-resource -remote-dns-server auto -disable-multi-line -graph-code-file graph_code.jpg`
 
   When logging in, the captcha image will be saved to the `graph_code.jpg` file. Please check it and manually enter the captcha code.
 
@@ -113,7 +113,7 @@
 
 + `totp-secret`: TOTP secret, can be used to automatically complete TOTP verification. If the server doesn't require TOTP or you want to manually enter the code, leave blank. (Sensitive information is recommended to be provided via env `ZJU_CONNECT_TOTP_SECRET`)
 
-+ `disable-zju-dns`: Disable remote DNS and use local DNS instead, generally no need to add this argument
++ `disable-remote-dns`: Disable remote DNS and use local DNS instead, generally no need to add this argument
 
 + `disable-server-config`: Disable server configuration, generally no need to add this argument
 
@@ -141,7 +141,7 @@
 
 + `keep-alive-url`: Uses HTTP keep-alive, suitable for situations where the server does not provide DNS. Set the URL to visit, for example, `https://www.cnki.net/favicon.ico`. The default is empty, in which case the server-provided DNS is used for keep-alive.
 
-+ `zju-dns-server`: Remote DNS server address, default is `auto`. Set to `auto` to use the DNS server obtained from the server; disable remote DNS if it fails to obtain
++ `remote-dns-server`: Remote DNS server address, default is `auto`. Set to `auto` to use the DNS server obtained from the server; disable remote DNS if it fails to obtain
 
 + `secondary-dns-server`: Standby DNS server used when the remote DNS server cannot resolve. The default `auto` uses the second server supplied by VPN policy, then falls back to `114.114.114.114`. Leave blank to use system default DNS, but it must be set when `dns-hijack` is enabled
 
@@ -176,6 +176,8 @@
 Configuration sources are merged with the precedence “built-in defaults < TOML file < environment variables < command-line flags”. Only explicitly supplied command-line flags override other sources; for example, `-tun-mode=false` disables a value enabled by the file or environment.
 
 Every configuration key can be set with an uppercase environment variable prefixed by `ZJU_CONNECT_`. For example, `server_address` maps to `ZJU_CONNECT_SERVER_ADDRESS`, and `tun_mode` maps to `ZJU_CONNECT_TUN_MODE`. Collection values use the same names and syntax as command-line flags, for example `ZJU_CONNECT_TCP_PORT_FORWARDING=127.0.0.1:9898-10.10.98.98:80`, `ZJU_CONNECT_CUSTOM_DNS=www.cc98.org:10.10.98.98`, and `ZJU_CONNECT_CUSTOM_PROXY_DOMAIN=nature.com,science.org`.
+
+The old `disable_zju_dns` and `zju_dns_server` names, including their command-line flags and environment variables, remain supported but are deprecated. Use `disable_remote_dns` and `remote_dns_server` instead.
 
 #### EasyConnect Related Arguments
 

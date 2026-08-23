@@ -16,9 +16,9 @@ type Config struct {
 	ShadowsocksURL      string                 `koanf:"shadowsocks_url"`
 	DialDirectProxy     string                 `koanf:"dial_direct_proxy"`
 	DisableServerConfig bool                   `koanf:"disable_server_config"`
-	DisableRemoteDNS    bool                   `koanf:"disable_zju_dns"`
+	DisableRemoteDNS    bool                   `koanf:"disable_remote_dns"`
 	DNSTTL              uint64                 `koanf:"dns_ttl"`
-	RemoteDNSServer     string                 `koanf:"zju_dns_server"`
+	RemoteDNSServer     string                 `koanf:"remote_dns_server"`
 	SecondaryDNSServer  string                 `koanf:"secondary_dns_server"`
 	DNSServerBind       string                 `koanf:"dns_server_bind"`
 	LocalDNSServer      string                 `koanf:"local_dns_server"`
