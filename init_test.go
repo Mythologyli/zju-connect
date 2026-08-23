@@ -176,11 +176,13 @@ func TestUnknownConfigurationKeyIsRejected(t *testing.T) {
 	}
 }
 
-func TestEnvironmentCollectionsUseJSON(t *testing.T) {
+func TestEnvironmentCollectionsUseCLISyntax(t *testing.T) {
 	options, _, err := loadStartupOptions(nil, func() []string {
 		return []string{
-			`ZJU_CONNECT_CUSTOM_PROXY_DOMAIN=["one.example.com","two.example.com"]`,
-			`ZJU_CONNECT_CUSTOM_DNS=[{"host_name":"host.example.com","ip":"192.0.2.1"}]`,
+			"ZJU_CONNECT_TCP_PORT_FORWARDING=127.0.0.1:2-10.0.0.2:2",
+			"ZJU_CONNECT_UDP_PORT_FORWARDING=127.0.0.1:3-10.0.0.3:3",
+			"ZJU_CONNECT_CUSTOM_PROXY_DOMAIN=one.example.com,two.example.com",
+			"ZJU_CONNECT_CUSTOM_DNS=host.example.com:192.0.2.1",
 		}
 	})
 	if err != nil {
@@ -189,8 +191,33 @@ func TestEnvironmentCollectionsUseJSON(t *testing.T) {
 	if len(options.Config.CustomProxyDomain) != 2 {
 		t.Fatalf("CustomProxyDomain = %v", options.Config.CustomProxyDomain)
 	}
+	if len(options.Config.PortForwardingList) != 2 {
+		t.Fatalf("PortForwardingList = %+v", options.Config.PortForwardingList)
+	}
 	if len(options.Config.CustomDNSList) != 1 || options.Config.CustomDNSList[0].IP != "192.0.2.1" {
 		t.Fatalf("CustomDNSList = %+v", options.Config.CustomDNSList)
+	}
+}
+
+func TestCLICollectionsOverrideEnvironmentCollections(t *testing.T) {
+	options, _, err := loadStartupOptions([]string{
+		"--tcp-port-forwarding", "127.0.0.1:4-10.0.0.4:4",
+		"--custom-proxy-domain", "cli.example.com",
+	}, func() []string {
+		return []string{
+			"ZJU_CONNECT_TCP_PORT_FORWARDING=127.0.0.1:2-10.0.0.2:2",
+			"ZJU_CONNECT_UDP_PORT_FORWARDING=127.0.0.1:3-10.0.0.3:3",
+			"ZJU_CONNECT_CUSTOM_PROXY_DOMAIN=env.example.com",
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := options.Config.PortForwardingList; len(got) != 1 || got[0].RemoteAddress != "10.0.0.4:4" {
+		t.Fatalf("PortForwardingList = %+v", got)
+	}
+	if got := options.Config.CustomProxyDomain; len(got) != 1 || got[0] != "cli.example.com" {
+		t.Fatalf("CustomProxyDomain = %v", got)
 	}
 }
 

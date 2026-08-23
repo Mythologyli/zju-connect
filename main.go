@@ -52,9 +52,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
-	if conf.Protocol != "easyconnect" && conf.Protocol != "atrust" {
-		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
-	}
 	underlayDialer, underlayErr := underlay.New(underlay.Options{
 		InterfaceName:  conf.BindInterface,
 		AutoDetect:     conf.AutoDetectInterface,

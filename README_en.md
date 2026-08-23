@@ -175,7 +175,7 @@
 
 Configuration sources are merged with the precedence “built-in defaults < TOML file < environment variables < command-line flags”. Only explicitly supplied command-line flags override other sources; for example, `-tun-mode=false` disables a value enabled by the file or environment.
 
-Every configuration key can be set with an uppercase environment variable prefixed by `ZJU_CONNECT_`. For example, `server_address` maps to `ZJU_CONNECT_SERVER_ADDRESS`, and `tun_mode` maps to `ZJU_CONNECT_TUN_MODE`. `ZJU_CONNECT_PORT_FORWARDING`, `ZJU_CONNECT_CUSTOM_DNS`, and `ZJU_CONNECT_CUSTOM_PROXY_DOMAIN` use JSON array values.
+Every configuration key can be set with an uppercase environment variable prefixed by `ZJU_CONNECT_`. For example, `server_address` maps to `ZJU_CONNECT_SERVER_ADDRESS`, and `tun_mode` maps to `ZJU_CONNECT_TUN_MODE`. Collection values use the same names and syntax as command-line flags, for example `ZJU_CONNECT_TCP_PORT_FORWARDING=127.0.0.1:9898-10.10.98.98:80`, `ZJU_CONNECT_CUSTOM_DNS=www.cc98.org:10.10.98.98`, and `ZJU_CONNECT_CUSTOM_PROXY_DOMAIN=nature.com,science.org`.
 
 #### EasyConnect Related Arguments
 

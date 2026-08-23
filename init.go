@@ -35,7 +35,29 @@ type startupOptions struct {
 	AuthInfo      bool
 	TrustDevice   bool
 	UntrustDevice bool
-	ConfigFile    string
+}
+
+type collectionKey string
+
+const (
+	collectionTCPPortForwarding collectionKey = "tcp_port_forwarding"
+	collectionUDPPortForwarding collectionKey = "udp_port_forwarding"
+	collectionCustomDNS         collectionKey = "custom_dns"
+	collectionProxyDomain       collectionKey = "custom_proxy_domain"
+)
+
+type collectionSpec struct {
+	Key      collectionKey
+	FlagName string
+	EnvName  string
+	Help     string
+}
+
+var collectionSpecs = []collectionSpec{
+	{collectionTCPPortForwarding, "tcp-port-forwarding", "TCP_PORT_FORWARDING", "TCP port forwarding"},
+	{collectionUDPPortForwarding, "udp-port-forwarding", "UDP_PORT_FORWARDING", "UDP port forwarding"},
+	{collectionCustomDNS, "custom-dns", "CUSTOM_DNS", "Custom DNS lookup entries"},
+	{collectionProxyDomain, "custom-proxy-domain", "CUSTOM_PROXY_DOMAIN", "Domains which force use of the RVPN proxy"},
 }
 
 func zjuConnectVersionString() string {
@@ -98,10 +120,9 @@ func newFlagSet(defaults configs.Config) *pflag.FlagSet {
 	flags.String("resource-file", defaults.ResourceFile, "aTrust Resource File")
 	flags.Int("update-best-nodes-interval", defaults.UpdateBestNodesInterval, "Interval to update best nodes in seconds")
 
-	flags.String("tcp-port-forwarding", "", "TCP port forwarding")
-	flags.String("udp-port-forwarding", "", "UDP port forwarding")
-	flags.String("custom-dns", "", "Custom DNS lookup entries")
-	flags.String("custom-proxy-domain", "", "Domains which force use of the RVPN proxy")
+	for _, spec := range collectionSpecs {
+		flags.String(spec.FlagName, "", spec.Help)
+	}
 
 	flags.String("config", "", "Config file (can also be set with ZJU_CONNECT_CONFIG)")
 	flags.Bool("version", false, "Show version")
@@ -118,12 +139,16 @@ func loadStartupOptions(args []string, environ func() []string) (startupOptions,
 		return startupOptions{}, flags, err
 	}
 
+	showVersion, _ := flags.GetBool("version")
+	authInfo, _ := flags.GetBool("auth-info")
+	trustDevice, _ := flags.GetBool("trust-device")
+	untrustDevice, _ := flags.GetBool("untrust-device")
+	configFile, _ := flags.GetString("config")
 	options := startupOptions{
-		ShowVersion:   flagBool(flags, "version"),
-		AuthInfo:      flagBool(flags, "auth-info"),
-		TrustDevice:   flagBool(flags, "trust-device"),
-		UntrustDevice: flagBool(flags, "untrust-device"),
-		ConfigFile:    flagString(flags, "config"),
+		ShowVersion:   showVersion,
+		AuthInfo:      authInfo,
+		TrustDevice:   trustDevice,
+		UntrustDevice: untrustDevice,
 	}
 	if options.ShowVersion {
 		normalizeConfig(&defaults)
@@ -134,7 +159,7 @@ func loadStartupOptions(args []string, environ func() []string) (startupOptions,
 	envValues := environ()
 	if !flags.Lookup("config").Changed {
 		if path, ok := lookupEnvironment(envValues, envPrefix+"CONFIG"); ok {
-			options.ConfigFile = path
+			configFile = path
 		}
 	}
 
@@ -148,76 +173,48 @@ func loadStartupOptions(args []string, environ func() []string) (startupOptions,
 		allowedKeys[key] = struct{}{}
 	}
 
-	if options.ConfigFile != "" {
-		if err := k.Load(file.Provider(options.ConfigFile), toml.Parser()); err != nil {
-			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", options.ConfigFile, err)
+	if configFile != "" {
+		if err := k.Load(file.Provider(configFile), toml.Parser()); err != nil {
+			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", configFile, err)
 		}
 		if err := rejectUnknownKeys(k, allowedKeys); err != nil {
-			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", options.ConfigFile, err)
+			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", configFile, err)
 		}
 	}
 
-	var envErr error
 	envProvider := env.Provider(".", env.Opt{
 		Prefix:      envPrefix,
 		EnvironFunc: func() []string { return envValues },
 		TransformFunc: func(key, value string) (string, any) {
 			key = strings.ToLower(strings.TrimPrefix(key, envPrefix))
-			if key == "config" {
+			if key == "config" || isCollectionEnvKey(key) {
 				return "", nil
 			}
-			switch key {
-			case "port_forwarding":
-				var entries []configs.SinglePortForwarding
-				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
-					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
-				}
-				return key, entries
-			case "custom_dns":
-				var entries []configs.SingleCustomDNS
-				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
-					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
-				}
-				return key, entries
-			case "custom_proxy_domain":
-				var entries []string
-				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
-					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
-				}
-				return key, entries
-			default:
-				return key, value
-			}
+			return key, value
 		},
 	})
 	if err := k.Load(envProvider, nil); err != nil {
 		return startupOptions{}, flags, fmt.Errorf("load environment: %w", err)
 	}
-	if envErr != nil {
-		return startupOptions{}, flags, fmt.Errorf("parse environment configuration: %w", envErr)
-	}
 	if err := rejectUnknownKeys(k, allowedKeys); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("load environment: %w", err)
+	}
+	if err := applyCollectionValues(k, collectionValuesFromEnvironment(envValues)); err != nil {
 		return startupOptions{}, flags, fmt.Errorf("load environment: %w", err)
 	}
 
 	cliProvider := posflag.ProviderWithFlag(flags, ".", k, func(flag *pflag.Flag) (string, any) {
-		switch flag.Name {
-		case "config", "version", "auth-info", "trust-device", "untrust-device",
-			"tcp-port-forwarding", "udp-port-forwarding", "custom-dns", "custom-proxy-domain":
+		key, ok := configKeyForFlag(flag.Name)
+		if !ok {
 			return "", nil
-		case "server":
-			return "server_address", posflag.FlagVal(flags, flag)
-		case "port":
-			return "server_port", posflag.FlagVal(flags, flag)
-		default:
-			return strings.ReplaceAll(flag.Name, "-", "_"), posflag.FlagVal(flags, flag)
 		}
+		return key, posflag.FlagVal(flags, flag)
 	})
 	if err := k.Load(cliProvider, nil); err != nil {
 		return startupOptions{}, flags, fmt.Errorf("load command line: %w", err)
 	}
 
-	if err := applyCollectionFlags(k, flags); err != nil {
+	if err := applyCollectionValues(k, collectionValuesFromFlags(flags)); err != nil {
 		return startupOptions{}, flags, err
 	}
 
@@ -264,7 +261,7 @@ func normalizeLegacyArgs(flags *pflag.FlagSet, args []string) []string {
 			hasValue = true
 		}
 		flag := flags.Lookup(name)
-		if flag != nil && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+		if flag != nil && !strings.HasPrefix(arg, "--") {
 			normalized[i] = "-" + arg
 		}
 		if flag != nil && flag.NoOptDefVal == "" && !hasValue {
@@ -293,19 +290,70 @@ func rejectUnknownKeys(k *koanf.Koanf, allowed map[string]struct{}) error {
 	return nil
 }
 
-func applyCollectionFlags(k *koanf.Koanf, flags *pflag.FlagSet) error {
-	tcpFlag := flags.Lookup("tcp-port-forwarding")
-	udpFlag := flags.Lookup("udp-port-forwarding")
-	if tcpFlag.Changed || udpFlag.Changed {
+func isCollectionEnvKey(key string) bool {
+	for _, spec := range collectionSpecs {
+		if string(spec.Key) == key {
+			return true
+		}
+	}
+	return false
+}
+
+func configKeyForFlag(name string) (string, bool) {
+	switch name {
+	case "config", "version", "auth-info", "trust-device", "untrust-device":
+		return "", false
+	case "server":
+		return "server_address", true
+	case "port":
+		return "server_port", true
+	}
+	for _, spec := range collectionSpecs {
+		if spec.FlagName == name {
+			return "", false
+		}
+	}
+	return strings.ReplaceAll(name, "-", "_"), true
+}
+
+type collectionValue struct {
+	Value string
+	Set   bool
+}
+
+type collectionValues map[collectionKey]collectionValue
+
+func collectionValuesFromEnvironment(environ []string) collectionValues {
+	values := make(collectionValues, len(collectionSpecs))
+	for _, spec := range collectionSpecs {
+		value, set := lookupEnvironment(environ, envPrefix+spec.EnvName)
+		values[spec.Key] = collectionValue{Value: value, Set: set}
+	}
+	return values
+}
+
+func collectionValuesFromFlags(flags *pflag.FlagSet) collectionValues {
+	values := make(collectionValues, len(collectionSpecs))
+	for _, spec := range collectionSpecs {
+		flag := flags.Lookup(spec.FlagName)
+		values[spec.Key] = collectionValue{Value: flag.Value.String(), Set: flag.Changed}
+	}
+	return values
+}
+
+func applyCollectionValues(k *koanf.Koanf, values collectionValues) error {
+	tcp := values[collectionTCPPortForwarding]
+	udp := values[collectionUDPPortForwarding]
+	if tcp.Set || udp.Set {
 		var entries []configs.SinglePortForwarding
 		for _, item := range []struct {
-			flag    *pflag.Flag
+			value   collectionValue
 			network string
 		}{
-			{tcpFlag, "tcp"},
-			{udpFlag, "udp"},
+			{tcp, "tcp"},
+			{udp, "udp"},
 		} {
-			parsed, err := parsePortForwarding(item.network, item.flag.Value.String())
+			parsed, err := parsePortForwarding(item.network, item.value.Value)
 			if err != nil {
 				return err
 			}
@@ -316,8 +364,9 @@ func applyCollectionFlags(k *koanf.Koanf, flags *pflag.FlagSet) error {
 		}
 	}
 
-	if flag := flags.Lookup("custom-dns"); flag.Changed {
-		entries, err := parseCustomDNS(flag.Value.String())
+	customDNS := values[collectionCustomDNS]
+	if customDNS.Set {
+		entries, err := parseCustomDNS(customDNS.Value)
 		if err != nil {
 			return err
 		}
@@ -326,11 +375,9 @@ func applyCollectionFlags(k *koanf.Koanf, flags *pflag.FlagSet) error {
 		}
 	}
 
-	if flag := flags.Lookup("custom-proxy-domain"); flag.Changed {
-		entries, err := parseProxyDomains(flag.Value.String())
-		if err != nil {
-			return err
-		}
+	proxyDomains := values[collectionProxyDomain]
+	if proxyDomains.Set {
+		entries := parseProxyDomains(proxyDomains.Value)
 		if err := k.Set("custom_proxy_domain", entries); err != nil {
 			return err
 		}
@@ -372,17 +419,11 @@ func parseCustomDNS(value string) ([]configs.SingleCustomDNS, error) {
 	return entries, nil
 }
 
-func parseProxyDomains(value string) ([]string, error) {
+func parseProxyDomains(value string) []string {
 	if value == "" {
-		return nil, nil
+		return nil
 	}
-	domains := strings.Split(value, ",")
-	for _, domain := range domains {
-		if !domainPattern.MatchString(domain) {
-			return nil, fmt.Errorf("ZJU Connect: %s is not a valid domain", domain)
-		}
-	}
-	return domains, nil
+	return strings.Split(value, ",")
 }
 
 func normalizeConfig(cfg *configs.Config) {
@@ -431,22 +472,24 @@ func validateConfig(cfg configs.Config) error {
 }
 
 func validateConnectConfig(cfg configs.Config) error {
-	missing := cfg.ServerAddress == ""
-	if !missing && cfg.Protocol == "easyconnect" {
-		missing = (cfg.Username == "" || cfg.Password == "") && cfg.TwfID == ""
-	}
-	if !missing && cfg.Protocol == "atrust" {
-		switch cfg.AuthType {
-		case "auth/psw":
-			missing = cfg.Username == "" || cfg.Password == ""
-		case "auth/smsCheckCode":
-			missing = cfg.Phone == ""
+	if cfg.Protocol == "easyconnect" {
+		if (cfg.Username == "" || cfg.Password == "") && cfg.TwfID == "" {
+			return errors.New("ZJU Connect: missing required arguments")
 		}
-		if missing {
-			missing = cfg.SID == "" || cfg.DeviceID == "" || cfg.ResourceFile == ""
-		}
+		return nil
 	}
-	if missing {
+
+	var primaryCredentialsPresent bool
+	switch cfg.AuthType {
+	case "auth/psw":
+		primaryCredentialsPresent = cfg.Username != "" && cfg.Password != ""
+	case "auth/smsCheckCode":
+		primaryCredentialsPresent = cfg.Phone != ""
+	default:
+		return nil
+	}
+	debugCredentialsPresent := cfg.SID != "" && cfg.DeviceID != "" && cfg.ResourceFile != ""
+	if !primaryCredentialsPresent && !debugCredentialsPresent {
 		return errors.New("ZJU Connect: missing required arguments")
 	}
 	return nil
@@ -522,14 +565,4 @@ func initialize(args []string) int {
 		return 1
 	}
 	return -1
-}
-
-func flagBool(flags *pflag.FlagSet, name string) bool {
-	value, _ := flags.GetBool(name)
-	return value
-}
-
-func flagString(flags *pflag.FlagSet, name string) string {
-	value, _ := flags.GetString(name)
-	return value
 }
