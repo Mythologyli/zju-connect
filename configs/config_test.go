@@ -1,23 +1,19 @@
 package configs
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/BurntSushi/toml"
-)
-
-func TestConfigTOMLDebugFiles(t *testing.T) {
-	var config ConfigTOML
-	if _, err := toml.Decode("debug_pcap_file = \"capture.pcap\"\ndebug_tls_log_file = \"tls-keys.log\"\nlocal_dns_server = \"223.5.5.5\"\n", &config); err != nil {
-		t.Fatal(err)
+func TestDefault(t *testing.T) {
+	cfg := Default()
+	if cfg.Protocol != "easyconnect" {
+		t.Fatalf("Protocol = %q, want easyconnect", cfg.Protocol)
 	}
-	if config.DebugPCAPFile == nil || *config.DebugPCAPFile != "capture.pcap" {
-		t.Fatalf("DebugPCAPFile = %v, want capture.pcap", config.DebugPCAPFile)
+	if cfg.ServerAddress != "" {
+		t.Fatalf("ServerAddress = %q, want derived default", cfg.ServerAddress)
 	}
-	if config.DebugTLSLogFile == nil || *config.DebugTLSLogFile != "tls-keys.log" {
-		t.Fatalf("DebugTLSLogFile = %v, want tls-keys.log", config.DebugTLSLogFile)
+	if cfg.ServerPort != 443 {
+		t.Fatalf("ServerPort = %d, want 443", cfg.ServerPort)
 	}
-	if config.LocalDNSServer == nil || *config.LocalDNSServer != "223.5.5.5" {
-		t.Fatalf("LocalDNSServer = %v, want 223.5.5.5", config.LocalDNSServer)
+	if cfg.SocksBind != ":1080" || cfg.HTTPBind != ":1081" {
+		t.Fatalf("proxy defaults = %q, %q", cfg.SocksBind, cfg.HTTPBind)
 	}
 }

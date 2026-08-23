@@ -36,6 +36,10 @@ import (
 var conf configs.Config
 
 func main() {
+	if exitCode := initialize(os.Args[1:]); exitCode >= 0 {
+		os.Exit(exitCode)
+	}
+
 	log.Init()
 
 	log.Println("Start ZJU Connect " + zjuConnectVersionString())

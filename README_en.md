@@ -107,11 +107,11 @@
 
 + `username`: Network account. For example: student ID
 
-+ `password`: Network account password
++ `password`: Network account password. (Sensitive information is recommended to be provided via env `ZJU_CONNECT_PASSWORD`)
 
 + `graph-code-file`: Graphic captcha file path, default is empty. In aTrust mode, if set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 
-+ `totp-secret`: TOTP secret, can be used to automatically complete TOTP verification. If the server doesn't require TOTP or you want to manually enter the code, leave blank
++ `totp-secret`: TOTP secret, can be used to automatically complete TOTP verification. If the server doesn't require TOTP or you want to manually enter the code, leave blank. (Sensitive information is recommended to be provided via env `ZJU_CONNECT_TOTP_SECRET`)
 
 + `disable-zju-dns`: Disable remote DNS and use local DNS instead, generally no need to add this argument
 
@@ -171,13 +171,17 @@
 
 + `proxy-all`: Whether to proxy all traffic, generally no need to add this argument
 
-+ `config`: Specify the configuration file, the content refers to `config.toml.example`. Other parameters are ignored when the configuration file is enabled
++ `config`: Specify the configuration file, referring to `config.toml.example`
+
+Configuration sources are merged with the precedence “built-in defaults < TOML file < environment variables < command-line flags”. Only explicitly supplied command-line flags override other sources; for example, `-tun-mode=false` disables a value enabled by the file or environment.
+
+Every configuration key can be set with an uppercase environment variable prefixed by `ZJU_CONNECT_`. For example, `server_address` maps to `ZJU_CONNECT_SERVER_ADDRESS`, and `tun_mode` maps to `ZJU_CONNECT_TUN_MODE`. `ZJU_CONNECT_PORT_FORWARDING`, `ZJU_CONNECT_CUSTOM_DNS`, and `ZJU_CONNECT_CUSTOM_PROXY_DOMAIN` use JSON array values.
 
 #### EasyConnect Related Arguments
 
 + `cert-file`: p12 certificate file path, if the server requires certificate verification, this parameter needs to be configured
 
-+ `cert-password`: Certificate password
++ `cert-password`: Certificate password. (Sensitive information is recommended to be provided via env `ZJU_CONNECT_CERT_PASSWORD`)
 
 + `skip-domain-resource`: Do not use the domain resource provided by the server for split tunneling, generally no need to add this argument
 

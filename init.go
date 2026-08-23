@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -11,15 +10,33 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/knadh/koanf/parsers/toml/v2"
+	"github.com/knadh/koanf/providers/env/v2"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/koanf/providers/structs"
+	"github.com/knadh/koanf/v2"
 	"github.com/mythologyli/zju-connect/client/atrust"
 	"github.com/mythologyli/zju-connect/configs"
+	"github.com/spf13/pflag"
 )
+
+const envPrefix = "ZJU_CONNECT_"
 
 var (
 	zjuConnectVersion = "dev"
 	CommitID          string
+	domainPattern     = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
 )
+
+type startupOptions struct {
+	Config        configs.Config
+	ShowVersion   bool
+	AuthInfo      bool
+	TrustDevice   bool
+	UntrustDevice bool
+	ConfigFile    string
+}
 
 func zjuConnectVersionString() string {
 	if CommitID != "" {
@@ -28,341 +45,491 @@ func zjuConnectVersionString() string {
 	return zjuConnectVersion
 }
 
-func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
-	if valPointer == nil {
-		return defaultVal
-	} else {
-		return *valPointer
-	}
+func newFlagSet(defaults configs.Config) *pflag.FlagSet {
+	flags := pflag.NewFlagSet("zju-connect", pflag.ContinueOnError)
+	flags.String("protocol", defaults.Protocol, "Protocol (easyconnect, atrust)")
+	flags.String("server", defaults.ServerAddress, "EasyConnect/aTrust server address")
+	flags.Int("port", defaults.ServerPort, "EasyConnect/aTrust port address")
+	flags.String("username", defaults.Username, "Your username")
+	flags.String("password", defaults.Password, "Your password")
+	flags.String("totp-secret", defaults.TOTPSecret, "TOTP secret")
+	flags.String("cert-file", defaults.CertFile, "Client certificate p12 file path for certificate login")
+	flags.String("cert-password", defaults.CertPassword, "Client certificate password")
+	flags.Bool("disable-server-config", defaults.DisableServerConfig, "Don't parse server config")
+	flags.Bool("skip-domain-resource", defaults.SkipDomainResource, "Don't use server domain resource to decide whether to use RVPN")
+	flags.Bool("disable-zju-config", defaults.DisableZJUConfig, "Don't use ZJU config (for easyconnect protocol only)")
+	flags.Bool("disable-zju-dns", defaults.DisableRemoteDNS, "Use local DNS instead of remote DNS")
+	flags.Bool("disable-multi-line", defaults.DisableMultiLine, "Disable multi line auto select")
+	flags.Bool("proxy-all", defaults.ProxyAll, "Proxy all traffic (only for debug usage)")
+	flags.String("socks-bind", defaults.SocksBind, "The address SOCKS5 server listens on")
+	flags.String("socks-user", defaults.SocksUser, "SOCKS5 username")
+	flags.String("socks-passwd", defaults.SocksPasswd, "SOCKS5 password")
+	flags.String("http-bind", defaults.HTTPBind, "The address HTTP server listens on")
+	flags.String("shadowsocks-url", defaults.ShadowsocksURL, "The address Shadowsocks server listens on")
+	flags.String("dial-direct-proxy", defaults.DialDirectProxy, "Dial with proxy when a connection doesn't match RVPN rules")
+	flags.Bool("tcp-tunnel-mode", defaults.TCPTunnelMode, "Use TCP tunnel only and disable L3 tunnel")
+	flags.Bool("tun-mode", defaults.TUNMode, "Enable TUN mode (experimental)")
+	flags.Bool("add-route", defaults.AddRoute, "Add route from rules for TUN interface")
+	flags.Uint64("dns-ttl", defaults.DNSTTL, "DNS record time to live in seconds")
+	flags.Bool("debug-dump", defaults.DebugDump, "Enable traffic debug dump")
+	flags.String("debug-pcap-file", defaults.DebugPCAPFile, "Save reconstructed VPN traffic to a PCAP file")
+	flags.String("debug-tls-log-file", defaults.DebugTLSLogFile, "Save TLS session secrets in NSS key log format")
+	flags.Bool("disable-keep-alive", defaults.DisableKeepAlive, "Disable keep alive")
+	flags.String("keep-alive-url", defaults.KeepAliveURL, "Keep alive URL")
+	flags.String("zju-dns-server", defaults.RemoteDNSServer, "Remote DNS server address")
+	flags.String("secondary-dns-server", defaults.SecondaryDNSServer, "Secondary DNS server address")
+	flags.String("dns-server-bind", defaults.DNSServerBind, "The address DNS server listens on")
+	flags.String("local-dns-server", defaults.LocalDNSServer, "DNS server used to resolve the VPN server hostname")
+	flags.Bool("dns-hijack", defaults.DNSHijack, "Hijack DNS queries to ZJU Connect")
+	flags.Bool("fake-ip", defaults.FakeIP, "Enable Fake IP for DNS hijack")
+	flags.String("graph-code-file", defaults.GraphCodeFile, "Graph Check Code File")
+	flags.String("bind-interface", defaults.BindInterface, "Bind VPN underlay connections to this network interface")
+	flags.Bool("auto-detect-interface", defaults.AutoDetectInterface, "Automatically detect and bind the VPN underlay interface")
+	flags.String("twf-id", defaults.TwfID, "Login using captured twfID")
+	flags.String("auth-type", defaults.AuthType, "aTrust authentication type")
+	flags.String("phone", defaults.Phone, "Phone number with country code for aTrust SMS login")
+	flags.String("login-domain", defaults.LoginDomain, "aTrust login domain")
+	flags.String("client-data-file", defaults.ClientDataFile, "aTrust Client Data File")
+	flags.String("cas-ticket", defaults.CasTicket, "aTrust CAS Ticket")
+	flags.String("oauth2-code", defaults.OAuth2Code, "aTrust OAuth2 code")
+	flags.String("sid", defaults.SID, "aTrust SID")
+	flags.String("device-id", defaults.DeviceID, "aTrust Device ID")
+	flags.String("sign-key", defaults.SignKey, "aTrust Sign Key")
+	flags.String("resource-file", defaults.ResourceFile, "aTrust Resource File")
+	flags.Int("update-best-nodes-interval", defaults.UpdateBestNodesInterval, "Interval to update best nodes in seconds")
+
+	flags.String("tcp-port-forwarding", "", "TCP port forwarding")
+	flags.String("udp-port-forwarding", "", "UDP port forwarding")
+	flags.String("custom-dns", "", "Custom DNS lookup entries")
+	flags.String("custom-proxy-domain", "", "Domains which force use of the RVPN proxy")
+
+	flags.String("config", "", "Config file (can also be set with ZJU_CONNECT_CONFIG)")
+	flags.Bool("version", false, "Show version")
+	flags.Bool("auth-info", false, "Fetch aTrust authentication information, but do not login")
+	flags.Bool("trust-device", false, "Trust the current device for aTrust, but do not connect")
+	flags.Bool("untrust-device", false, "Untrust the current device for aTrust, but do not connect")
+	return flags
 }
 
-func parseTOMLConfig(configFile string, conf *configs.Config) error {
-	var confTOML configs.ConfigTOML
-
-	_, err := toml.DecodeFile(configFile, &confTOML)
-	if err != nil {
-		return errors.New("ZJU Connect: error parsing the config file")
+func loadStartupOptions(args []string, environ func() []string) (startupOptions, *pflag.FlagSet, error) {
+	defaults := configs.Default()
+	flags := newFlagSet(defaults)
+	if err := flags.Parse(normalizeLegacyArgs(flags, args)); err != nil {
+		return startupOptions{}, flags, err
 	}
 
-	conf.Protocol = getTOMLVal(confTOML.Protocol, "easyconnect")
-	conf.ServerAddress = getTOMLVal(confTOML.ServerAddress, "rvpn.zju.edu.cn")
-	conf.ServerPort = getTOMLVal(confTOML.ServerPort, 443)
-	conf.Username = getTOMLVal(confTOML.Username, "")
-	conf.Password = getTOMLVal(confTOML.Password, "")
-	conf.TOTPSecret = getTOMLVal(confTOML.TOTPSecret, "")
-	conf.CertFile = getTOMLVal(confTOML.CertFile, "")
-	conf.CertPassword = getTOMLVal(confTOML.CertPassword, "")
-	conf.DisableServerConfig = getTOMLVal(confTOML.DisableServerConfig, false)
-	conf.SkipDomainResource = getTOMLVal(confTOML.SkipDomainResource, false)
-	conf.DisableZJUConfig = getTOMLVal(confTOML.DisableZJUConfig, false)
-	conf.DisableRemoteDNS = getTOMLVal(confTOML.DisableRemoteDNS, false)
-	conf.DisableMultiLine = getTOMLVal(confTOML.DisableMultiLine, false)
-	conf.ProxyAll = getTOMLVal(confTOML.ProxyAll, false)
-	conf.SocksBind = getTOMLVal(confTOML.SocksBind, ":1080")
-	conf.SocksUser = getTOMLVal(confTOML.SocksUser, "")
-	conf.SocksPasswd = getTOMLVal(confTOML.SocksPasswd, "")
-	conf.HTTPBind = getTOMLVal(confTOML.HTTPBind, ":1081")
-	conf.ShadowsocksURL = getTOMLVal(confTOML.ShadowsocksURL, "")
-	conf.DialDirectProxy = getTOMLVal(confTOML.DialDirectProxy, "")
-	conf.TCPTunnelMode = getTOMLVal(confTOML.TCPTunnelMode, false)
-	conf.TUNMode = getTOMLVal(confTOML.TUNMode, false)
-	conf.AddRoute = getTOMLVal(confTOML.AddRoute, false)
-	conf.DNSTTL = getTOMLVal(confTOML.DNSTTL, uint64(3600))
-	conf.DebugDump = getTOMLVal(confTOML.DebugDump, false)
-	conf.DebugPCAPFile = getTOMLVal(confTOML.DebugPCAPFile, "")
-	conf.DebugTLSLogFile = getTOMLVal(confTOML.DebugTLSLogFile, "")
-	conf.DisableKeepAlive = getTOMLVal(confTOML.DisableKeepAlive, false)
-	conf.KeepAliveURL = getTOMLVal(confTOML.KeepAliveURL, "")
-	conf.RemoteDNSServer = getTOMLVal(confTOML.RemoteDNSServer, "auto")
-	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "auto")
-	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
-	conf.LocalDNSServer = getTOMLVal(confTOML.LocalDNSServer, "")
-	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
-	conf.FakeIP = getTOMLVal(confTOML.FakeIP, false)
-	conf.GraphCodeFile = getTOMLVal(confTOML.GraphCodeFile, "")
-	conf.BindInterface = getTOMLVal(confTOML.BindInterface, "")
-	conf.AutoDetectInterface = getTOMLVal(confTOML.AutoDetectInterface, false)
-	conf.AuthType = getTOMLVal(confTOML.AuthType, "")
-	conf.Phone = getTOMLVal(confTOML.Phone, "")
-	conf.LoginDomain = getTOMLVal(confTOML.LoginDomain, "Radius")
-	conf.ClientDataFile = getTOMLVal(confTOML.ClientDataFile, "")
-	conf.CasTicket = getTOMLVal(confTOML.CasTicket, "")
-	conf.OAuth2Code = getTOMLVal(confTOML.OAuth2Code, "")
-	conf.SID = getTOMLVal(confTOML.SID, "")
-	conf.DeviceID = getTOMLVal(confTOML.DeviceID, "")
-	conf.SignKey = getTOMLVal(confTOML.SignKey, "")
-	conf.ResourceFile = getTOMLVal(confTOML.ResourceFile, "")
-	conf.UpdateBestNodesInterval = getTOMLVal(confTOML.UpdateBestNodesInterval, 300)
-
-	for _, singlePortForwarding := range confTOML.PortForwarding {
-		if singlePortForwarding.NetworkType == nil {
-			return errors.New("ZJU Connect: network type is not set")
-		}
-
-		if singlePortForwarding.BindAddress == nil {
-			return errors.New("ZJU Connect: bind address is not set")
-		}
-
-		if singlePortForwarding.RemoteAddress == nil {
-			return errors.New("ZJU Connect: remote address is not set")
-		}
-
-		conf.PortForwardingList = append(conf.PortForwardingList, configs.SinglePortForwarding{
-			NetworkType:   *singlePortForwarding.NetworkType,
-			BindAddress:   *singlePortForwarding.BindAddress,
-			RemoteAddress: *singlePortForwarding.RemoteAddress,
-		})
+	options := startupOptions{
+		ShowVersion:   flagBool(flags, "version"),
+		AuthInfo:      flagBool(flags, "auth-info"),
+		TrustDevice:   flagBool(flags, "trust-device"),
+		UntrustDevice: flagBool(flags, "untrust-device"),
+		ConfigFile:    flagString(flags, "config"),
+	}
+	if options.ShowVersion {
+		normalizeConfig(&defaults)
+		options.Config = defaults
+		return options, flags, nil
 	}
 
-	for _, singleCustomDns := range confTOML.CustomDNS {
-		if singleCustomDns.HostName == nil {
-			return errors.New("ZJU Connect: host name is not set")
+	envValues := environ()
+	if !flags.Lookup("config").Changed {
+		if path, ok := lookupEnvironment(envValues, envPrefix+"CONFIG"); ok {
+			options.ConfigFile = path
 		}
-
-		if singleCustomDns.IP == nil {
-			fmt.Println("ZJU Connect: IP is not set")
-			return errors.New("ZJU Connect: IP is not set")
-		}
-
-		conf.CustomDNSList = append(conf.CustomDNSList, configs.SingleCustomDNS{
-			HostName: *singleCustomDns.HostName,
-			IP:       *singleCustomDns.IP,
-		})
 	}
 
-	for _, singleCustomProxyDomain := range confTOML.CustomProxyDomain {
-		var domainRegex = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
-		if !domainRegex.MatchString(singleCustomProxyDomain) {
-			fmt.Printf("ZJU Connect: %s is not a valid domain\n", singleCustomProxyDomain)
-			return fmt.Errorf("ZJU Connect: %s is not a valid domain", singleCustomProxyDomain)
-		}
-		conf.CustomProxyDomain = append(conf.CustomProxyDomain, singleCustomProxyDomain)
+	k := koanf.New(".")
+	if err := k.Load(structs.Provider(defaults, "koanf"), nil); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("load config defaults: %w", err)
 	}
 
+	allowedKeys := make(map[string]struct{}, len(k.Keys()))
+	for _, key := range k.Keys() {
+		allowedKeys[key] = struct{}{}
+	}
+
+	if options.ConfigFile != "" {
+		if err := k.Load(file.Provider(options.ConfigFile), toml.Parser()); err != nil {
+			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", options.ConfigFile, err)
+		}
+		if err := rejectUnknownKeys(k, allowedKeys); err != nil {
+			return startupOptions{}, flags, fmt.Errorf("parse config %q: %w", options.ConfigFile, err)
+		}
+	}
+
+	var envErr error
+	envProvider := env.Provider(".", env.Opt{
+		Prefix:      envPrefix,
+		EnvironFunc: func() []string { return envValues },
+		TransformFunc: func(key, value string) (string, any) {
+			key = strings.ToLower(strings.TrimPrefix(key, envPrefix))
+			if key == "config" {
+				return "", nil
+			}
+			switch key {
+			case "port_forwarding":
+				var entries []configs.SinglePortForwarding
+				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
+					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
+				}
+				return key, entries
+			case "custom_dns":
+				var entries []configs.SingleCustomDNS
+				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
+					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
+				}
+				return key, entries
+			case "custom_proxy_domain":
+				var entries []string
+				if err := json.Unmarshal([]byte(value), &entries); err != nil && envErr == nil {
+					envErr = fmt.Errorf("%s%s: %w", envPrefix, strings.ToUpper(key), err)
+				}
+				return key, entries
+			default:
+				return key, value
+			}
+		},
+	})
+	if err := k.Load(envProvider, nil); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("load environment: %w", err)
+	}
+	if envErr != nil {
+		return startupOptions{}, flags, fmt.Errorf("parse environment configuration: %w", envErr)
+	}
+	if err := rejectUnknownKeys(k, allowedKeys); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("load environment: %w", err)
+	}
+
+	cliProvider := posflag.ProviderWithFlag(flags, ".", k, func(flag *pflag.Flag) (string, any) {
+		switch flag.Name {
+		case "config", "version", "auth-info", "trust-device", "untrust-device",
+			"tcp-port-forwarding", "udp-port-forwarding", "custom-dns", "custom-proxy-domain":
+			return "", nil
+		case "server":
+			return "server_address", posflag.FlagVal(flags, flag)
+		case "port":
+			return "server_port", posflag.FlagVal(flags, flag)
+		default:
+			return strings.ReplaceAll(flag.Name, "-", "_"), posflag.FlagVal(flags, flag)
+		}
+	})
+	if err := k.Load(cliProvider, nil); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("load command line: %w", err)
+	}
+
+	if err := applyCollectionFlags(k, flags); err != nil {
+		return startupOptions{}, flags, err
+	}
+
+	var cfg configs.Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return startupOptions{}, flags, fmt.Errorf("decode merged configuration: %w", err)
+	}
+	normalizeConfig(&cfg)
+	if err := validateConfig(cfg); err != nil {
+		return startupOptions{}, flags, err
+	}
+
+	options.Config = cfg
+	return options, flags, nil
+}
+
+func normalizeLegacyArgs(flags *pflag.FlagSet, args []string) []string {
+	normalized := append([]string(nil), args...)
+	expectValue := false
+	stopParsing := false
+	for i, arg := range normalized {
+		if stopParsing {
+			continue
+		}
+		if expectValue {
+			expectValue = false
+			continue
+		}
+		if arg == "--" {
+			stopParsing = true
+			continue
+		}
+		if arg == "-h" {
+			normalized[i] = "--help"
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		name := strings.TrimLeft(arg, "-")
+		hasValue := false
+		if index := strings.IndexByte(name, '='); index >= 0 {
+			name = name[:index]
+			hasValue = true
+		}
+		flag := flags.Lookup(name)
+		if flag != nil && strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") {
+			normalized[i] = "-" + arg
+		}
+		if flag != nil && flag.NoOptDefVal == "" && !hasValue {
+			expectValue = true
+		}
+	}
+	return normalized
+}
+
+func lookupEnvironment(environ []string, name string) (string, bool) {
+	prefix := name + "="
+	for _, item := range environ {
+		if strings.HasPrefix(item, prefix) {
+			return strings.TrimPrefix(item, prefix), true
+		}
+	}
+	return "", false
+}
+
+func rejectUnknownKeys(k *koanf.Koanf, allowed map[string]struct{}) error {
+	for _, key := range k.Keys() {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("unknown configuration key %q", key)
+		}
+	}
 	return nil
 }
 
-func init() {
-	configFile, tcpPortForwarding, udpPortForwarding, customDns, customProxyDomain := "", "", "", "", ""
-	showVersion := false
-	atrustAuthInfo := false
-	atrustTrustDevice := false
-	atrustUntrustDevice := false
-
-	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
-	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
-	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect/aTrust port address")
-	flag.StringVar(&conf.Username, "username", "", "Your username")
-	flag.StringVar(&conf.Password, "password", "", "Your password")
-	flag.StringVar(&conf.TOTPSecret, "totp-secret", "", "TOTP secret")
-	flag.StringVar(&conf.CertFile, "cert-file", "", "Client certificate p12 file path for certificate login")
-	flag.StringVar(&conf.CertPassword, "cert-password", "", "Client certificate password")
-	flag.BoolVar(&conf.DisableServerConfig, "disable-server-config", false, "Don't parse server config")
-	flag.BoolVar(&conf.SkipDomainResource, "skip-domain-resource", false, "Don't use server domain resource to decide whether to use RVPN.")
-	flag.BoolVar(&conf.DisableZJUConfig, "disable-zju-config", false, "Don't use ZJU config (for easyconnect protocol only)")
-	flag.BoolVar(&conf.DisableRemoteDNS, "disable-zju-dns", false, "Use local DNS instead of remote DNS") // TODO: rename to disable-remote-dns
-	flag.BoolVar(&conf.DisableMultiLine, "disable-multi-line", false, "Disable multi line auto select")
-	flag.BoolVar(&conf.ProxyAll, "proxy-all", false, "Proxy all traffic (only for debug usage)")
-	flag.StringVar(&conf.SocksBind, "socks-bind", ":1080", "The address SOCKS5 server listens on (e.g. 127.0.0.1:1080)")
-	flag.StringVar(&conf.SocksUser, "socks-user", "", "SOCKS5 username, default is don't use auth")
-	flag.StringVar(&conf.SocksPasswd, "socks-passwd", "", "SOCKS5 password, default is don't use auth")
-	flag.StringVar(&conf.HTTPBind, "http-bind", ":1081", "The address HTTP server listens on (e.g. 127.0.0.1:1081)")
-	flag.StringVar(&conf.ShadowsocksURL, "shadowsocks-url", "", "The address Shadowsocks server listens on (e.g. ss://method:password@host:port)")
-	flag.StringVar(&conf.DialDirectProxy, "dial-direct-proxy", "", "Dial with proxy when the connection doesn't match RVPN rules (e.g. http://127.0.0.1:7890)")
-	flag.BoolVar(&conf.TCPTunnelMode, "tcp-tunnel-mode", false, "Use TCP tunnel only and disable L3 tunnel, only works with atrust protocol")
-	flag.BoolVar(&conf.TUNMode, "tun-mode", false, "Enable TUN mode (experimental)")
-	flag.BoolVar(&conf.AddRoute, "add-route", false, "Add route from rules for TUN interface")
-	flag.Uint64Var(&conf.DNSTTL, "dns-ttl", 3600, "DNS record time to live, unit is second")
-	flag.BoolVar(&conf.DebugDump, "debug-dump", false, "Enable traffic debug dump (only for debug usage)")
-	flag.StringVar(&conf.DebugPCAPFile, "debug-pcap-file", "", "Save reconstructed VPN underlay TCP traffic to a PCAP file (debug only)")
-	flag.StringVar(&conf.DebugTLSLogFile, "debug-tls-log-file", "", "Save TLS session secrets in NSS key log format (debug only)")
-	flag.BoolVar(&conf.DisableKeepAlive, "disable-keep-alive", false, "Disable keep alive")
-	flag.StringVar(&conf.KeepAliveURL, "keep-alive-url", "", "Keep alive URL, default is empty (use DNS keep alive)")
-	flag.StringVar(&conf.RemoteDNSServer, "zju-dns-server", "auto", "Remote DNS server address. Set to 'auto' to use remote DNS server provided by server") // TODO: rename to remote-dns-server
-	flag.StringVar(&conf.SecondaryDNSServer, "secondary-dns-server", "auto", "Secondary DNS server address. Use auto for the server policy value")
-	flag.StringVar(&conf.DNSServerBind, "dns-server-bind", "", "The address DNS server listens on (e.g. 127.0.0.1:53)")
-	flag.StringVar(&conf.LocalDNSServer, "local-dns-server", "", "DNS server used to resolve the VPN server hostname (IP or IP:port)")
-	flag.BoolVar(&conf.DNSHijack, "dns-hijack", false, "Hijack all dns query to ZJU Connect. False by default.")
-	flag.BoolVar(&conf.FakeIP, "fake-ip", false, "Enable Fake IP for DNS hijack")
-	flag.StringVar(&conf.GraphCodeFile, "graph-code-file", "", "Graph Check Code File")
-	flag.StringVar(&conf.BindInterface, "bind-interface", "", "Bind VPN underlay connections to this network interface (takes precedence over auto detection)")
-	flag.BoolVar(&conf.AutoDetectInterface, "auto-detect-interface", false, "Automatically detect and bind the VPN underlay interface")
-	flag.StringVar(&conf.TwfID, "twf-id", "", "Login using twfID captured (mostly for debug usage)")
-	flag.StringVar(&conf.AuthType, "auth-type", "", "aTrust authentication type (auth/psw, auth/cas, auth/httpsOauth2, auth/smsCheckCode)")
-	flag.StringVar(&conf.Phone, "phone", "", "Phone number with country code for aTrust SMS check code login (e.g. 852-114514)")
-	flag.StringVar(&conf.LoginDomain, "login-domain", "Radius", "aTrust login domain")
-	flag.StringVar(&conf.ClientDataFile, "client-data-file", "", "aTrust Client Data File")
-	flag.StringVar(&conf.CasTicket, "cas-ticket", "", "aTrust CAS Ticket (optional, interactive mode if not set)")
-	flag.StringVar(&conf.OAuth2Code, "oauth2-code", "", "aTrust OAuth2 code (optional, interactive mode if not set)")
-	flag.StringVar(&conf.SID, "sid", "", "aTrust SID (mostly for debug usage)")
-	flag.StringVar(&conf.DeviceID, "device-id", "", "aTrust Device ID (mostly for debug usage)")
-	flag.StringVar(&conf.SignKey, "sign-key", "", "aTrust Sign Key (mostly for debug usage)")
-	flag.StringVar(&conf.ResourceFile, "resource-file", "", "aTrust Resource File (mostly for debug usage)")
-	flag.IntVar(&conf.UpdateBestNodesInterval, "update-best-nodes-interval", 300, "Interval to update best nodes in seconds. Set to 0 to disable")
-	flag.StringVar(&tcpPortForwarding, "tcp-port-forwarding", "", "TCP port forwarding (e.g. 0.0.0.0:9898-10.10.98.98:80,127.0.0.1:9899-10.10.98.98:80)")
-	flag.StringVar(&udpPortForwarding, "udp-port-forwarding", "", "UDP port forwarding (e.g. 127.0.0.1:53-10.10.0.21:53)")
-	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
-	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
-	flag.StringVar(&configFile, "config", "", "Config file")
-	flag.BoolVar(&showVersion, "version", false, "Show version")
-	flag.BoolVar(&atrustAuthInfo, "auth-info", false, "Fetch aTrust authentication information, but not login")
-	flag.BoolVar(&atrustTrustDevice, "trust-device", false, "Trust the current device for aTrust with client data, but not connect")
-	flag.BoolVar(&atrustUntrustDevice, "untrust-device", false, "Untrust the current device for aTrust with client data, but not connect")
-
-	flag.Parse()
-
-	if showVersion {
-		fmt.Printf("ZJU Connect %s\n", zjuConnectVersionString())
-		os.Exit(0)
+func applyCollectionFlags(k *koanf.Koanf, flags *pflag.FlagSet) error {
+	tcpFlag := flags.Lookup("tcp-port-forwarding")
+	udpFlag := flags.Lookup("udp-port-forwarding")
+	if tcpFlag.Changed || udpFlag.Changed {
+		var entries []configs.SinglePortForwarding
+		for _, item := range []struct {
+			flag    *pflag.Flag
+			network string
+		}{
+			{tcpFlag, "tcp"},
+			{udpFlag, "udp"},
+		} {
+			parsed, err := parsePortForwarding(item.network, item.flag.Value.String())
+			if err != nil {
+				return err
+			}
+			entries = append(entries, parsed...)
+		}
+		if err := k.Set("port_forwarding", entries); err != nil {
+			return err
+		}
 	}
 
-	if atrustAuthInfo {
+	if flag := flags.Lookup("custom-dns"); flag.Changed {
+		entries, err := parseCustomDNS(flag.Value.String())
+		if err != nil {
+			return err
+		}
+		if err := k.Set("custom_dns", entries); err != nil {
+			return err
+		}
+	}
+
+	if flag := flags.Lookup("custom-proxy-domain"); flag.Changed {
+		entries, err := parseProxyDomains(flag.Value.String())
+		if err != nil {
+			return err
+		}
+		if err := k.Set("custom_proxy_domain", entries); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parsePortForwarding(network, value string) ([]configs.SinglePortForwarding, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var entries []configs.SinglePortForwarding
+	for _, forwarding := range strings.Split(value, ",") {
+		addresses := strings.SplitN(forwarding, "-", 2)
+		if len(addresses) != 2 || addresses[0] == "" || addresses[1] == "" {
+			return nil, fmt.Errorf("ZJU Connect: wrong %s port forwarding format", network)
+		}
+		entries = append(entries, configs.SinglePortForwarding{
+			NetworkType:   network,
+			BindAddress:   addresses[0],
+			RemoteAddress: addresses[1],
+		})
+	}
+	return entries, nil
+}
+
+func parseCustomDNS(value string) ([]configs.SingleCustomDNS, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var entries []configs.SingleCustomDNS
+	for _, entry := range strings.Split(value, ",") {
+		parts := strings.SplitN(entry, ":", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, errors.New("ZJU Connect: wrong custom dns format")
+		}
+		entries = append(entries, configs.SingleCustomDNS{HostName: parts[0], IP: parts[1]})
+	}
+	return entries, nil
+}
+
+func parseProxyDomains(value string) ([]string, error) {
+	if value == "" {
+		return nil, nil
+	}
+	domains := strings.Split(value, ",")
+	for _, domain := range domains {
+		if !domainPattern.MatchString(domain) {
+			return nil, fmt.Errorf("ZJU Connect: %s is not a valid domain", domain)
+		}
+	}
+	return domains, nil
+}
+
+func normalizeConfig(cfg *configs.Config) {
+	if cfg.ServerAddress != "" {
+		return
+	}
+	if cfg.Protocol == "atrust" {
+		cfg.ServerAddress = "vpn.zju.edu.cn"
+	} else {
+		cfg.ServerAddress = "rvpn.zju.edu.cn"
+	}
+}
+
+func validateConfig(cfg configs.Config) error {
+	if cfg.Protocol != "easyconnect" && cfg.Protocol != "atrust" {
+		return fmt.Errorf("unsupported VPN protocol: %s", cfg.Protocol)
+	}
+	if cfg.ServerPort < 1 || cfg.ServerPort > 65535 {
+		return fmt.Errorf("invalid VPN server port: %d", cfg.ServerPort)
+	}
+	for _, forwarding := range cfg.PortForwardingList {
+		if forwarding.NetworkType == "" {
+			return errors.New("ZJU Connect: network type is not set")
+		}
+		if forwarding.BindAddress == "" {
+			return errors.New("ZJU Connect: bind address is not set")
+		}
+		if forwarding.RemoteAddress == "" {
+			return errors.New("ZJU Connect: remote address is not set")
+		}
+	}
+	for _, entry := range cfg.CustomDNSList {
+		if entry.HostName == "" {
+			return errors.New("ZJU Connect: host name is not set")
+		}
+		if entry.IP == "" {
+			return errors.New("ZJU Connect: IP is not set")
+		}
+	}
+	for _, domain := range cfg.CustomProxyDomain {
+		if !domainPattern.MatchString(domain) {
+			return fmt.Errorf("ZJU Connect: %s is not a valid domain", domain)
+		}
+	}
+	return nil
+}
+
+func validateConnectConfig(cfg configs.Config) error {
+	missing := cfg.ServerAddress == ""
+	if !missing && cfg.Protocol == "easyconnect" {
+		missing = (cfg.Username == "" || cfg.Password == "") && cfg.TwfID == ""
+	}
+	if !missing && cfg.Protocol == "atrust" {
+		switch cfg.AuthType {
+		case "auth/psw":
+			missing = cfg.Username == "" || cfg.Password == ""
+		case "auth/smsCheckCode":
+			missing = cfg.Phone == ""
+		}
+		if missing {
+			missing = cfg.SID == "" || cfg.DeviceID == "" || cfg.ResourceFile == ""
+		}
+	}
+	if missing {
+		return errors.New("ZJU Connect: missing required arguments")
+	}
+	return nil
+}
+
+func initialize(args []string) int {
+	options, flags, err := loadStartupOptions(args, os.Environ)
+	if err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	if options.ShowVersion {
+		fmt.Printf("ZJU Connect %s\n", zjuConnectVersionString())
+		return 0
+	}
+
+	conf = options.Config
+	if options.AuthInfo {
 		if conf.Protocol != "atrust" {
 			fmt.Fprintln(os.Stderr, "Auth info is only supported by the atrust protocol")
-			os.Exit(1)
+			return 1
 		}
-		log.SetOutput(io.Discard) // suppress log
+		log.SetOutput(io.Discard)
 		info, err := atrust.GetAuthInfoList(conf.ServerAddress, conf.ServerPort, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Get auth info list error:", err)
-			os.Exit(1)
+			return 1
 		}
 		jsonInfo, err := json.Marshal(info)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error marshaling auth info:", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Println(string(jsonInfo))
-		os.Exit(0)
+		return 0
 	}
 
-	if atrustTrustDevice || atrustUntrustDevice {
+	if options.TrustDevice || options.UntrustDevice {
 		if conf.Protocol != "atrust" {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device is only supported by the atrust protocol")
-			os.Exit(1)
+			return 1
 		}
 		if conf.ClientDataFile == "" {
 			fmt.Fprintln(os.Stderr, "Client data file is required for trust/untrust device")
-			os.Exit(1)
+			return 1
 		}
 		clientData, err := os.ReadFile(conf.ClientDataFile)
 		if err != nil {
 			log.Printf("Read client data file error: %s", err)
-			os.Exit(1)
+			return 1
 		}
-
-		err = atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, atrustTrustDevice, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile)
-		if err != nil {
+		if err := atrust.SetTrusted(conf.ServerAddress, conf.ServerPort, clientData, options.TrustDevice, conf.BindInterface, conf.AutoDetectInterface, conf.LocalDNSServer, conf.DebugTLSLogFile); err != nil {
 			fmt.Fprintln(os.Stderr, "Trust/Untrust device error:", err)
-			os.Exit(1)
+			return 1
 		}
-		if atrustTrustDevice {
+		if options.TrustDevice {
 			log.Println("Device trusted successfully")
 		} else {
 			log.Println("Device untrusted successfully")
 		}
-		os.Exit(0)
+		return 0
 	}
 
-	if configFile != "" {
-		err := parseTOMLConfig(configFile, &conf)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-	} else {
-		if tcpPortForwarding != "" {
-			forwardingStringList := strings.Split(tcpPortForwarding, ",")
-			for _, forwardingString := range forwardingStringList {
-				addressStringList := strings.Split(forwardingString, "-")
-				if len(addressStringList) != 2 {
-					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong tcp port forwarding format")
-					os.Exit(1)
-				}
-
-				conf.PortForwardingList = append(conf.PortForwardingList, configs.SinglePortForwarding{
-					NetworkType:   "tcp",
-					BindAddress:   addressStringList[0],
-					RemoteAddress: addressStringList[1],
-				})
-			}
-		}
-
-		if udpPortForwarding != "" {
-			forwardingStringList := strings.Split(udpPortForwarding, ",")
-			for _, forwardingString := range forwardingStringList {
-				addressStringList := strings.Split(forwardingString, "-")
-				if len(addressStringList) != 2 {
-					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong udp port forwarding format")
-					os.Exit(1)
-				}
-
-				conf.PortForwardingList = append(conf.PortForwardingList, configs.SinglePortForwarding{
-					NetworkType:   "udp",
-					BindAddress:   addressStringList[0],
-					RemoteAddress: addressStringList[1],
-				})
-			}
-		}
-
-		if customDns != "" {
-			dnsList := strings.Split(customDns, ",")
-			for _, dnsString := range dnsList {
-				dnsStringSplit := strings.Split(dnsString, ":")
-				if len(dnsStringSplit) != 2 {
-					fmt.Fprintln(os.Stderr, "ZJU Connect: wrong custom dns format")
-					os.Exit(1)
-				}
-
-				conf.CustomDNSList = append(conf.CustomDNSList, configs.SingleCustomDNS{
-					HostName: dnsStringSplit[0],
-					IP:       dnsStringSplit[1],
-				})
-			}
-		}
-
-		if customProxyDomain != "" {
-			domainList := strings.Split(customProxyDomain, ",")
-			for _, domain := range domainList {
-				var domainRegex = regexp.MustCompile(`^[a-zA-Z\d-]+(\.[a-zA-Z\d-]+)*\.[a-zA-Z]{2,}$`)
-				if !domainRegex.MatchString(domain) {
-					fmt.Fprintf(os.Stderr, "ZJU Connect: %s is not a valid domain\n", domain)
-					os.Exit(1)
-				}
-				conf.CustomProxyDomain = append(conf.CustomProxyDomain, domain)
-			}
-		}
+	if err := validateConnectConfig(conf); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Please see: https://github.com/mythologyli/zju-connect")
+		fmt.Fprintln(os.Stderr, "\nUsage:")
+		flags.PrintDefaults()
+		return 1
 	}
+	return -1
+}
 
-	missing := conf.ServerAddress == ""
-	if !missing && conf.Protocol == "easyconnect" {
-		missing = (conf.Username == "" || conf.Password == "") && conf.TwfID == ""
-	}
-	if !missing && conf.Protocol == "atrust" {
-		switch conf.AuthType {
-		case "auth/psw":
-			missing = conf.Username == "" || conf.Password == ""
-		case "auth/smsCheckCode":
-			missing = conf.Phone == ""
-		}
-		if missing {
-			missing = conf.SID == "" || conf.DeviceID == "" || conf.ResourceFile == ""
-		}
-	}
-	if missing {
-		fmt.Println("ZJU Connect: missing required arguments")
-		fmt.Println("Please see: https://github.com/mythologyli/zju-connect")
-		fmt.Println("\nUsage:")
-		flag.PrintDefaults()
+func flagBool(flags *pflag.FlagSet, name string) bool {
+	value, _ := flags.GetBool(name)
+	return value
+}
 
-		os.Exit(1)
-	}
-
-	if conf.Protocol == "atrust" && conf.ServerAddress == "rvpn.zju.edu.cn" {
-		fmt.Println("ZJU Connect: set default aTrust server address to vpn.zju.edu.cn")
-		conf.ServerAddress = "vpn.zju.edu.cn"
-	} else if conf.Protocol == "easyconnect" && conf.ServerAddress == "vpn.zju.edu.cn" {
-		fmt.Println("ZJU Connect: set default EasyConnect server address to rvpn.zju.edu.cn")
-		conf.ServerAddress = "rvpn.zju.edu.cn"
-	}
+func flagString(flags *pflag.FlagSet, name string) string {
+	value, _ := flags.GetString(name)
+	return value
 }

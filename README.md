@@ -112,11 +112,11 @@
 
 + `username`: 网络账户。例如：学号
 
-+ `password`: 网络账户密码
++ `password`: 网络账户密码（敏感信息建议使用环境变量 `ZJU_CONNECT_PASSWORD` 给定）
 
 + `graph-code-file`: 图形验证码文件路径。默认为空。在 aTrust 模式下，留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
-+ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
++ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填（敏感信息建议使用环境变量 `ZJU_CONNECT_TOTP_SECRET` 给定）
 
 + `disable-zju-dns`: 禁用远端 DNS 改用本地 DNS，一般不需要加此参数
 
@@ -176,13 +176,17 @@
 
 + `proxy-all`: 是否代理所有流量，一般不需要加此参数
 
-+ `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
++ `config`: 指定配置文件，内容参考 `config.toml.example`
+
+配置按“内置默认值 < TOML 配置文件 < 环境变量 < 命令行参数”的优先级合并。只有显式提供的命令行参数会覆盖其他来源，例如 `-tun-mode=false` 可以关闭配置文件或环境变量中启用的选项。
+
+配置项均可使用带 `ZJU_CONNECT_` 前缀的大写环境变量设置，例如 `server_address` 对应 `ZJU_CONNECT_SERVER_ADDRESS`，`tun_mode` 对应 `ZJU_CONNECT_TUN_MODE`。集合项 `ZJU_CONNECT_PORT_FORWARDING`、`ZJU_CONNECT_CUSTOM_DNS` 和 `ZJU_CONNECT_CUSTOM_PROXY_DOMAIN` 使用 JSON 数组格式。
 
 #### EasyConnect 相关参数
 
 + `cert-file`: p12 证书文件路径，如果服务器要求证书验证，需要配置此参数
 
-+ `cert-password`: 证书密码
++ `cert-password`: 证书密码 (敏感信息建议使用环境变量 `ZJU_CONNECT_CERT_PASSWORD` 给定)
 
 + `skip-domain-resource`: 不使用服务端下发的域名资源分流，一般不需要加此参数
 
