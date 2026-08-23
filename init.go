@@ -167,8 +167,6 @@ func loadStartupOptions(args []string, environ func() []string) (startupOptions,
 		UntrustDevice: untrustDevice,
 	}
 	if options.ShowVersion {
-		normalizeConfig(&defaults)
-		options.Config = defaults
 		return options, flags, nil
 	}
 
@@ -244,7 +242,7 @@ func loadStartupOptions(args []string, environ func() []string) (startupOptions,
 	if err := k.Unmarshal("", &cfg); err != nil {
 		return startupOptions{}, flags, fmt.Errorf("decode merged configuration: %w", err)
 	}
-	normalizeConfig(&cfg)
+	zjuServerWorkaround(&cfg)
 	if err := validateConfig(cfg); err != nil {
 		return startupOptions{}, flags, err
 	}
@@ -465,13 +463,12 @@ func parseProxyDomains(value string) []string {
 	return strings.Split(value, ",")
 }
 
-func normalizeConfig(cfg *configs.Config) {
-	if cfg.ServerAddress != "" {
-		return
-	}
-	if cfg.Protocol == "atrust" {
+func zjuServerWorkaround(cfg *configs.Config) {
+	if cfg.Protocol == "atrust" && cfg.ServerAddress == "rvpn.zju.edu.cn" {
+		fmt.Println("ZJU Connect: set default aTrust server address to vpn.zju.edu.cn")
 		cfg.ServerAddress = "vpn.zju.edu.cn"
-	} else {
+	} else if cfg.Protocol == "easyconnect" && cfg.ServerAddress == "vpn.zju.edu.cn" {
+		fmt.Println("ZJU Connect: set default EasyConnect server address to rvpn.zju.edu.cn")
 		cfg.ServerAddress = "rvpn.zju.edu.cn"
 	}
 }
