@@ -5,9 +5,14 @@ go 1.25.6
 replace inet.af/netaddr => github.com/inetaf/netaddr v0.0.0-20230525184311-b8eac61e914a
 
 require (
-	github.com/BurntSushi/toml v1.6.0
 	github.com/beevik/etree v1.6.0
 	github.com/containers/winquit v1.1.0
+	github.com/knadh/koanf/parsers/toml/v2 v2.2.2
+	github.com/knadh/koanf/providers/env/v2 v2.0.1
+	github.com/knadh/koanf/providers/file v1.2.1
+	github.com/knadh/koanf/providers/posflag v1.0.2
+	github.com/knadh/koanf/providers/structs v1.0.1
+	github.com/knadh/koanf/v2 v2.3.6
 	github.com/miekg/dns v1.1.72
 	github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -16,6 +21,7 @@ require (
 	github.com/sagernet/sing v0.7.18
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
 	github.com/shirou/gopsutil/v4 v4.26.4
+	github.com/spf13/pflag v1.0.10
 	github.com/things-go/go-socks5 v0.1.1
 	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
@@ -30,11 +36,17 @@ require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/mitchellh/reflectwalk v1.0.2 // indirect
+	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/sagernet/go-tun2socks v1.16.12-0.20220818015926-16cb67876a61 // indirect

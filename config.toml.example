@@ -4,7 +4,7 @@ server_port = 443
 username = "username"
 password = "password"
 disable_zju_config = false
-disable_zju_dns = false
+disable_remote_dns = false
 socks_bind = ":1080"
 socks_user = ""
 socks_passwd = ""
@@ -17,7 +17,7 @@ add_route = false
 dns_ttl = 3600
 disable_keep_alive = false
 keep_alive_url = "" # "https://www.cnki.net/favicon.ico"
-zju_dns_server = "auto"
+remote_dns_server = "auto"
 secondary_dns_server = "auto"
 dns_server_bind = ""
 local_dns_server = "" # DNS used to resolve the VPN server, e.g. "223.5.5.5" or "223.5.5.5:53"
@@ -54,6 +54,7 @@ custom_proxy_domain = [
 #    "science.org",
 #    "nature.com"
 ]
+twf_id = ""
 
 
 # aTrust specific settings

@@ -36,6 +36,10 @@ import (
 var conf configs.Config
 
 func main() {
+	if exitCode := initialize(os.Args[1:]); exitCode >= 0 {
+		os.Exit(exitCode)
+	}
+
 	log.Init()
 
 	log.Println("Start ZJU Connect " + zjuConnectVersionString())
@@ -47,9 +51,6 @@ func main() {
 			log.Printf("Initial ZJU-Connect failed: %s", err)
 		}
 		os.Exit(1)
-	}
-	if conf.Protocol != "easyconnect" && conf.Protocol != "atrust" {
-		log.Fatalf("Unsupported VPN protocol: %s", conf.Protocol)
 	}
 	underlayDialer, underlayErr := underlay.New(underlay.Options{
 		InterfaceName:  conf.BindInterface,
