@@ -345,9 +345,6 @@ func main() {
 
 	go vpnStack.Run()
 
-	if conf.Protocol == "atrust" {
-		conf.ProxyAll = false
-	}
 	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
 
 	if conf.DNSServerBind != "" {

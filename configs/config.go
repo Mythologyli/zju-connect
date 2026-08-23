@@ -8,6 +8,7 @@ type (
 		ServerPort          int
 		Username            string
 		Password            string
+		TOTPSecret          string
 		SocksBind           string
 		SocksUser           string
 		SocksPasswd         string
@@ -15,7 +16,7 @@ type (
 		PortForwardingList  []SinglePortForwarding
 		ShadowsocksURL      string
 		DialDirectProxy     string
-		DisableZJUConfig    bool
+		DisableServerConfig bool
 		DisableRemoteDNS    bool
 		DNSTTL              uint64
 		RemoteDNSServer     string
@@ -29,6 +30,7 @@ type (
 		TUNMode             bool
 		AddRoute            bool
 		DNSHijack           bool
+		ProxyAll            bool
 		FakeIP              bool
 		GraphCodeFile       string
 		DebugDump           bool
@@ -38,15 +40,13 @@ type (
 		AutoDetectInterface bool
 
 		// EasyConnect fields
-		TOTPSecret          string
-		CertFile            string
-		CertPassword        string
-		DisableServerConfig bool
-		SkipDomainResource  bool
-		DisableMultiLine    bool
-		ProxyAll            bool
-		CustomProxyDomain   []string
-		TwfID               string
+		CertFile           string
+		CertPassword       string
+		DisableZJUConfig   bool
+		SkipDomainResource bool
+		DisableMultiLine   bool
+		CustomProxyDomain  []string
+		TwfID              string
 
 		// aTrust fields
 		AuthType                string

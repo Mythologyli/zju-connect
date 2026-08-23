@@ -111,9 +111,11 @@
 
 + `graph-code-file`: Graphic captcha file path, default is empty. In aTrust mode, if set, the program will save the captcha image to this file and ask user to input the JSON in terminal.
 
-+ `disable-zju-config`: Disable ZJU related configuration, non-ZJU users may need to add this argument
++ `totp-secret`: TOTP secret, can be used to automatically complete TOTP verification. If the server doesn't require TOTP or you want to manually enter the code, leave blank
 
 + `disable-zju-dns`: Disable remote DNS and use local DNS instead, generally no need to add this argument
+
++ `disable-server-config`: Disable server configuration, generally no need to add this argument
 
 + `socks-bind`: SOCKS5 proxy listening address, default is `:1080`
 
@@ -167,23 +169,21 @@
 
 + `custom-dns`: Specify custom DNS resolution results, format is `domain:IP,domain:IP,...`, for example `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`. Multiple resolutions are separated by `,`
 
++ `proxy-all`: Whether to proxy all traffic, generally no need to add this argument
+
 + `config`: Specify the configuration file, the content refers to `config.toml.example`. Other parameters are ignored when the configuration file is enabled
 
 #### EasyConnect Related Arguments
-
-+ `totp-secret`: TOTP secret, can be used to automatically complete TOTP verification. If the server doesn't require TOTP or you want to manually enter the code, leave blank
 
 + `cert-file`: p12 certificate file path, if the server requires certificate verification, this parameter needs to be configured
 
 + `cert-password`: Certificate password
 
-+ `disable-server-config`: Disable server configuration, generally no need to add this argument
-
 + `skip-domain-resource`: Do not use the domain resource provided by the server for split tunneling, generally no need to add this argument
 
 + `disable-multi-line`: Disable automatic line selection based on latency. When added, use the line specified by the `server` parameter
 
-+ `proxy-all`: Whether to proxy all traffic, generally no need to add this argument
++ `disable-zju-config`: Disable ZJU related configuration, non-ZJU users may need to add this argument
 
 + `custom-proxy-domain`: Specify custom domains to use RVPN proxy, format is `domain,domain,...`, for example `nature.com,science.org`. Multiple domains are separated by `,`
 
@@ -191,7 +191,7 @@
 
 #### aTrust Related Arguments
 
-+ `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is empty (try to skip auth).
++ `auth-type`: aTrust login authentication type, supports `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code), default is auto detected.
 + `login-domain`: Login domain, default is `Radius`.
 + `client-data-file`: Client data file path, used to save login status to avoid repeated verification.
 + `cas-ticket`: CAS verification ticket, defaults to empty, which triggers interactive verification.
@@ -229,7 +229,7 @@
 - [x] TOTP verification
 - [x] Certificate verification
 - [x] aTrust protocol support
-- [ ] Fake IP
+- [x] Fake IP
 
 #### To Do
 

@@ -116,9 +116,11 @@
 
 + `graph-code-file`: 图形验证码文件路径。默认为空。在 aTrust 模式下，留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
 
-+ `disable-zju-config`: 禁用 ZJU 相关配置，非 ZJU 用户可能需要添加此参数
++ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
 
 + `disable-zju-dns`: 禁用远端 DNS 改用本地 DNS，一般不需要加此参数
+
++ `disable-server-config`: 禁用服务端配置，一般不需要加此参数
 
 + `socks-bind`: SOCKS5 代理监听地址，默认为 `:1080`
 
@@ -172,23 +174,21 @@
 
 + `custom-dns`: 指定自定义 DNS 解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔
 
++ `proxy-all`: 是否代理所有流量，一般不需要加此参数
+
 + `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
 
 #### EasyConnect 相关参数
-
-+ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
 
 + `cert-file`: p12 证书文件路径，如果服务器要求证书验证，需要配置此参数
 
 + `cert-password`: 证书密码
 
-+ `disable-server-config`: 禁用服务端配置，一般不需要加此参数
-
 + `skip-domain-resource`: 不使用服务端下发的域名资源分流，一般不需要加此参数
 
 + `disable-multi-line`: 禁用自动根据延时选择线路。加此参数后，使用 `server` 参数指定的线路
 
-+ `proxy-all`: 是否代理所有流量，一般不需要加此参数
++ `disable-zju-config`: 禁用 ZJU 相关配置，非 ZJU 用户可能需要添加此参数
 
 + `custom-proxy-domain`: 指定自定义域名使用 RVPN 代理，格式为 `域名,域名,...`，例如 `nature.com,science.org`。多个域名用 `,` 分隔
 
@@ -196,7 +196,7 @@
 
 #### aTrust 相关参数
 
-+ `auth-type`: aTrust 登录验证类型，支持 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证），默认为空（尝试不验证）
++ `auth-type`: aTrust 登录验证类型，支持 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证），默认为自动检测
 
 + `login-domain`: 登录域，默认为 `Radius`
 
