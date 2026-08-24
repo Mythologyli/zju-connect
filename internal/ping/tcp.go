@@ -63,11 +63,11 @@ func (tcping *TCPing) Result() *Result {
 
 // Start preserves the historical background-context API.
 func (tcping *TCPing) Start() <-chan struct{} {
-	return tcping.StartContext(context.Background())
+	return tcping.StartWithContext(context.Background())
 }
 
-// StartContext starts the probe loop with caller-owned cancellation.
-func (tcping *TCPing) StartContext(ctx context.Context) <-chan struct{} {
+// StartWithContext starts the probe loop with caller-owned cancellation.
+func (tcping *TCPing) StartWithContext(ctx context.Context) <-chan struct{} {
 	if ctx == nil {
 		ctx = context.Background()
 	}

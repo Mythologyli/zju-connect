@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestTCPingStartContextStopsBlockedDial(t *testing.T) {
+func TestTCPingStartWithContextStopsBlockedDial(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started := make(chan struct{})
@@ -27,7 +27,7 @@ func TestTCPingStartContextStopsBlockedDial(t *testing.T) {
 		return nil, ctx.Err()
 	})
 
-	done := tcping.StartContext(ctx)
+	done := tcping.StartWithContext(ctx)
 	select {
 	case <-started:
 	case <-time.After(time.Second):
