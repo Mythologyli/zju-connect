@@ -108,7 +108,7 @@ func (tcping *TCPing) run(ctx context.Context) {
 		case <-ticker.C:
 		}
 
-		duration, remoteAddr, err := tcping.pingContext(ctx)
+		duration, remoteAddr, err := tcping.ping(ctx)
 		if ctx.Err() != nil {
 			return
 		}
@@ -147,7 +147,7 @@ func (tcping *TCPing) Stop() {
 	}
 }
 
-func (tcping *TCPing) pingContext(parent context.Context) (time.Duration, net.Addr, error) {
+func (tcping *TCPing) ping(parent context.Context) (time.Duration, net.Addr, error) {
 	ctx, cancel := context.WithTimeout(parent, tcping.target.Timeout)
 	defer cancel()
 
