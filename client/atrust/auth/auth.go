@@ -309,13 +309,8 @@ func (s *Session) completeSMS(step authStep) (authStep, error) {
 }
 
 func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, error) {
-	sid := ""
 	if len(opts.Cookies) > 0 {
 		for _, cookie := range opts.Cookies {
-			if cookie.Host == s.baseHost && cookie.Scheme == "https" && cookie.Name == "sid" {
-				sid = cookie.Value
-			}
-
 			c := &http.Cookie{
 				Name:  cookie.Name,
 				Value: cookie.Value,
@@ -335,11 +330,15 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 	if isLogin == 1 {
 		log.Println("Already logged in")
 		username, err := s.onlineInfo()
+		if err != nil {
+			return LoginResult{}, err
+		}
+		sid, cookies := sessionCookies(s)
 		return LoginResult{
 			Username: username,
 			SID:      sid,
-			Cookies:  opts.Cookies,
-		}, err
+			Cookies:  cookies,
+		}, nil
 	}
 
 	if method == nil {
@@ -378,12 +377,21 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 		return LoginResult{}, err
 	}
 
+	sid, cookies := sessionCookies(s)
+	return LoginResult{
+		Username: username,
+		SID:      sid,
+		Cookies:  cookies,
+	}, nil
+}
+
+func sessionCookies(s *Session) (string, []Cookie) {
 	cookies := make([]Cookie, 0)
+	sid := ""
 	for _, cookie := range s.client.Jar.Cookies(&url.URL{Host: s.baseHost, Scheme: "https"}) {
 		if cookie.Name == "sid" {
 			sid = cookie.Value
 		}
-
 		cookies = append(cookies, Cookie{
 			Host:   s.baseHost,
 			Scheme: "https",
@@ -391,10 +399,5 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 			Value:  cookie.Value,
 		})
 	}
-
-	return LoginResult{
-		Username: username,
-		SID:      sid,
-		Cookies:  cookies,
-	}, nil
+	return sid, cookies
 }
