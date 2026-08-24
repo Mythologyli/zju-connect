@@ -23,6 +23,29 @@ import (
 	"inet.af/netaddr"
 )
 
+type SessionOptions struct {
+	Username string
+	SID      string
+	DeviceID string
+	SignKey  string
+}
+
+type ClientOptions struct {
+	Session         SessionOptions
+	UnderlayDialer  client.UnderlayDialer
+	TLSKeyLogWriter io.Writer
+}
+
+type SetupOptions struct {
+	ServerAddress            string
+	ServerPort               int
+	LoginMethod              auth.LoginMethod
+	TOTPSecret               string
+	ClientData               []byte
+	ResourceData             []byte
+	BestNodesRefreshInterval time.Duration
+}
+
 type Client struct {
 	Username     string
 	SID          string
@@ -61,18 +84,22 @@ type Client struct {
 	tcpTunnelZeroRTT bool
 }
 
-func NewClient(username, sid, deviceID, signKey string, underlayDialer client.UnderlayDialer, tlsKeyLogWriter io.Writer) *Client {
+func NewClient(options ClientOptions) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	return &Client{
-		Username:        username,
-		SID:             sid,
-		DeviceID:        deviceID,
-		SignKey:         signKey,
-		underlayDialer:  underlayDialer,
-		tlsKeyLogWriter: tlsKeyLogWriter,
+		Username:        options.Session.Username,
+		SID:             options.Session.SID,
+		DeviceID:        options.Session.DeviceID,
+		SignKey:         options.Session.SignKey,
+		underlayDialer:  options.UnderlayDialer,
+		tlsKeyLogWriter: options.TLSKeyLogWriter,
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
+}
+
+func (c *Client) canResume(resourceData []byte) bool {
+	return c.SID != "" && c.DeviceID != "" && resourceData != nil
 }
 
 func (c *Client) Close() {
@@ -281,15 +308,15 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
-func (c *Client) Setup(serverAddress string, serverPort int, username, password, phone, loginDomain, authType, graphCodeFile, casTicket, oauth2Code, totpSecret string, authData, resourceData []byte, updateBestNodesInterval int) ([]byte, error) {
+func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 	if c.underlayDialer == nil {
 		return nil, errors.New("underlay dialer is required")
 	}
-	c.serverAddress = serverAddress
+	c.serverAddress = options.ServerAddress
 
 	var clientAuthData auth.ClientAuthData
-	if authData != nil {
-		if err := json.Unmarshal(authData, &clientAuthData); err != nil {
+	if options.ClientData != nil {
+		if err := json.Unmarshal(options.ClientData, &clientAuthData); err != nil {
 			log.Println("Error parsing client data:", err)
 			return nil, err
 		}
@@ -300,10 +327,10 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	}
 
 	var authServerHost string
-	if serverPort == 443 {
-		authServerHost = serverAddress
+	if options.ServerPort == 443 {
+		authServerHost = options.ServerAddress
 	} else {
-		authServerHost = fmt.Sprintf("%s:%d", serverAddress, serverPort)
+		authServerHost = fmt.Sprintf("%s:%d", options.ServerAddress, options.ServerPort)
 	}
 	sess := auth.NewSession(authServerHost, c.tlsKeyLogWriter, c.underlayDialer.DialContext)
 	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
@@ -322,7 +349,8 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	c.tcpTunnelZeroRTT = parsedServerVersion.TCPTunnelZeroRTT()
 	log.Printf("aTrust TCP tunnel zero-RTT: %t", c.tcpTunnelZeroRTT)
 
-	if c.SID != "" && c.DeviceID != "" && resourceData != nil {
+	resourceData := options.ResourceData
+	if c.canResume(resourceData) {
 		log.Println("Skipping login")
 
 		c.ConnectionID = buildConnectionID(c.DeviceID)
@@ -337,50 +365,14 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
 
-		if authType == "" {
-			if username != "" && password != "" {
-				authType = "auth/psw"
-			} else if phone != "" {
-				authType = "auth/smsCheckCode"
-			}
-		}
-
-		var err error
-		var loginMethod auth.LoginMethod
-		switch authType {
-		case "auth/psw":
-			loginMethod = auth.PasswordLogin{
-				Username:      username,
-				Password:      password,
-				Domain:        loginDomain,
-				GraphCodeFile: graphCodeFile,
-			}
-		case "auth/cas":
-			loginMethod = auth.CASLogin{
-				Domain: loginDomain,
-				Ticket: casTicket,
-			}
-		case "auth/httpsOauth2":
-			loginMethod = auth.HTTPSOauth2Login{
-				Domain: loginDomain,
-				Code:   oauth2Code,
-			}
-		case "auth/smsCheckCode":
-			loginMethod = auth.SMSLogin{
-				Phone:         phone,
-				Domain:        loginDomain,
-				GraphCodeFile: graphCodeFile,
-			}
-		case "":
+		if options.LoginMethod == nil {
 			log.Println("No auth type specified, trying to skip auth")
-		default:
-			return nil, fmt.Errorf("unsupported auth type: %s", authType)
 		}
 
-		loginResult, err := sess.Login(loginMethod, auth.LoginOptions{
+		loginResult, err := sess.Login(options.LoginMethod, auth.LoginOptions{
 			DeviceID:   c.DeviceID,
 			Cookies:    clientAuthData.Cookies,
-			TOTPSecret: totpSecret,
+			TOTPSecret: options.TOTPSecret,
 		})
 		if err != nil {
 			log.Println("Login error:", err)
@@ -397,7 +389,7 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 		}
 
 	}
-	authData, err = json.Marshal(clientAuthData)
+	authData, err := json.Marshal(clientAuthData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal client data: %w", err)
 	}
@@ -425,8 +417,8 @@ func (c *Client) Setup(serverAddress string, serverPort int, username, password,
 	c.l3Tunnel = l3Tunnel
 	c.l3TunnelMu.Unlock()
 
-	if updateBestNodesInterval > 0 {
-		go c.updateBestNodes(c.lifecycleCtx, updateBestNodesInterval)
+	if options.BestNodesRefreshInterval > 0 {
+		go c.updateBestNodes(c.lifecycleCtx, options.BestNodesRefreshInterval)
 	}
 
 	return authData, nil

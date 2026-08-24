@@ -2,7 +2,6 @@ package client_test
 
 import (
 	"context"
-	"crypto/tls"
 	"net"
 	"testing"
 
@@ -28,13 +27,16 @@ var (
 func TestPublicClientsAcceptExternalUnderlay(t *testing.T) {
 	var dialer client.UnderlayDialer = externalUnderlay{}
 
-	easyClient := easyconnect.NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, nil)
+	easyClient := easyconnect.NewClient(easyconnect.Options{
+		Server:         "vpn.example.com:443",
+		UnderlayDialer: dialer,
+	})
 	if easyClient == nil {
 		t.Fatal("easyconnect.NewClient returned nil")
 	}
 	easyClient.Close()
 
-	aTrustClient := atrust.NewClient("", "", "", "", dialer, nil)
+	aTrustClient := atrust.NewClient(atrust.ClientOptions{UnderlayDialer: dialer})
 	if aTrustClient == nil {
 		t.Fatal("atrust.NewClient returned nil")
 	}

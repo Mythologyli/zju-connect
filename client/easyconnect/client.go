@@ -23,6 +23,29 @@ const (
 	easyConnectRawRequestTimeout     = 15 * time.Second
 )
 
+type AuthOptions struct {
+	Username      string
+	Password      string
+	TOTPSecret    string
+	Certificate   tls.Certificate
+	GraphCodeFile string
+}
+
+type ResourceOptions struct {
+	Fetch          bool
+	IncludeDomains bool
+}
+
+type Options struct {
+	Server          string
+	Auth            AuthOptions
+	SessionID       string
+	TestMultiLine   bool
+	Resources       ResourceOptions
+	UnderlayDialer  client.UnderlayDialer
+	TLSKeyLogWriter io.Writer
+}
+
 type Client struct {
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username          string
@@ -60,26 +83,28 @@ type Client struct {
 	requestIPKeepAlive sync.Once
 	keepAliveStarted   sync.Once
 	closeOnce          sync.Once
+	graphCodeFile      string
 }
 
-func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer client.UnderlayDialer, tlsKeyLogWriter io.Writer) *Client {
+func NewClient(options Options) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	c := &Client{
-		server:            server,
-		username:          username,
-		password:          password,
-		totpSecret:        totpSecret,
-		tlsCert:           tlsCert,
-		testMultiLine:     testMultiLine,
-		parseResource:     parseResource,
-		useDomainResource: useDomainResource,
+		server:            options.Server,
+		username:          options.Auth.Username,
+		password:          options.Auth.Password,
+		totpSecret:        options.Auth.TOTPSecret,
+		tlsCert:           options.Auth.Certificate,
+		testMultiLine:     options.TestMultiLine,
+		parseResource:     options.Resources.Fetch,
+		useDomainResource: options.Resources.IncludeDomains,
 		httpClient:        &http.Client{Timeout: easyConnectHTTPTimeout},
-		underlayDialer:    underlayDialer,
-		tlsKeyLogWriter:   tlsKeyLogWriter,
+		underlayDialer:    options.UnderlayDialer,
+		tlsKeyLogWriter:   options.TLSKeyLogWriter,
 		rawRequestTimeout: easyConnectRawRequestTimeout,
-		twfID:             twfID,
+		twfID:             options.SessionID,
 		lifecycleCtx:      lifecycleCtx,
 		lifecycleCancel:   lifecycleCancel,
+		graphCodeFile:     options.Auth.GraphCodeFile,
 	}
 	c.setHTTPTransport(&tls.Config{InsecureSkipVerify: true})
 	return c
@@ -163,11 +188,11 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	return nil, errors.New("not supported")
 }
 
-func (c *Client) Setup(graphCodeFile string) error {
+func (c *Client) Setup() error {
 	if c.underlayDialer == nil {
 		return errors.New("underlay dialer is required")
 	}
-	return c.setup(graphCodeFile)
+	return c.setup(c.graphCodeFile)
 }
 
 func (c *Client) setup(graphCodeFile string) error {
