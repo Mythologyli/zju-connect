@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/underlay"
+	"github.com/mythologyli/zju-connect/underlay"
 )
 
 func TestInjectedUnderlayUsesManualInterfaceForHTTP(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{InterfaceName: "manual-interface", AutoDetect: true})
-	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, nil)
+	client := NewClient(Options{Server: "vpn.example.com:443", UnderlayDialer: dialer})
 
-	if got := client.underlayDialer.InterfaceName(); got != "manual-interface" {
+	if got := dialer.InterfaceName(); got != "manual-interface" {
 		t.Fatalf("underlay interface = %q, want %q", got, "manual-interface")
 	}
 	transport, ok := client.httpClient.Transport.(*http.Transport)
@@ -29,15 +29,15 @@ func TestInjectedUnderlayUsesManualInterfaceForHTTP(t *testing.T) {
 }
 
 func TestSetupRequiresUnderlayDialer(t *testing.T) {
-	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, nil, nil)
-	if err := client.Setup(""); err == nil || !strings.Contains(err.Error(), "underlay dialer is required") {
+	client := NewClient(Options{Server: "vpn.example.com:443"})
+	if err := client.Setup(); err == nil || !strings.Contains(err.Error(), "underlay dialer is required") {
 		t.Fatalf("Setup error = %v, want missing underlay error", err)
 	}
 }
 
 func TestCertificateTransportKeepsUnderlayDialer(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{AutoDetect: false})
-	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, nil)
+	client := NewClient(Options{Server: "vpn.example.com:443", UnderlayDialer: dialer})
 	client.setHTTPTransport(&tls.Config{Renegotiation: tls.RenegotiateOnceAsClient})
 
 	transport, ok := client.httpClient.Transport.(*http.Transport)
@@ -55,7 +55,11 @@ func TestCertificateTransportKeepsUnderlayDialer(t *testing.T) {
 func TestHTTPTransportUsesClientKeyLogWriter(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{AutoDetect: false})
 	var keyLogWriter strings.Builder
-	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, &keyLogWriter)
+	client := NewClient(Options{
+		Server:          "vpn.example.com:443",
+		UnderlayDialer:  dialer,
+		TLSKeyLogWriter: &keyLogWriter,
+	})
 
 	transport, ok := client.httpClient.Transport.(*http.Transport)
 	if !ok {
@@ -68,7 +72,7 @@ func TestHTTPTransportUsesClientKeyLogWriter(t *testing.T) {
 
 func TestHTTPClientHasBoundedNetworkTimeouts(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{AutoDetect: false})
-	client := NewClient("vpn.example.com:443", "", "", "", tls.Certificate{}, "", false, false, false, dialer, nil)
+	client := NewClient(Options{Server: "vpn.example.com:443", UnderlayDialer: dialer})
 
 	transport, ok := client.httpClient.Transport.(*http.Transport)
 	if !ok {
@@ -106,7 +110,7 @@ func TestRequestTokenTimesOutDuringSilentTLSHandshake(t *testing.T) {
 		}
 	}()
 
-	client := NewClient(listener.Addr().String(), "", "", "", tls.Certificate{}, "session-id", false, false, false, nil, nil)
+	client := NewClient(Options{Server: listener.Addr().String(), SessionID: "session-id"})
 	client.rawRequestTimeout = 50 * time.Millisecond
 	defer client.Close()
 
@@ -142,7 +146,10 @@ func TestSetupHTTPRequestStopsWhenClientCloses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(strings.TrimPrefix(server.URL, "https://"), "", "", "", tls.Certificate{}, "session-id", false, false, false, nil, nil)
+	client := NewClient(Options{
+		Server:    strings.TrimPrefix(server.URL, "https://"),
+		SessionID: "session-id",
+	})
 	client.httpClient = server.Client()
 	result := make(chan error, 1)
 	go func() {
@@ -177,7 +184,10 @@ func TestSessionKeepAliveSendsRequestForTick(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(strings.TrimPrefix(server.URL, "https://"), "", "", "", tls.Certificate{}, "session-id", false, false, false, nil, nil)
+	client := NewClient(Options{
+		Server:    strings.TrimPrefix(server.URL, "https://"),
+		SessionID: "session-id",
+	})
 	client.httpClient = server.Client()
 	defer client.Close()
 

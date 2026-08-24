@@ -2,7 +2,6 @@ package underlay
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/netip"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	tun "github.com/mythologyli/sing-tun"
+	"github.com/mythologyli/zju-connect/internal/platformdialer"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/sagernet/sing/common/logger"
 )
@@ -28,6 +28,7 @@ type Dialer struct {
 	localDNSServer string
 }
 
+// Options configures a Dialer.
 type Options struct {
 	// InterfaceName explicitly selects the interface used by underlay sockets.
 	// It takes precedence over AutoDetect.
@@ -40,30 +41,8 @@ type Options struct {
 	LocalDNSServer string
 }
 
-func (d *Dialer) DialTLSContext(ctx context.Context, network, address string, config *tls.Config) (*tls.Conn, error) {
-	rawConn, err := d.DialContext(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-	if config == nil {
-		config = &tls.Config{}
-	} else {
-		config = config.Clone()
-	}
-	if config.ServerName == "" {
-		host, _, splitErr := net.SplitHostPort(address)
-		if splitErr == nil {
-			config.ServerName = host
-		}
-	}
-	tlsConn := tls.Client(rawConn, config)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		_ = rawConn.Close()
-		return nil, err
-	}
-	return tlsConn, nil
-}
-
+// New creates an underlay dialer. With no options, interface auto-detection is
+// enabled. The caller must close the returned dialer.
 func New(options ...Options) (*Dialer, error) {
 	option := Options{AutoDetect: true}
 	if len(options) > 0 {
@@ -100,6 +79,7 @@ func (d *Dialer) Close() error {
 	return nil
 }
 
+// InterfaceName returns the currently selected underlay interface.
 func (d *Dialer) InterfaceName() string {
 	if d == nil {
 		return ""
@@ -121,6 +101,7 @@ func (d *Dialer) ExcludeIP(ip net.IP) {
 	d.requireBound = true
 }
 
+// DialContext connects through the selected underlay interface.
 func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	if d == nil {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
@@ -182,16 +163,11 @@ func (d *Dialer) wrapCapture(conn net.Conn) net.Conn {
 }
 
 func dialContextOnInterface(ctx context.Context, network, address, interfaceName, localDNSServer string) (net.Conn, error) {
-	nd := &net.Dialer{}
-	if interfaceName != "" {
-		if err := bindInterface(nd, interfaceName); err != nil {
-			return nil, fmt.Errorf("bind underlay interface %q: %w", interfaceName, err)
-		}
-	}
+	dialer := &platformdialer.Dialer{InterfaceName: interfaceName}
 	if interfaceName != "" || localDNSServer != "" {
-		nd.Resolver = newUnderlayResolver(interfaceName, localDNSServer)
+		dialer.Resolver = newUnderlayResolver(interfaceName, localDNSServer)
 	}
-	return nd.DialContext(ctx, network, address)
+	return dialer.DialContext(ctx, network, address)
 }
 
 func newUnderlayResolver(interfaceName, localDNSServer string) *net.Resolver {
@@ -202,12 +178,11 @@ func newUnderlayResolver(interfaceName, localDNSServer string) *net.Resolver {
 			if localDNSServer != "" {
 				target = localDNSServer
 			}
-			dialer := &net.Dialer{}
-			if interfaceName != "" && !isLoopbackAddress(target) {
-				if err := bindInterface(dialer, interfaceName); err != nil {
-					return nil, fmt.Errorf("bind local DNS interface %q: %w", interfaceName, err)
-				}
+			boundInterface := interfaceName
+			if isLoopbackAddress(target) {
+				boundInterface = ""
 			}
+			dialer := &platformdialer.Dialer{InterfaceName: boundInterface}
 			return dialer.DialContext(ctx, network, target)
 		},
 	}
@@ -242,6 +217,7 @@ func normalizeLocalDNSServer(address string) (string, error) {
 
 var dialOnInterface = dialContextOnInterface
 
+// DialTimeout connects through the underlay with the provided timeout.
 func (d *Dialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

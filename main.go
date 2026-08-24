@@ -6,22 +6,23 @@ import (
 	"context"
 	"crypto"
 	"crypto/tls"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/containers/winquit/pkg/winquit"
 	"github.com/mythologyli/zju-connect/client"
 	atrustclient "github.com/mythologyli/zju-connect/client/atrust"
+	"github.com/mythologyli/zju-connect/client/atrust/auth"
 	easyconnectclient "github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/keylog"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
@@ -29,6 +30,7 @@ import (
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/stack/tcptunnel"
 	"github.com/mythologyli/zju-connect/stack/tun"
+	"github.com/mythologyli/zju-connect/underlay"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
 )
@@ -94,22 +96,27 @@ func main() {
 			}
 		}
 
-		vpnClient = easyconnectclient.NewClient(
-			conf.ServerAddress+":"+fmt.Sprintf("%d", conf.ServerPort),
-			conf.Username,
-			conf.Password,
-			conf.TOTPSecret,
-			tlsCert,
-			conf.TwfID,
-			!conf.DisableMultiLine,
-			!conf.DisableServerConfig,
-			!conf.SkipDomainResource,
-			underlayDialer,
-			tlsKeyLogWriter,
-		)
+		vpnClient = easyconnectclient.NewClient(easyconnectclient.Options{
+			Server: net.JoinHostPort(conf.ServerAddress, strconv.Itoa(conf.ServerPort)),
+			Auth: easyconnectclient.AuthOptions{
+				Username:      conf.Username,
+				Password:      conf.Password,
+				TOTPSecret:    conf.TOTPSecret,
+				Certificate:   tlsCert,
+				GraphCodeFile: conf.GraphCodeFile,
+			},
+			SessionID:     conf.TwfID,
+			TestMultiLine: !conf.DisableMultiLine,
+			Resources: easyconnectclient.ResourceOptions{
+				Fetch:          !conf.DisableServerConfig,
+				IncludeDomains: !conf.SkipDomainResource,
+			},
+			UnderlayDialer:  underlayDialer,
+			TLSKeyLogWriter: tlsKeyLogWriter,
+		})
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		err := vpnClient.(*easyconnectclient.Client).Setup(conf.GraphCodeFile)
+		err := vpnClient.(*easyconnectclient.Client).Setup()
 		if err != nil {
 			vpnClient.(*easyconnectclient.Client).Close()
 			_ = underlayDialer.Close()
@@ -138,25 +145,44 @@ func main() {
 			}
 		}
 
-		vpnClient = atrustclient.NewClient(conf.Username, conf.SID, conf.DeviceID, conf.SignKey, underlayDialer, tlsKeyLogWriter)
+		var loginMethod auth.LoginMethod
+		if conf.SID == "" || conf.DeviceID == "" || resourceData == nil {
+			loginMethod, err = auth.NewLoginMethod(auth.LoginMethodOptions{
+				AuthType:      conf.AuthType,
+				Username:      conf.Username,
+				Password:      conf.Password,
+				Phone:         conf.Phone,
+				Domain:        conf.LoginDomain,
+				GraphCodeFile: conf.GraphCodeFile,
+				CASTicket:     conf.CasTicket,
+				OAuth2Code:    conf.OAuth2Code,
+			})
+			if err != nil {
+				log.Fatalf("Configure aTrust login: %v", err)
+			}
+		}
+
+		vpnClient = atrustclient.NewClient(atrustclient.ClientOptions{
+			Session: atrustclient.SessionOptions{
+				Username: conf.Username,
+				SID:      conf.SID,
+				DeviceID: conf.DeviceID,
+				SignKey:  conf.SignKey,
+			},
+			UnderlayDialer:  underlayDialer,
+			TLSKeyLogWriter: tlsKeyLogWriter,
+		})
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
-		clientData, err = vpnClient.(*atrustclient.Client).Setup(
-			conf.ServerAddress,
-			conf.ServerPort,
-			conf.Username,
-			conf.Password,
-			conf.Phone,
-			conf.LoginDomain,
-			conf.AuthType,
-			conf.GraphCodeFile,
-			conf.CasTicket,
-			conf.OAuth2Code,
-			conf.TOTPSecret,
-			clientData,
-			resourceData,
-			conf.UpdateBestNodesInterval,
-		)
+		clientData, err = vpnClient.(*atrustclient.Client).Setup(atrustclient.SetupOptions{
+			ServerAddress:            conf.ServerAddress,
+			ServerPort:               conf.ServerPort,
+			LoginMethod:              loginMethod,
+			TOTPSecret:               conf.TOTPSecret,
+			ClientData:               clientData,
+			ResourceData:             resourceData,
+			BestNodesRefreshInterval: time.Duration(conf.UpdateBestNodesInterval) * time.Second,
+		})
 		if err != nil {
 			vpnClient.(*atrustclient.Client).Close()
 			_ = underlayDialer.Close()

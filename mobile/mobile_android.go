@@ -1,13 +1,12 @@
 package mobile
 
 import (
-	"crypto/tls"
 	"sync"
 
 	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack/tun"
+	"github.com/mythologyli/zju-connect/underlay"
 )
 
 var vpnClient *easyconnect.Client
@@ -50,19 +49,14 @@ func login(server string, username string, password string) string {
 	if err != nil {
 		return ""
 	}
-	newClient := easyconnect.NewClient(
-		server,
-		username,
-		password,
-		"",
-		tls.Certificate{},
-		"",
-		false,
-		false,
-		false,
-		newUnderlay,
-		nil,
-	)
+	newClient := easyconnect.NewClient(easyconnect.Options{
+		Server: server,
+		Auth: easyconnect.AuthOptions{
+			Username: username,
+			Password: password,
+		},
+		UnderlayDialer: newUnderlay,
+	})
 
 	// Close the old client and clear vpnClient to nil during setup so that
 	// concurrent StartStack calls see nil and return early rather than
@@ -80,7 +74,7 @@ func login(server string, username string, password string) string {
 		_ = oldUnderlay.Close()
 	}
 
-	err = newClient.Setup("")
+	err = newClient.Setup()
 	if err != nil {
 		newClient.Close()
 		_ = newUnderlay.Close()

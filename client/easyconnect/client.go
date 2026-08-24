@@ -12,7 +12,6 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/internal/underlay"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
@@ -23,6 +22,29 @@ const (
 	easyConnectResponseHeaderTimeout = 15 * time.Second
 	easyConnectRawRequestTimeout     = 15 * time.Second
 )
+
+type AuthOptions struct {
+	Username      string
+	Password      string
+	TOTPSecret    string
+	Certificate   tls.Certificate
+	GraphCodeFile string
+}
+
+type ResourceOptions struct {
+	Fetch          bool
+	IncludeDomains bool
+}
+
+type Options struct {
+	Server          string
+	Auth            AuthOptions
+	SessionID       string
+	TestMultiLine   bool
+	Resources       ResourceOptions
+	UnderlayDialer  client.UnderlayDialer
+	TLSKeyLogWriter io.Writer
+}
 
 type Client struct {
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
@@ -35,7 +57,7 @@ type Client struct {
 	useDomainResource bool
 
 	httpClient        *http.Client
-	underlayDialer    *underlay.Dialer
+	underlayDialer    client.UnderlayDialer
 	tlsKeyLogWriter   io.Writer
 	rawRequestTimeout time.Duration
 
@@ -61,26 +83,28 @@ type Client struct {
 	requestIPKeepAlive sync.Once
 	keepAliveStarted   sync.Once
 	closeOnce          sync.Once
+	graphCodeFile      string
 }
 
-func NewClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool, underlayDialer *underlay.Dialer, tlsKeyLogWriter io.Writer) *Client {
+func NewClient(options Options) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	c := &Client{
-		server:            server,
-		username:          username,
-		password:          password,
-		totpSecret:        totpSecret,
-		tlsCert:           tlsCert,
-		testMultiLine:     testMultiLine,
-		parseResource:     parseResource,
-		useDomainResource: useDomainResource,
+		server:            options.Server,
+		username:          options.Auth.Username,
+		password:          options.Auth.Password,
+		totpSecret:        options.Auth.TOTPSecret,
+		tlsCert:           options.Auth.Certificate,
+		testMultiLine:     options.TestMultiLine,
+		parseResource:     options.Resources.Fetch,
+		useDomainResource: options.Resources.IncludeDomains,
 		httpClient:        &http.Client{Timeout: easyConnectHTTPTimeout},
-		underlayDialer:    underlayDialer,
-		tlsKeyLogWriter:   tlsKeyLogWriter,
+		underlayDialer:    options.UnderlayDialer,
+		tlsKeyLogWriter:   options.TLSKeyLogWriter,
 		rawRequestTimeout: easyConnectRawRequestTimeout,
-		twfID:             twfID,
+		twfID:             options.SessionID,
 		lifecycleCtx:      lifecycleCtx,
 		lifecycleCancel:   lifecycleCancel,
+		graphCodeFile:     options.Auth.GraphCodeFile,
 	}
 	c.setHTTPTransport(&tls.Config{InsecureSkipVerify: true})
 	return c
@@ -164,47 +188,36 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	return nil, errors.New("not supported")
 }
 
-func (c *Client) Setup(graphCodeFile string) error {
+func (c *Client) Setup() error {
 	if c.underlayDialer == nil {
 		return errors.New("underlay dialer is required")
 	}
-	return c.setup(graphCodeFile)
-}
+	if err := c.ensureSession(); err != nil {
+		return err
+	}
 
-func (c *Client) setup(graphCodeFile string) error {
-	// Use username/password/(SMS code) to get the TwfID
-	if c.twfID == "" {
-		err := c.requestTwfID(graphCodeFile)
-		if err != nil {
-			return err
-		}
-	} // else we use the TwfID provided by user
-
-	// Then we can get config from server and find the best line
+	// Probe at most once. If the selected line changes, establish one fresh
+	// session on that line before continuing setup.
 	if c.testMultiLine {
 		configStr, err := c.requestConfig()
 		if err != nil {
 			log.Printf("Error occurred while requesting config: %v", err)
+		} else if err := c.parseLineListFromConfig(configStr); err != nil {
+			log.Printf("Error occurred while parsing config: %v", err)
 		} else {
-			err := c.parseLineListFromConfig(configStr)
+			log.Printf("Line list: %v", c.lineList)
+
+			bestLine, err := findBestLine(c.lineList, c.dialContext, c.tlsKeyLogWriter)
 			if err != nil {
-				log.Printf("Error occurred while parsing config: %v", err)
+				log.Printf("Error occurred while finding best line: %v", err)
 			} else {
-				log.Printf("Line list: %v", c.lineList)
-
-				bestLine, err := findBestLine(c.lineList, c.dialContext, c.tlsKeyLogWriter)
-				if err != nil {
-					log.Printf("Error occurred while finding best line: %v", err)
-				} else {
-					log.Printf("Best line: %v", bestLine)
-
-					// Now we use the bestLine as new server
-					if c.server != bestLine {
-						c.server = bestLine
-						c.testMultiLine = false
-						c.twfID = ""
-
-						return c.setup(graphCodeFile)
+				log.Printf("Best line: %v", bestLine)
+				if c.server != bestLine {
+					c.server = bestLine
+					c.testMultiLine = false
+					c.twfID = ""
+					if err := c.ensureSession(); err != nil {
+						return err
 					}
 				}
 			}
@@ -249,7 +262,7 @@ func (c *Client) setup(graphCodeFile string) error {
 	// surfaces as "broken pipe" + "unexpected handshake reply" panics in
 	// the L3 tunnel layer. The official EasyConnect client calls
 	// /por/update_session.csp; we mirror that. Guarded by sync.Once so the
-	// recursive Setup() path (testMultiLine) doesn't double-start.
+	// repeated Setup calls don't double-start it.
 	c.keepAliveStarted.Do(func() {
 		hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error {
 			c.Close()
@@ -259,6 +272,13 @@ func (c *Client) setup(graphCodeFile string) error {
 	})
 
 	return nil
+}
+
+func (c *Client) ensureSession() error {
+	if c.twfID != "" {
+		return nil
+	}
+	return c.requestTwfID(c.graphCodeFile)
 }
 
 func (c *Client) setHTTPTransport(tlsConfig *tls.Config) {

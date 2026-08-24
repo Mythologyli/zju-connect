@@ -117,24 +117,34 @@ server_address = "vpn.example.com"
 	}
 }
 
-func TestProtocolDerivedServerDefaultDoesNotRewriteExplicitServer(t *testing.T) {
-	derived, _, err := loadStartupOptions([]string{"--protocol", "atrust"}, func() []string { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if derived.Config.ServerAddress != "vpn.zju.edu.cn" {
-		t.Fatalf("derived ServerAddress = %q", derived.Config.ServerAddress)
-	}
+func TestProtocolServerWorkaround(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		protocol string
+		server   string
+		want     string
+	}{
+		{name: "empty server remains empty", protocol: "atrust"},
+		{name: "aTrust rewrites EasyConnect server", protocol: "atrust", server: "rvpn.zju.edu.cn", want: "vpn.zju.edu.cn"},
+		{name: "EasyConnect rewrites aTrust server", protocol: "easyconnect", server: "vpn.zju.edu.cn", want: "rvpn.zju.edu.cn"},
+		{name: "aTrust server remains unchanged", protocol: "atrust", server: "vpn.zju.edu.cn", want: "vpn.zju.edu.cn"},
+		{name: "EasyConnect server remains unchanged", protocol: "easyconnect", server: "rvpn.zju.edu.cn", want: "rvpn.zju.edu.cn"},
+		{name: "custom server remains unchanged", protocol: "atrust", server: "vpn.example.com", want: "vpn.example.com"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			args := []string{"--protocol", tt.protocol}
+			if tt.server != "" {
+				args = append(args, "--server", tt.server)
+			}
 
-	explicit, _, err := loadStartupOptions([]string{
-		"--protocol", "easyconnect",
-		"--server", "vpn.zju.edu.cn",
-	}, func() []string { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if explicit.Config.ServerAddress != "vpn.zju.edu.cn" {
-		t.Fatalf("explicit ServerAddress was rewritten to %q", explicit.Config.ServerAddress)
+			options, _, err := loadStartupOptions(args, func() []string { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if options.Config.ServerAddress != tt.want {
+				t.Fatalf("ServerAddress = %q, want %q", options.Config.ServerAddress, tt.want)
+			}
+		})
 	}
 }
 

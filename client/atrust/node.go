@@ -119,8 +119,8 @@ func nodeProbeScore(result *ping.Result) (time.Duration, bool) {
 	return result.Avg() + time.Duration(result.Failed())*penalty, true
 }
 
-func (c *Client) updateBestNodes(ctx context.Context, updateBestNodesInterval int) {
-	ticker := time.NewTicker(time.Duration(updateBestNodesInterval) * time.Second)
+func (c *Client) updateBestNodes(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

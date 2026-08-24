@@ -1,6 +1,6 @@
 //go:build linux
 
-package underlay
+package platformdialer
 
 import (
 	"context"
