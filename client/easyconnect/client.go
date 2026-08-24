@@ -192,43 +192,32 @@ func (c *Client) Setup() error {
 	if c.underlayDialer == nil {
 		return errors.New("underlay dialer is required")
 	}
-	return c.setup(c.graphCodeFile)
-}
+	if err := c.ensureSession(); err != nil {
+		return err
+	}
 
-func (c *Client) setup(graphCodeFile string) error {
-	// Use username/password/(SMS code) to get the TwfID
-	if c.twfID == "" {
-		err := c.requestTwfID(graphCodeFile)
-		if err != nil {
-			return err
-		}
-	} // else we use the TwfID provided by user
-
-	// Then we can get config from server and find the best line
+	// Probe at most once. If the selected line changes, establish one fresh
+	// session on that line before continuing setup.
 	if c.testMultiLine {
 		configStr, err := c.requestConfig()
 		if err != nil {
 			log.Printf("Error occurred while requesting config: %v", err)
+		} else if err := c.parseLineListFromConfig(configStr); err != nil {
+			log.Printf("Error occurred while parsing config: %v", err)
 		} else {
-			err := c.parseLineListFromConfig(configStr)
+			log.Printf("Line list: %v", c.lineList)
+
+			bestLine, err := findBestLine(c.lineList, c.dialContext, c.tlsKeyLogWriter)
 			if err != nil {
-				log.Printf("Error occurred while parsing config: %v", err)
+				log.Printf("Error occurred while finding best line: %v", err)
 			} else {
-				log.Printf("Line list: %v", c.lineList)
-
-				bestLine, err := findBestLine(c.lineList, c.dialContext, c.tlsKeyLogWriter)
-				if err != nil {
-					log.Printf("Error occurred while finding best line: %v", err)
-				} else {
-					log.Printf("Best line: %v", bestLine)
-
-					// Now we use the bestLine as new server
-					if c.server != bestLine {
-						c.server = bestLine
-						c.testMultiLine = false
-						c.twfID = ""
-
-						return c.setup(graphCodeFile)
+				log.Printf("Best line: %v", bestLine)
+				if c.server != bestLine {
+					c.server = bestLine
+					c.testMultiLine = false
+					c.twfID = ""
+					if err := c.ensureSession(); err != nil {
+						return err
 					}
 				}
 			}
@@ -273,7 +262,7 @@ func (c *Client) setup(graphCodeFile string) error {
 	// surfaces as "broken pipe" + "unexpected handshake reply" panics in
 	// the L3 tunnel layer. The official EasyConnect client calls
 	// /por/update_session.csp; we mirror that. Guarded by sync.Once so the
-	// recursive Setup() path (testMultiLine) doesn't double-start.
+	// repeated Setup calls don't double-start it.
 	c.keepAliveStarted.Do(func() {
 		hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error {
 			c.Close()
@@ -283,6 +272,13 @@ func (c *Client) setup(graphCodeFile string) error {
 	})
 
 	return nil
+}
+
+func (c *Client) ensureSession() error {
+	if c.twfID != "" {
+		return nil
+	}
+	return c.requestTwfID(c.graphCodeFile)
 }
 
 func (c *Client) setHTTPTransport(tlsConfig *tls.Config) {
