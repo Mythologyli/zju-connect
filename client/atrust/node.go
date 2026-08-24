@@ -54,7 +54,7 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.Di
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 0 {
-			var pingList []ping.TCPing
+			var pingList []*ping.TCPing
 			var chList []<-chan struct{}
 
 			for _, node := range nodes {
@@ -78,7 +78,7 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.Di
 				}
 				tcping.SetTarget(&target)
 
-				pingList = append(pingList, *tcping)
+				pingList = append(pingList, tcping)
 				ch := tcping.Start()
 				chList = append(chList, ch)
 			}
