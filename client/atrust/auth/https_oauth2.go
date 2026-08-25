@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -57,15 +58,16 @@ func (s *Session) httpsOauth2CallbackFromCode(loginDomain, code string) string {
 }
 
 func (s *Session) interactiveHttpsOauth2(loginURL string) (string, error) {
-	log.Printf("Visit %s to login, and catch the callback url", loginURL)
-	log.Println("Please enter the callback url:")
-	var callback string
-	_, err := fmt.Scanln(&callback)
+	response, err := s.challengeHandler.HandleExternalLogin(authchallenge.ExternalLoginChallenge{
+		Kind:     authchallenge.ExternalLoginOAuth2,
+		LoginURL: loginURL,
+		Message:  "Please enter the callback URL:",
+	})
 	if err != nil {
 		return "", err
 	}
 
-	callbackURL, err := url.Parse(callback)
+	callbackURL, err := url.Parse(response.CallbackURL)
 	if err != nil {
 		return "", err
 	}
@@ -73,7 +75,7 @@ func (s *Session) interactiveHttpsOauth2(loginURL string) (string, error) {
 		return "", err
 	}
 
-	return callback, nil
+	return response.CallbackURL, nil
 }
 
 func validateHTTPSOauth2CallbackURL(callbackURL *url.URL, baseHost string) error {

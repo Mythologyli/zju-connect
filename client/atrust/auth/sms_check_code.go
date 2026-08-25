@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -45,15 +46,16 @@ func (s *Session) loginAuthSmsCheckCode(phone, loginDomain, graphCodeFile string
 		return err
 	}
 
-	code := ""
-	log.Print("Please enter the SMS verification code: ")
-	_, err = fmt.Scanln(&code)
-	if err != nil {
-		return err
+	challenge := authchallenge.CodeChallenge{
+		Kind:    authchallenge.CodeSMS,
+		Message: "Please enter the SMS verification code:",
 	}
-
+	response, err := s.challengeHandler.HandleCodeChallenge(challenge)
+	if err != nil {
+		return fmt.Errorf("complete primary SMS challenge: %w", err)
+	}
 	smsCheckCodeProcess := func(graphCheckCode string) (int, error) {
-		return s.smsCheckCodeImpl(code, phone, loginDomain, graphCheckCode)
+		return s.smsCheckCodeImpl(response.Code, phone, loginDomain, graphCheckCode)
 	}
 	return s.withGraphCheckCode(smsCheckCodeProcess, graphCodeFile)
 }

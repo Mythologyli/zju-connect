@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -52,22 +53,23 @@ func (s *Session) casCallbackFromTicket(loginDomain, ticket string) string {
 }
 
 func (s *Session) interactiveCas(loginURL string) (string, error) {
-	log.Printf("Visit %s to login, and catch the callback url", loginURL)
-	log.Println("Please enter the callback url:")
-	var callback string
-	_, err := fmt.Scanln(&callback)
+	response, err := s.challengeHandler.HandleExternalLogin(authchallenge.ExternalLoginChallenge{
+		Kind:     authchallenge.ExternalLoginCAS,
+		LoginURL: loginURL,
+		Message:  "Please enter the callback url:",
+	})
 	if err != nil {
 		return "", err
 	}
 
-	callbackURL, err := url.Parse(callback)
+	callbackURL, err := url.Parse(response.CallbackURL)
 	if err != nil {
 		return "", err
 	}
 	if err := validateCASCallbackURL(callbackURL, s.baseHost); err != nil {
 		return "", err
 	}
-	return callback, nil
+	return response.CallbackURL, nil
 }
 
 func validateCASCallbackURL(callbackURL *url.URL, baseHost string) error {

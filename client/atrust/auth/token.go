@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/pquerna/otp/totp"
 )
@@ -20,42 +20,49 @@ type tokenResponse struct {
 }
 
 func (s *Session) completeTOTP() (authStep, error) {
-	token := ""
+	response := authchallenge.CodeResponse{}
 	if s.totpSecret != "" {
 		var err error
-		token, err = totp.GenerateCode(s.totpSecret, time.Now())
+		response.Code, err = totp.GenerateCode(s.totpSecret, time.Now())
 		if err != nil {
 			return authStep{}, fmt.Errorf("generate TOTP token: %w", err)
 		}
 	} else {
-		log.Print("Please enter the TOTP token: ")
-		if _, err := fmt.Scanln(&token); err != nil {
-			return authStep{}, err
+		challenge := authchallenge.CodeChallenge{
+			Kind:                 authchallenge.CodeTOTP,
+			Message:              "Please enter the TOTP token:",
+			CanSkipSecondaryAuth: true,
+		}
+		var err error
+		response, err = s.challengeHandler.HandleCodeChallenge(challenge)
+		if err != nil {
+			return authStep{}, fmt.Errorf("complete TOTP challenge: %w", err)
 		}
 	}
 
-	token, skipSecondaryAuth := parseTokenInput(token)
 	payload := map[string]interface{}{
 		"action":            "auth",
-		"totpToken":         token,
+		"totpToken":         response.Code,
 		"isPrevEffect":      false,
-		"skipSecondaryAuth": skipSecondaryAuth,
+		"skipSecondaryAuth": boolToInt(response.SkipSecondaryAuth),
 	}
 	s.addUsername(payload)
 	return s.submitToken(payload)
 }
 
 func (s *Session) completeRadius(service string) (authStep, error) {
-	log.Print("Please enter the RADIUS token: ")
-	token := ""
-	if _, err := fmt.Scanln(&token); err != nil {
-		return authStep{}, err
+	challenge := authchallenge.CodeChallenge{
+		Kind:                 authchallenge.CodeRadius,
+		Message:              "Please enter the RADIUS token:",
+		CanSkipSecondaryAuth: true,
 	}
-
-	token, skipSecondaryAuth := parseTokenInput(token)
+	response, err := s.challengeHandler.HandleCodeChallenge(challenge)
+	if err != nil {
+		return authStep{}, fmt.Errorf("complete RADIUS challenge: %w", err)
+	}
 	payload := map[string]interface{}{
-		"radiusToken":       token,
-		"skipSecondaryAuth": skipSecondaryAuth,
+		"radiusToken":       response.Code,
+		"skipSecondaryAuth": boolToInt(response.SkipSecondaryAuth),
 	}
 	s.addUsername(payload)
 	return s.submitTokenAt(service, payload)
@@ -67,12 +74,11 @@ func (s *Session) addUsername(payload map[string]interface{}) {
 	}
 }
 
-func parseTokenInput(input string) (string, int) {
-	input = strings.TrimSpace(input)
-	if strings.HasPrefix(input, "$") {
-		return strings.TrimSpace(strings.TrimPrefix(input, "$")), 1
+func boolToInt(value bool) int {
+	if value {
+		return 1
 	}
-	return input, 0
+	return 0
 }
 
 func (s *Session) submitToken(payload map[string]interface{}) (authStep, error) {
