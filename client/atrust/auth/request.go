@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -500,16 +501,16 @@ func (s *Session) authSms(step authStep) error {
 func (s *Session) smsCheckCode(step authStep) (authStep, error) {
 	log.Println("Perform POST /passport/v1/auth/sms")
 
-	code := ""
-	log.Println("Tips: Add prefix '$' to sms code to skip secondary authentication")
-	log.Print("Please enter the SMS verification code: ")
-	_, err := fmt.Scanln(&code)
-	if err != nil {
-		return authStep{}, err
+	challenge := authchallenge.CodeChallenge{
+		Kind:                 authchallenge.CodeSMS,
+		Message:              "Please enter the SMS verification code:",
+		CanSkipSecondaryAuth: true,
 	}
-
-	code, skipSecondaryAuth := strings.CutPrefix(code, "$")
-	return s.secondarySMSCheckCodeImpl(step, code, skipSecondaryAuth)
+	response, err := s.challengeHandler.HandleCodeChallenge(challenge)
+	if err != nil {
+		return authStep{}, fmt.Errorf("complete secondary SMS challenge: %w", err)
+	}
+	return s.secondarySMSCheckCodeImpl(step, response.Code, response.SkipSecondaryAuth)
 }
 
 func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string, skipSecondaryAuth bool) (authStep, error) {

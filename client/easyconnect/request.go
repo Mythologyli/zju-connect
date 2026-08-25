@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -24,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/pquerna/otp/totp"
 	utls "github.com/refraction-networking/utls"
@@ -139,44 +139,38 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 
 	randCode := ""
 	if rndImg == "1" {
-		if graphCodeFile != "" {
-			addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
-			log.Printf("Request: %s", addr)
-			req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Cookie", "TWFID="+c.twfID)
-			req.Header.Set("User-Agent", "EasyConnect_windows")
-
-			resp, err = c.httpClient.Do(req)
-			if err != nil {
-				return err
-			}
-
-			buf.Reset()
-			_, err = io.Copy(&buf, resp.Body)
-			if err != nil {
-				return err
-			}
-			defer func(Body io.ReadCloser) {
-				_ = Body.Close()
-			}(resp.Body)
-
-			if writeErr := os.WriteFile(graphCodeFile, buf.Bytes(), 0644); writeErr != nil {
-				log.Printf("Warning: failed to write graph code image to %s: %v", graphCodeFile, writeErr)
-			} else {
-				log.Printf("Graph check code saved to %s", graphCodeFile)
-			}
-
-			fmt.Print("Please enter rand code: ")
-			_, err = fmt.Scanln(&randCode)
-			if err != nil {
-				return err
-			}
-		} else {
-			log.Print("Warning: rand code required, but no graph code file provided.")
+		addr = "https://" + c.server + "/por/rand_code.csp?apiversion=1"
+		log.Printf("Request: %s", addr)
+		req, err := http.NewRequestWithContext(c.lifecycleCtx, http.MethodGet, addr, nil)
+		if err != nil {
+			return err
 		}
+		req.Header.Set("Cookie", "TWFID="+c.twfID)
+		req.Header.Set("User-Agent", "EasyConnect_windows")
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		captchaImage, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+
+		challenge := authchallenge.TextCaptchaChallenge{
+			Image:      captchaImage,
+			OutputPath: graphCodeFile,
+			Message:    "Please enter rand code:",
+		}
+		captchaResponse, err := c.challengeHandler.HandleTextCaptcha(challenge)
+		if err != nil {
+			return fmt.Errorf("complete EasyConnect captcha challenge: %w", err)
+		}
+		if err := challenge.Validate(captchaResponse); err != nil {
+			return fmt.Errorf("invalid EasyConnect captcha response: %w", err)
+		}
+		randCode = captchaResponse.Code
 	}
 
 	addr = "https://" + c.server + "/por/login_psw.csp?anti_replay=1&encrypt=1&type=cs"
@@ -283,17 +277,17 @@ func (c *Client) loginSMS() error {
 
 	log.Printf("SMS code is sent or still valid")
 
-	fmt.Print("Please enter your SMS code: ")
-	smsCode := ""
-	_, err = fmt.Scanln(&smsCode)
+	codeResponse, err := c.challengeHandler.HandleCodeChallenge(authchallenge.CodeChallenge{
+		Kind:    authchallenge.CodeSMS,
+		Message: "Please enter your SMS code:",
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("complete EasyConnect SMS challenge: %w", err)
 	}
-
 	addr = "https://" + c.server + "/por/login_sms1.csp?apiversion=1"
 	log.Printf("SMS Request: %s", addr)
 	form := url.Values{
-		"svpn_inputsms": {smsCode},
+		"svpn_inputsms": {codeResponse.Code},
 	}
 
 	req, err = http.NewRequestWithContext(c.lifecycleCtx, http.MethodPost, addr, strings.NewReader(form.Encode()))
@@ -338,11 +332,16 @@ func (c *Client) loginTOTP() error {
 	var totpCode string
 	var err error
 	if c.totpSecret == "" {
-		fmt.Print("Please enter your TOTP code:")
-		_, err = fmt.Scanln(&totpCode)
+		challenge := authchallenge.CodeChallenge{
+			Kind:    authchallenge.CodeTOTP,
+			Message: "Please enter your TOTP code:",
+		}
+		var response authchallenge.CodeResponse
+		response, err = c.challengeHandler.HandleCodeChallenge(challenge)
+		totpCode = response.Code
 	} else {
 		totpCode, err = totp.GenerateCode(c.totpSecret, time.Now())
-		fmt.Println("Generate TOTP code:", totpCode)
+		log.Println("Generated TOTP code")
 	}
 	if err != nil {
 		return err

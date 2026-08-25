@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/underlay"
 )
 
@@ -13,6 +14,7 @@ func TestNewClientMapsOptions(t *testing.T) {
 	dialer := newTestUnderlay(t, underlay.Options{AutoDetect: false})
 	certificate := tls.Certificate{Certificate: [][]byte{{1, 2, 3}}}
 	var keyLogWriter strings.Builder
+	challengeHandler := authchallenge.HandlerFuncs{}
 
 	c := NewClient(Options{
 		Server: "vpn.example.com:443",
@@ -29,8 +31,9 @@ func TestNewClientMapsOptions(t *testing.T) {
 			Fetch:          true,
 			IncludeDomains: true,
 		},
-		UnderlayDialer:  dialer,
-		TLSKeyLogWriter: &keyLogWriter,
+		UnderlayDialer:   dialer,
+		TLSKeyLogWriter:  &keyLogWriter,
+		ChallengeHandler: challengeHandler,
 	})
 	t.Cleanup(c.Close)
 
@@ -48,6 +51,9 @@ func TestNewClientMapsOptions(t *testing.T) {
 	}
 	if c.underlayDialer != dialer || c.tlsKeyLogWriter != &keyLogWriter {
 		t.Fatal("transport dependencies were not mapped")
+	}
+	if reflect.TypeOf(c.challengeHandler) != reflect.TypeOf(challengeHandler) {
+		t.Fatalf("challenge handler type = %T, want %T", c.challengeHandler, challengeHandler)
 	}
 }
 

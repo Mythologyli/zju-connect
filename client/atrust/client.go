@@ -16,6 +16,7 @@ import (
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/keylog"
 	"github.com/mythologyli/zju-connect/log"
@@ -44,6 +45,7 @@ type SetupOptions struct {
 	ClientData               []byte
 	ResourceData             []byte
 	BestNodesRefreshInterval time.Duration
+	ChallengeHandler         authchallenge.Handler
 }
 
 type Client struct {
@@ -370,9 +372,10 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 		}
 
 		loginResult, err := sess.Login(options.LoginMethod, auth.LoginOptions{
-			DeviceID:   c.DeviceID,
-			Cookies:    clientAuthData.Cookies,
-			TOTPSecret: options.TOTPSecret,
+			DeviceID:         c.DeviceID,
+			Cookies:          clientAuthData.Cookies,
+			TOTPSecret:       options.TOTPSecret,
+			ChallengeHandler: options.ChallengeHandler,
 		})
 		if err != nil {
 			log.Println("Login error:", err)

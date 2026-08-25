@@ -1,15 +1,14 @@
-package auth
+package authchallenge
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os/exec"
 	"runtime"
 	"time"
-
-	"github.com/mythologyli/zju-connect/log"
 )
 
 const captchaPageHTML = `<!DOCTYPE html>
@@ -300,8 +299,8 @@ applyLang();
 // serveCaptchaInBrowser starts a temporary HTTP server to display the captcha
 // image in the user's browser and waits for the user to click on character
 // positions and submit the coordinates.
-func serveCaptchaInBrowser(imgData []byte, timeout time.Duration) (string, error) {
-	resultCh := make(chan string, 1)
+func serveCaptchaInBrowser(imgData []byte, timeout time.Duration, output io.Writer) (ClickCaptchaResponse, error) {
+	resultCh := make(chan ClickCaptchaResponse, 1)
 
 	mux := http.NewServeMux()
 
@@ -327,13 +326,13 @@ func serveCaptchaInBrowser(imgData []byte, timeout time.Duration) (string, error
 			http.Error(w, "empty code", http.StatusBadRequest)
 			return
 		}
-		normalized, err := canonicalizeGraphCheckCode(code, imgData)
+		response, err := parseClickCaptchaResponse(code)
 		if err != nil {
 			http.Error(w, "invalid code: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		select {
-		case resultCh <- normalized:
+		case resultCh <- response:
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("ok"))
 		default:
@@ -343,7 +342,7 @@ func serveCaptchaInBrowser(imgData []byte, timeout time.Duration) (string, error
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", fmt.Errorf("failed to start captcha server: %w", err)
+		return ClickCaptchaResponse{}, fmt.Errorf("failed to start captcha server: %w", err)
 	}
 
 	srv := &http.Server{Handler: mux}
@@ -351,23 +350,22 @@ func serveCaptchaInBrowser(imgData []byte, timeout time.Duration) (string, error
 	go srv.Serve(listener)
 
 	addr := fmt.Sprintf("http://%s", listener.Addr().String())
-	log.Printf("Captcha server started at %s", addr)
+	_, _ = fmt.Fprintf(output, "Captcha server started at %s\n", addr)
 
-	openBrowser(addr)
+	openBrowser(addr, output)
 
 	select {
-	case code := <-resultCh:
-		log.Println("Captcha code received from browser")
+	case response := <-resultCh:
 		srv.Shutdown(context.Background())
-		return code, nil
+		return response, nil
 	case <-time.After(timeout):
 		srv.Shutdown(context.Background())
-		return "", fmt.Errorf("captcha input timed out after %v", timeout)
+		return ClickCaptchaResponse{}, fmt.Errorf("captcha input timed out after %v", timeout)
 	}
 }
 
 // openBrowser tries to open the given URL in the system's default browser.
-func openBrowser(url string) {
+func openBrowser(url string, output io.Writer) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -377,10 +375,10 @@ func openBrowser(url string) {
 	case "windows":
 		cmd = exec.Command("cmd", "/c", "start", url)
 	default:
-		log.Printf("Unsupported platform for auto-opening browser, please visit: %s", url)
+		_, _ = fmt.Fprintf(output, "Unsupported platform for auto-opening browser, please visit: %s\n", url)
 		return
 	}
 	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to open browser: %v. Please visit: %s", err, url)
+		_, _ = fmt.Fprintf(output, "Failed to open browser: %v. Please visit: %s\n", err, url)
 	}
 }

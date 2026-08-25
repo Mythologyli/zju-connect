@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 )
 
 func TestAuthStepFromTokenService(t *testing.T) {
@@ -23,13 +25,6 @@ func TestAuthStepFromTokenService(t *testing.T) {
 	step = authStepFromData(authStepData{NextService: "auth/sendSms"})
 	if step.Service != "auth/sms" || step.SMSMode != smsWithoutAuthID {
 		t.Fatalf("unexpected sendSms step: %+v", step)
-	}
-}
-
-func TestParseTokenInput(t *testing.T) {
-	token, skip := parseTokenInput(" $ 123456 ")
-	if token != "123456" || skip != 1 {
-		t.Fatalf("unexpected parsed token: token=%q skip=%d", token, skip)
 	}
 }
 
@@ -72,6 +67,36 @@ func TestSubmitTOTPToken(t *testing.T) {
 	}
 	if step.Service != "auth/accessCheck" {
 		t.Fatalf("unexpected next step: %+v", step)
+	}
+}
+
+func TestCompleteTOTPUsesStructuredChallengeResponse(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Token             string `json:"totpToken"`
+			SkipSecondaryAuth int    `json:"skipSecondaryAuth"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload.Token != "123456" || payload.SkipSecondaryAuth != 1 {
+			t.Errorf("unexpected payload: %+v", payload)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{}}`)
+	}))
+	defer server.Close()
+
+	session := newTLSTestSession(server)
+	session.challengeHandler = authchallenge.HandlerFuncs{
+		Code: func(challenge authchallenge.CodeChallenge) (authchallenge.CodeResponse, error) {
+			if challenge.Kind != authchallenge.CodeTOTP || !challenge.CanSkipSecondaryAuth {
+				t.Fatalf("unexpected challenge: %+v", challenge)
+			}
+			return authchallenge.CodeResponse{Code: "123456", SkipSecondaryAuth: true}, nil
+		},
+	}
+	if _, err := session.completeTOTP(); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"image/color"
 	"image/png"
 	"testing"
+
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 )
 
 func buildPNG(t *testing.T, w, h int) []byte {
@@ -24,62 +26,55 @@ func buildPNG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-func TestCanonicalizeGraphCheckCode_ObjectInput(t *testing.T) {
-	raw := `{"coordinates":[[11,22],[33,44]],"width":300,"height":150}`
-	got, err := canonicalizeGraphCheckCode(raw, nil)
+func TestGraphCheckCodeFromResponse(t *testing.T) {
+	imgData := buildPNG(t, 300, 150)
+	raw, err := graphCheckCodeFromResponse(authchallenge.ClickCaptchaResponse{
+		Points: []authchallenge.Point{{X: 11, Y: 22}, {X: 33, Y: 44}},
+	}, imgData)
 	if err != nil {
-		t.Fatalf("canonicalizeGraphCheckCode returned error: %v", err)
+		t.Fatal(err)
 	}
-
-	var obj struct {
-		Coordinates [][]int `json:"coordinates"`
-		Width       int     `json:"width"`
-		Height      int     `json:"height"`
+	var payload graphCheckCodePayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(got), &obj); err != nil {
-		t.Fatalf("result is not valid json: %v", err)
-	}
-	if len(obj.Coordinates) != 2 || len(obj.Coordinates[0]) != 2 || len(obj.Coordinates[1]) != 2 {
-		t.Fatalf("unexpected coordinates: %+v", obj.Coordinates)
-	}
-	if obj.Coordinates[0][0] != 11 || obj.Coordinates[0][1] != 22 || obj.Coordinates[1][0] != 33 || obj.Coordinates[1][1] != 44 {
-		t.Fatalf("unexpected coordinates values: %+v", obj.Coordinates)
-	}
-	if obj.Width != 300 || obj.Height != 150 {
-		t.Fatalf("unexpected size: %dx%d", obj.Width, obj.Height)
+	if payload.Width != 300 || payload.Height != 150 || len(payload.Coordinates) != 2 {
+		t.Fatalf("unexpected graph check code payload: %+v", payload)
 	}
 }
 
-func TestCanonicalizeGraphCheckCode_ArrayObjectInput(t *testing.T) {
-	raw := `[{"x":100,"y":200},{"x":150,"y":300}]`
-	imgData := buildPNG(t, 320, 180)
-	got, err := canonicalizeGraphCheckCode(raw, imgData)
+func TestGraphCheckCodeFromResponsePreservesDimensions(t *testing.T) {
+	raw, err := graphCheckCodeFromResponse(authchallenge.ClickCaptchaResponse{
+		Points: []authchallenge.Point{{X: 11, Y: 22}},
+		Width:  640,
+		Height: 360,
+	}, nil)
 	if err != nil {
-		t.Fatalf("canonicalizeGraphCheckCode returned error: %v", err)
+		t.Fatal(err)
 	}
-
-	var obj struct {
-		Coordinates [][]int `json:"coordinates"`
-		Width       int     `json:"width"`
-		Height      int     `json:"height"`
+	var payload graphCheckCodePayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(got), &obj); err != nil {
-		t.Fatalf("result is not valid json: %v", err)
-	}
-	if len(obj.Coordinates) != 2 {
-		t.Fatalf("unexpected coordinates length: %d", len(obj.Coordinates))
-	}
-	if obj.Coordinates[0][0] != 100 || obj.Coordinates[0][1] != 200 || obj.Coordinates[1][0] != 150 || obj.Coordinates[1][1] != 300 {
-		t.Fatalf("unexpected coordinates values: %+v", obj.Coordinates)
-	}
-	if obj.Width != 320 || obj.Height != 180 {
-		t.Fatalf("unexpected size: %dx%d", obj.Width, obj.Height)
+	if payload.Width != 640 || payload.Height != 360 {
+		t.Fatalf("unexpected graph check code dimensions: %dx%d", payload.Width, payload.Height)
 	}
 }
 
-func TestCanonicalizeGraphCheckCode_InvalidInput(t *testing.T) {
-	_, err := canonicalizeGraphCheckCode(`{"coordinates":"bad"}`, nil)
-	if err == nil {
-		t.Fatal("expected error for invalid graph check code input, got nil")
+func TestGraphCheckCodeFromResponseReplacesIncompleteDimensions(t *testing.T) {
+	imgData := buildPNG(t, 300, 150)
+	raw, err := graphCheckCodeFromResponse(authchallenge.ClickCaptchaResponse{
+		Points: []authchallenge.Point{{X: 11, Y: 22}},
+		Width:  640,
+	}, imgData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload graphCheckCodePayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Width != 300 || payload.Height != 150 {
+		t.Fatalf("unexpected graph check code dimensions: %dx%d", payload.Width, payload.Height)
 	}
 }

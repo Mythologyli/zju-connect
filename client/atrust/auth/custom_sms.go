@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/log"
 )
 
@@ -17,15 +17,16 @@ func (s *Session) completeCustomSMS() (authStep, error) {
 		return authStep{}, err
 	}
 
-	code := ""
-	log.Println("Tips: Add prefix '$' to sms code to skip secondary authentication")
-	log.Print("Please enter the SMS verification code: ")
-	if _, err := fmt.Scanln(&code); err != nil {
-		return authStep{}, err
+	challenge := authchallenge.CodeChallenge{
+		Kind:                 authchallenge.CodeSMS,
+		Message:              "Please enter the SMS verification code:",
+		CanSkipSecondaryAuth: true,
 	}
-
-	code, skipSecondaryAuth := strings.CutPrefix(code, "$")
-	return s.customSMSCheckCode(code, skipSecondaryAuth)
+	response, err := s.challengeHandler.HandleCodeChallenge(challenge)
+	if err != nil {
+		return authStep{}, fmt.Errorf("complete custom SMS challenge: %w", err)
+	}
+	return s.customSMSCheckCode(response.Code, response.SkipSecondaryAuth)
 }
 
 func (s *Session) sendCustomSMS() error {

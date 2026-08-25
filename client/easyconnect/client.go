@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/client/authchallenge"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
@@ -37,13 +38,14 @@ type ResourceOptions struct {
 }
 
 type Options struct {
-	Server          string
-	Auth            AuthOptions
-	SessionID       string
-	TestMultiLine   bool
-	Resources       ResourceOptions
-	UnderlayDialer  client.UnderlayDialer
-	TLSKeyLogWriter io.Writer
+	Server           string
+	Auth             AuthOptions
+	SessionID        string
+	TestMultiLine    bool
+	Resources        ResourceOptions
+	UnderlayDialer   client.UnderlayDialer
+	TLSKeyLogWriter  io.Writer
+	ChallengeHandler authchallenge.Handler
 }
 
 type Client struct {
@@ -84,10 +86,15 @@ type Client struct {
 	keepAliveStarted   sync.Once
 	closeOnce          sync.Once
 	graphCodeFile      string
+	challengeHandler   authchallenge.Handler
 }
 
 func NewClient(options Options) *Client {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+	challengeHandler := options.ChallengeHandler
+	if challengeHandler == nil {
+		challengeHandler = authchallenge.NewCLIHandler(authchallenge.CLIOptions{})
+	}
 	c := &Client{
 		server:            options.Server,
 		username:          options.Auth.Username,
@@ -105,6 +112,7 @@ func NewClient(options Options) *Client {
 		lifecycleCtx:      lifecycleCtx,
 		lifecycleCancel:   lifecycleCancel,
 		graphCodeFile:     options.Auth.GraphCodeFile,
+		challengeHandler:  challengeHandler,
 	}
 	c.setHTTPTransport(&tls.Config{InsecureSkipVerify: true})
 	return c
