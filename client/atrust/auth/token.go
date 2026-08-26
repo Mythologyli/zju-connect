@@ -108,7 +108,7 @@ func (s *Session) submitTokenAt(service string, payload map[string]interface{}) 
 	req.Header.Set("x-sdp-env", s.env)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}
@@ -140,7 +140,7 @@ func (s *Session) accessCheck() (authStep, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}

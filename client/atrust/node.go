@@ -21,9 +21,9 @@ type NodeGroup struct {
 
 type nodeGroupsProbeFunc func(map[string][]string) map[string]string
 
-func getBestNodes(nodeGroups map[string]NodeGroup, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
+func getBestNodes(ctx context.Context, nodeGroups map[string]NodeGroup, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
 	return selectBestNodes(nodeGroups, func(nodeGroups map[string][]string) map[string]string {
-		return getBestReachableNodes(nodeGroups, dialContext, keyLogWriter)
+		return getBestReachableNodes(ctx, nodeGroups, dialContext, keyLogWriter)
 	})
 }
 
@@ -50,7 +50,10 @@ func selectBestNodes(nodeGroups map[string]NodeGroup, probe nodeGroupsProbeFunc)
 	return bestNodes
 }
 
-func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
+func getBestReachableNodes(ctx context.Context, nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 0 {
@@ -79,7 +82,7 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.Di
 				tcping.SetTarget(&target)
 
 				pingList = append(pingList, tcping)
-				ch := tcping.Start()
+				ch := tcping.StartWithContext(ctx)
 				chList = append(chList, ch)
 			}
 
@@ -130,7 +133,7 @@ func (c *Client) updateBestNodes(ctx context.Context, interval time.Duration) {
 		case <-ticker.C:
 		}
 
-		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
+		bestNodes := getBestNodes(ctx, c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()

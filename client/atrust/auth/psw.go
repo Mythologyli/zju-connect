@@ -81,7 +81,7 @@ func (s *Session) pswImpl(username, password, loginDomain, graphCheckCode string
 	req.Header.Set("x-sdp-env", s.env)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return 0, err
 	}
