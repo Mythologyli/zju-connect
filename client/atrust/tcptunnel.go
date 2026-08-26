@@ -451,10 +451,16 @@ func calcXRequestSig(key []byte, data []byte) string {
 	return strings.ToUpper(hex.EncodeToString(sum))
 }
 
-func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr) (client.IPResource, bool) {
-	return index.MatchLastWhere(addr.IP, "tcp", addr.Port, func(resource client.IPResource) bool {
+func matchTCPIPResource(index *ipresource.Index, addr *net.TCPAddr, ignoreTCPPrefL3 bool) (client.IPResource, bool) {
+	if resource, ok := index.MatchLastWhere(addr.IP, "tcp", addr.Port, func(resource client.IPResource) bool {
 		return !resource.EnableTCPPrefL3
-	})
+	}); ok {
+		return resource, true
+	}
+	if ignoreTCPPrefL3 {
+		return index.MatchLast(addr.IP, "tcp", addr.Port)
+	}
+	return client.IPResource{}, false
 }
 
 func tcpTunnelAuthDestinations(realDstHost string, port int, domain string, addrPretend bool) (destAddr, destIP string) {
@@ -478,8 +484,9 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	nodeGroupID := ""
 	domain := ""
 	addrPretend := true
+	ignoreTCPPrefL3 := resolve.IgnoreTCPPrefL3(ctx)
 	if resource, ok := ctx.Value(resolve.ContextKeyDomainResource).(client.DomainResource); ok {
-		if resource.EnableTCPPrefL3 {
+		if resource.EnableTCPPrefL3 && !ignoreTCPPrefL3 {
 			return nil, fmt.Errorf("host:%s port:%d prefers L3 tunnel: %w", addr.IP, addr.Port, client.ErrResourceNotFound)
 		}
 		appID = resource.AppID
@@ -490,7 +497,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		addrPretend = resource.AddrPretend
 	}
 	if appID == "" {
-		resource, ok := matchTCPIPResource(c.resourceIndex, addr)
+		resource, ok := matchTCPIPResource(c.resourceIndex, addr, ignoreTCPPrefL3)
 		if ok {
 			appID = resource.AppID
 			nodeGroupID = resource.NodeGroupID
