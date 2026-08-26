@@ -16,6 +16,7 @@ on:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
+  workflow_dispatch:
 
 permissions: write-all
 
