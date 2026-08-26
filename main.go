@@ -397,7 +397,7 @@ func main() {
 	for _, portForwarding := range conf.PortForwardingList {
 		switch portForwarding.NetworkType {
 		case "tcp":
-			go service.ServeTCPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
+			go service.ServeTCPForwarding(vpnDialer.Dial, portForwarding.BindAddress, portForwarding.RemoteAddress)
 		case "udp":
 			go service.ServeUDPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
 		default:
