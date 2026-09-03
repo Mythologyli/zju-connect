@@ -106,6 +106,7 @@ type Session struct {
 	pubKeyExp      string
 	antiReplayRand string
 	ticket         string
+	nextService    string
 
 	response         map[string]json.RawMessage
 	challengeHandler authchallenge.Handler
@@ -366,7 +367,11 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 		return LoginResult{}, err
 	}
 
-	err = s.continueAuth(authStep{Service: "auth/authCheck"})
+	nextService := s.nextService
+	if nextService == "" {
+		nextService = "auth/authCheck"
+	}
+	err = s.continueAuth(authStep{Service: nextService})
 	if err != nil {
 		return LoginResult{}, err
 	}

@@ -60,9 +60,19 @@ func (s *Session) completeRadius(service string) (authStep, error) {
 	if err != nil {
 		return authStep{}, fmt.Errorf("complete RADIUS challenge: %w", err)
 	}
-	payload := map[string]interface{}{
-		"radiusToken":       response.Code,
-		"skipSecondaryAuth": boolToInt(response.SkipSecondaryAuth),
+
+	// aTrust requires the RADIUS token RSA-encrypted on /auth/challenge, like the password.
+	payload := map[string]interface{}{}
+	if service == "auth/challenge" {
+		encryptedToken, err := s.encryptChallengeResponse(response.Code)
+		if err != nil {
+			return authStep{}, fmt.Errorf("encrypt RADIUS token: %w", err)
+		}
+		payload["radiusToken"] = encryptedToken
+		// Omit skipSecondaryAuth: an extra field makes aTrust reject with error 75500000.
+	} else {
+		payload["radiusToken"] = response.Code
+		payload["skipSecondaryAuth"] = boolToInt(response.SkipSecondaryAuth)
 	}
 	s.addUsername(payload)
 	return s.submitTokenAt(service, payload)
