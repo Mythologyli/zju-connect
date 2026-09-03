@@ -106,6 +106,8 @@ type Session struct {
 	pubKeyExp      string
 	antiReplayRand string
 	ticket         string
+	// nextService is the next step the server requested after the password step.
+	nextService string
 
 	response         map[string]json.RawMessage
 	challengeHandler authchallenge.Handler
@@ -366,7 +368,12 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 		return LoginResult{}, err
 	}
 
-	err = s.continueAuth(authStep{Service: "auth/authCheck"})
+	// Continue with the step the server requested, falling back to authCheck.
+	nextService := s.nextService
+	if nextService == "" {
+		nextService = "auth/authCheck"
+	}
+	err = s.continueAuth(authStep{Service: nextService})
 	if err != nil {
 		return LoginResult{}, err
 	}
