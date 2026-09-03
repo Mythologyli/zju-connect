@@ -112,21 +112,39 @@ type Session struct {
 	challengeHandler authchallenge.Handler
 }
 
+type SessionOptions struct {
+	TLSConfig       *tls.Config
+	TLSKeyLogWriter io.Writer
+	DialContext     client.DialContextFunc
+}
+
 func NewSession(server string, tlsKeyLogWriter io.Writer, dialContext ...client.DialContextFunc) *Session {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-			KeyLogWriter:       tlsKeyLogWriter,
-		},
+	options := SessionOptions{TLSKeyLogWriter: tlsKeyLogWriter}
+	if len(dialContext) > 0 {
+		options.DialContext = dialContext[0]
 	}
-	if len(dialContext) > 0 && dialContext[0] != nil {
-		tr.DialContext = dialContext[0]
+	return NewSessionWithOptions(server, options)
+}
+
+func NewSessionWithOptions(server string, options SessionOptions) *Session {
+	tlsConfig := options.TLSConfig
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{InsecureSkipVerify: true}
+	} else {
+		tlsConfig = tlsConfig.Clone()
+	}
+	if options.TLSKeyLogWriter != nil {
+		tlsConfig.KeyLogWriter = options.TLSKeyLogWriter
+	}
+	tr := &http.Transport{TLSClientConfig: tlsConfig}
+	if options.DialContext != nil {
+		tr.DialContext = options.DialContext
 	}
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
+	httpClient := &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second}
 
 	return &Session{
-		client:   client,
+		client:   httpClient,
 		baseHost: server,
 		baseURL:  "https://" + server,
 		rid:      base64.StdEncoding.EncodeToString([]byte(server)),
