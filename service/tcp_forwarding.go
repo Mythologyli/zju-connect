@@ -6,30 +6,20 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
-	"strings"
 
+	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
 )
 
-func handleRequest(stack stack.Stack, conn net.Conn, remoteAddress string) {
+func handleTCPForwardingRequest(dialContext client.DialContextFunc, conn net.Conn, remoteAddress string) {
 	log.Printf("Port forwarding (TCP): %s -> %s -> %s", conn.RemoteAddr(), conn.LocalAddr(), remoteAddress)
 
-	parts := strings.Split(remoteAddress, ":")
-	host := parts[0]
-	port, err := strconv.Atoi(parts[1])
+	proxy, err := dialContext(context.Background(), "tcp", remoteAddress)
 	if err != nil {
-		panic(err)
-	}
-
-	proxy, err := stack.DialTCP(context.Background(), &net.TCPAddr{
-		IP:   net.ParseIP(host),
-		Port: port,
-	})
-	if err != nil {
-		panic(err)
+		log.Printf("Port forwarding (TCP) dial %s failed: %v", remoteAddress, err)
+		_ = conn.Close()
+		return
 	}
 
 	go copyIO(conn, proxy)
@@ -46,7 +36,7 @@ func copyIO(src, dest net.Conn) {
 	_, _ = io.Copy(src, dest)
 }
 
-func ServeTCPForwarding(stack stack.Stack, bindAddress string, remoteAddress string) {
+func ServeTCPForwarding(dialContext client.DialContextFunc, bindAddress string, remoteAddress string) {
 	ln, err := net.Listen("tcp", bindAddress)
 	if err != nil {
 		panic(err)
@@ -72,6 +62,6 @@ func ServeTCPForwarding(stack stack.Stack, bindAddress string, remoteAddress str
 			panic(err)
 		}
 
-		go handleRequest(stack, conn, remoteAddress)
+		go handleTCPForwardingRequest(dialContext, conn, remoteAddress)
 	}
 }
