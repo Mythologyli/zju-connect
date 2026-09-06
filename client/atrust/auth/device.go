@@ -29,7 +29,7 @@ func (s *Session) QueryDevice() (*QueryDeviceResult, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *Session) TrustDevice(idList []string) error {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (s *Session) UntrustDevice(idList []string) error {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return err
 	}

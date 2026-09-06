@@ -78,7 +78,7 @@ func (s *Session) sendSms(phone, loginDomain, graphCheckCode string) (int, error
 	req.Header.Set("x-sdp-env", s.env)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -133,7 +133,7 @@ func (s *Session) smsCheckCodeImpl(code, phone, loginDomain, graphCheckCode stri
 	req.Header.Set("x-sdp-env", s.env)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return 0, err
 	}

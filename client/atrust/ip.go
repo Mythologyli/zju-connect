@@ -80,7 +80,7 @@ func readIPTunnelResponses(reader io.Reader) (net.IP, error) {
 	return net.IPv4(vipData[0], vipData[1], vipData[2], vipData[3]), nil
 }
 
-func (c *Client) getIP() error {
+func (c *Client) getIP(parent context.Context) error {
 	addr := c.BestNodes[c.MajorNodeGroup]
 	if addr == "" {
 		for _, node := range c.BestNodes {
@@ -92,7 +92,10 @@ func (c *Client) getIP() error {
 		return fmt.Errorf("no reachable node for ip request")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	conn, err := dialTLSContext(ctx, c.underlayDialer, "tcp", addr, tunnelTLSConfig(c.tlsKeyLogWriter))
 	if err != nil {

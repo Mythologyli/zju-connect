@@ -59,7 +59,7 @@ func (s *Session) requestAuthStep(method string, step authStep, body []byte) (au
 		req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	}
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}
