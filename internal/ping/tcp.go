@@ -15,12 +15,13 @@ import (
 
 // TCPing ...
 type TCPing struct {
-	target *Target
-	done   chan struct{}
-	stop   chan struct{}
-	result *Result
-	dial   client.DialContextFunc
-	keyLog io.Writer
+	target    *Target
+	done      chan struct{}
+	stop      chan struct{}
+	result    *Result
+	dial      client.DialContextFunc
+	keyLog    io.Writer
+	tlsConfig *tls.Config
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -36,6 +37,28 @@ func (tcping *TCPing) SetDialContext(dial client.DialContextFunc) {
 // SetKeyLogWriter records probe TLS secrets in NSS key log format.
 func (tcping *TCPing) SetKeyLogWriter(writer io.Writer) {
 	tcping.keyLog = writer
+}
+
+func (tcping *TCPing) SetTLSConfig(config *tls.Config) {
+	if config == nil {
+		tcping.tlsConfig = nil
+		return
+	}
+	tcping.tlsConfig = config.Clone()
+}
+
+func (tcping *TCPing) tlsConfigForTarget() *tls.Config {
+	if tcping.tlsConfig == nil {
+		return &tls.Config{ServerName: tcping.target.Host, InsecureSkipVerify: true, KeyLogWriter: tcping.keyLog}
+	}
+	config := tcping.tlsConfig.Clone()
+	if config.ServerName == "" {
+		config.ServerName = tcping.target.Host
+	}
+	if tcping.keyLog != nil {
+		config.KeyLogWriter = tcping.keyLog
+	}
+	return config
 }
 
 var _ Pinger = (*TCPing)(nil)
@@ -163,11 +186,7 @@ func (tcping *TCPing) ping(parent context.Context) (time.Duration, net.Addr, err
 	defer conn.Close()
 	remoteAddr := conn.RemoteAddr()
 
-	tlsConn := tls.Client(conn, &tls.Config{
-		ServerName:         tcping.target.Host,
-		InsecureSkipVerify: true,
-		KeyLogWriter:       tcping.keyLog,
-	})
+	tlsConn := tls.Client(conn, tcping.tlsConfigForTarget())
 	stopClose := context.AfterFunc(ctx, func() {
 		_ = tlsConn.Close()
 	})

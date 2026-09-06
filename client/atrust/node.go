@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"strconv"
 	"strings"
@@ -21,9 +22,9 @@ type NodeGroup struct {
 
 type nodeGroupsProbeFunc func(map[string][]string) map[string]string
 
-func getBestNodes(nodeGroups map[string]NodeGroup, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
+func getBestNodes(nodeGroups map[string]NodeGroup, dialContext client.DialContextFunc, keyLogWriter io.Writer, nodeTLSConfig *tls.Config) map[string]string {
 	return selectBestNodes(nodeGroups, func(nodeGroups map[string][]string) map[string]string {
-		return getBestReachableNodes(nodeGroups, dialContext, keyLogWriter)
+		return getBestReachableNodes(nodeGroups, dialContext, keyLogWriter, nodeTLSConfig)
 	})
 }
 
@@ -50,7 +51,7 @@ func selectBestNodes(nodeGroups map[string]NodeGroup, probe nodeGroupsProbeFunc)
 	return bestNodes
 }
 
-func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
+func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer, nodeTLSConfig *tls.Config) map[string]string {
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 0 {
@@ -68,6 +69,7 @@ func getBestReachableNodes(nodeGroups map[string][]string, dialContext client.Di
 				tcping := ping.NewTCPing()
 				tcping.SetDialContext(dialContext)
 				tcping.SetKeyLogWriter(keyLogWriter)
+				tcping.SetTLSConfig(nodeTLSConfig)
 				target := ping.Target{
 					Protocol: ping.TCP,
 					Host:     host,
@@ -130,7 +132,7 @@ func (c *Client) updateBestNodes(ctx context.Context, interval time.Duration) {
 		case <-ticker.C:
 		}
 
-		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
+		bestNodes := getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter, c.nodeTLSConfig)
 		c.BestNodesRWMutex.Lock()
 		c.BestNodes = bestNodes
 		c.BestNodesRWMutex.Unlock()
