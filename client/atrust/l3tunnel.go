@@ -57,7 +57,7 @@ func NewL3Tunnel(aTrustClient *Client) (*L3Tunnel, error) {
 	}
 	t.connect = func(ctx context.Context, addr string, conntrackMgr *conntrackMgr) (*l3TunnelConn, error) {
 		info := clientInfo{
-			sid:          aTrustClient.SID,
+			sidProvider:  aTrustClient.sessionSID,
 			deviceID:     aTrustClient.DeviceID,
 			connectionID: aTrustClient.ConnectionID,
 			username:     aTrustClient.Username,
