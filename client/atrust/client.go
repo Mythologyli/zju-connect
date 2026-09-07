@@ -46,6 +46,8 @@ type SetupOptions struct {
 	ResourceData             []byte
 	BestNodesRefreshInterval time.Duration
 	ChallengeHandler         authchallenge.Handler
+	SessionRefreshInterval   time.Duration
+	SaveClientData           func([]byte) error
 }
 
 type Client struct {
@@ -54,6 +56,10 @@ type Client struct {
 	DeviceID     string
 	ConnectionID string
 	SignKey      string
+
+	sessionMu   sync.RWMutex
+	sessionErr  error
+	refreshDone chan struct{}
 
 	serverAddress   string
 	ipResources     []client.IPResource
@@ -107,6 +113,9 @@ func (c *Client) canResume(resourceData []byte) bool {
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		c.lifecycleCancel()
+		if c.refreshDone != nil {
+			<-c.refreshDone
+		}
 		c.l3TunnelMu.Lock()
 		tunnel := c.l3Tunnel
 		c.l3TunnelMu.Unlock()
@@ -359,6 +368,7 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 		if c.SignKey == "" {
 			c.SignKey = randHex(64)
 		}
+		sess.Restore(c.DeviceID, c.SID, clientAuthData.Cookies)
 	} else {
 		if clientAuthData.DeviceID == "" {
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
@@ -382,8 +392,6 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 			return nil, err
 		}
 		c.Username = loginResult.Username
-		c.SID = loginResult.SID
-		clientAuthData.Cookies = loginResult.Cookies
 
 		resourceData, err = sess.ClientResource()
 		if err != nil {
@@ -392,6 +400,13 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 		}
 
 	}
+	snapshot, err := sess.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	c.setSessionSID(snapshot.SID, nil)
+	clientAuthData.DeviceID = c.DeviceID
+	clientAuthData.Cookies = snapshot.Cookies
 	authData, err := json.Marshal(clientAuthData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal client data: %w", err)
@@ -419,6 +434,14 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 	c.l3TunnelMu.Lock()
 	c.l3Tunnel = l3Tunnel
 	c.l3TunnelMu.Unlock()
+	if options.SaveClientData != nil {
+		if err := options.SaveClientData(authData); err != nil {
+			return nil, fmt.Errorf("failed to save client data: %w", err)
+		}
+	}
+	if options.SessionRefreshInterval > 0 {
+		c.startSessionRefresh(sess.Refresh, clientAuthData, options.SaveClientData, options.SessionRefreshInterval)
+	}
 
 	if options.BestNodesRefreshInterval > 0 {
 		go c.updateBestNodes(c.lifecycleCtx, options.BestNodesRefreshInterval)

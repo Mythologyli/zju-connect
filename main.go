@@ -143,6 +143,7 @@ func main() {
 				log.Printf("Read client data file error: %s", err)
 				log.Println("Will create a new client data file if log in successfully")
 			}
+			log.Printf("Client data will be saved to %s", conf.ClientDataFile)
 		}
 
 		var loginMethod auth.LoginMethod
@@ -173,6 +174,13 @@ func main() {
 			TLSKeyLogWriter: tlsKeyLogWriter,
 		})
 
+		var saveClientDataFunc func(data []byte) error
+		if conf.ClientDataFile != "" {
+			saveClientDataFunc = func(data []byte) error {
+				return os.WriteFile(conf.ClientDataFile, data, 0600)
+			}
+		}
+
 		log.Printf("VPN protocol: %s", conf.Protocol)
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(atrustclient.SetupOptions{
 			ServerAddress:            conf.ServerAddress,
@@ -182,6 +190,8 @@ func main() {
 			ClientData:               clientData,
 			ResourceData:             resourceData,
 			BestNodesRefreshInterval: time.Duration(conf.UpdateBestNodesInterval) * time.Second,
+			SessionRefreshInterval:   time.Duration(conf.SessionRefreshInterval) * time.Second,
+			SaveClientData:           saveClientDataFunc,
 		})
 		if err != nil {
 			vpnClient.(*atrustclient.Client).Close()
@@ -190,14 +200,6 @@ func main() {
 				_ = tlsKeyLogWriter.Close()
 			}
 			log.Fatalf("VPN client setup error: %s", err)
-		}
-
-		if conf.ClientDataFile != "" {
-			err = os.WriteFile(conf.ClientDataFile, clientData, 0644)
-			if err != nil {
-				log.Fatalf("Write client data file error: %s", err)
-			}
-			log.Printf("Client data saved to %s", conf.ClientDataFile)
 		}
 	}
 

@@ -480,6 +480,10 @@ func tcpTunnelRealDstHost(addr *net.TCPAddr, domain string, addrPretend bool) st
 }
 
 func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
+	sid, err := c.sessionSID()
+	if err != nil {
+		return nil, err
+	}
 	appID := ""
 	nodeGroupID := ""
 	domain := ""
@@ -542,7 +546,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, fmt.Errorf("invalid sign key: %w", err)
 	}
 	authRequest := tcpTunnelAuthRequest{
-		SID:          c.SID,
+		SID:          sid,
 		AppID:        appID,
 		URL:          "tcp://" + destAddr,
 		DeviceID:     c.DeviceID,

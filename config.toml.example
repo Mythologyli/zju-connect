@@ -66,6 +66,7 @@ cas_ticket = ""
 oauth2_code = ""
 phone = ""
 update_best_nodes_interval = 300
+session_refresh_interval = 1800 # aTrust authConfig refresh interval in seconds; 0 disables
 sid = ""
 device_id = ""
 sign_key = ""

@@ -59,6 +59,7 @@ type Config struct {
 	SignKey                 string `koanf:"sign_key"`
 	ResourceFile            string `koanf:"resource_file"`
 	UpdateBestNodesInterval int    `koanf:"update_best_nodes_interval"`
+	SessionRefreshInterval  int    `koanf:"session_refresh_interval"`
 }
 
 type SinglePortForwarding struct {
@@ -83,5 +84,6 @@ func Default() Config {
 		SecondaryDNSServer:      "auto",
 		LoginDomain:             "Radius",
 		UpdateBestNodesInterval: 300,
+		SessionRefreshInterval:  1800,
 	}
 }

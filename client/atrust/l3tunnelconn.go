@@ -60,9 +60,17 @@ var dataFramePool = sync.Pool{
 
 type clientInfo struct {
 	sid          string
+	sidProvider  func() (string, error)
 	deviceID     string
 	connectionID string
 	username     string
+}
+
+func (info clientInfo) currentSID() (string, error) {
+	if info.sidProvider != nil {
+		return info.sidProvider()
+	}
+	return info.sid, nil
 }
 
 type l3TunnelConn struct {
@@ -628,11 +636,15 @@ func (c *l3TunnelConn) writeRaw(label string, data []byte) error {
 }
 
 func buildAuthRequest(info clientInfo, signKey []byte, meta packetMeta, ct *conntrack) ([]byte, error) {
+	sid, err := info.currentSID()
+	if err != nil {
+		return nil, err
+	}
 	url := fmt.Sprintf("%s:%s:%d", protoName(meta.proto), meta.dstIP.String(), meta.dstPort)
 	env := defaultEnv(info)
 
 	req := authRequestIP{
-		Sid:           info.sid,
+		Sid:           sid,
 		AppID:         ct.appID,
 		URL:           url,
 		DeviceID:      info.deviceID,
@@ -872,7 +884,11 @@ func logFrame(prefix string, data []byte) {
 }
 
 func (c *l3TunnelConn) authTunnel() error {
-	req, err := json.Marshal(authRequestSID{Sid: c.info.sid})
+	sid, err := c.info.currentSID()
+	if err != nil {
+		return err
+	}
+	req, err := json.Marshal(authRequestSID{Sid: sid})
 	if err != nil {
 		return err
 	}
