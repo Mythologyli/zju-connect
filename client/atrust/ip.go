@@ -102,7 +102,11 @@ func (c *Client) getIP() error {
 		_ = conn.Close()
 	}(conn)
 
-	authPayload, err := json.Marshal(authRequestSID{Sid: c.SID})
+	sid, err := c.sessionSID()
+	if err != nil {
+		return err
+	}
+	authPayload, err := json.Marshal(authRequestSID{Sid: sid})
 	if err != nil {
 		return fmt.Errorf("failed to marshal IP tunnel auth request: %w", err)
 	}
