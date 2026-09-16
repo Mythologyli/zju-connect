@@ -66,19 +66,13 @@ func (s *Session) interactiveCas(loginURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateCASCallbackURL(callbackURL, s.baseHost); err != nil {
+	if err := validateCASCallbackURL(callbackURL); err != nil {
 		return "", err
 	}
 	return response.CallbackURL, nil
 }
 
-func validateCASCallbackURL(callbackURL *url.URL, baseHost string) error {
-	if callbackURL.Scheme != "https" {
-		return fmt.Errorf("invalid callback url: scheme not https")
-	}
-	if callbackURL.Host != baseHost {
-		return fmt.Errorf("invalid callback url: host not match")
-	}
+func validateCASCallbackURL(callbackURL *url.URL) error {
 	if callbackURL.Path != "/passport/v1/auth/cas" {
 		return fmt.Errorf("invalid callback url: path not match")
 	}

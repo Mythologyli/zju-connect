@@ -71,20 +71,14 @@ func (s *Session) interactiveHttpsOauth2(loginURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateHTTPSOauth2CallbackURL(callbackURL, s.baseHost); err != nil {
+	if err := validateHTTPSOauth2CallbackURL(callbackURL); err != nil {
 		return "", err
 	}
 
 	return response.CallbackURL, nil
 }
 
-func validateHTTPSOauth2CallbackURL(callbackURL *url.URL, baseHost string) error {
-	if callbackURL.Scheme != "https" {
-		return fmt.Errorf("invalid callback url: scheme not https")
-	}
-	if callbackURL.Host != baseHost {
-		return fmt.Errorf("invalid callback url: host not match")
-	}
+func validateHTTPSOauth2CallbackURL(callbackURL *url.URL) error {
 	if callbackURL.Path != "/passport/v1/auth/httpsOauth2" {
 		return fmt.Errorf("invalid callback url: path not match")
 	}
