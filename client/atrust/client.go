@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,8 @@ type ClientOptions struct {
 	Session         SessionOptions
 	UnderlayDialer  client.UnderlayDialer
 	TLSKeyLogWriter io.Writer
+	AuthTLSConfig   *tls.Config
+	NodeTLSConfig   *tls.Config
 }
 
 type SetupOptions struct {
@@ -89,6 +92,8 @@ type Client struct {
 	closeOnce        sync.Once
 	underlayDialer   client.UnderlayDialer
 	tlsKeyLogWriter  io.Writer
+	authTLSConfig    *tls.Config
+	nodeTLSConfig    *tls.Config
 	tcpTunnelZeroRTT bool
 }
 
@@ -101,6 +106,8 @@ func NewClient(options ClientOptions) *Client {
 		SignKey:         options.Session.SignKey,
 		underlayDialer:  options.UnderlayDialer,
 		tlsKeyLogWriter: options.TLSKeyLogWriter,
+		authTLSConfig:   cloneTLSConfig(options.AuthTLSConfig),
+		nodeTLSConfig:   cloneTLSConfig(options.NodeTLSConfig),
 		lifecycleCtx:    lifecycleCtx,
 		lifecycleCancel: lifecycleCancel,
 	}
@@ -343,7 +350,11 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 	} else {
 		authServerHost = fmt.Sprintf("%s:%d", options.ServerAddress, options.ServerPort)
 	}
-	sess := auth.NewSession(authServerHost, c.tlsKeyLogWriter, c.underlayDialer.DialContext)
+	sess := auth.NewSessionWithOptions(authServerHost, auth.SessionOptions{
+		TLSConfig:       c.authTLSConfig,
+		TLSKeyLogWriter: c.tlsKeyLogWriter,
+		DialContext:     c.underlayDialer.DialContext,
+	})
 	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
 	serverVersionInfo, err := resolveServerVersionInfo(clientAuthData.ServerVersionInfo, serverVersionInfo, manifestErr)
 	if err != nil {
@@ -419,7 +430,7 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 
 	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
 
-	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
+	c.BestNodes = getBestNodes(c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter, c.nodeTLSConfig)
 
 	err = c.getIP()
 	if err != nil {
