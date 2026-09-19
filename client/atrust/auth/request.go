@@ -26,7 +26,7 @@ func (s *Session) ServerVersionInfo() ([]byte, error) {
 	}
 	req.Header.Set("User-Agent", UserAgent)
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 	req.Header.Set("x-sdp-rid", s.rid)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -198,7 +198,7 @@ func (s *Session) performAntiMITMRequestContext(ctx context.Context, data antiMI
 	req.Header.Set("x-sdp-rid", s.rid)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return fmt.Errorf("aTrust anti-MITM request failed: %w", err)
 	}
@@ -269,7 +269,7 @@ func (s *Session) reportEnv() error {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return err
 	}
@@ -384,7 +384,7 @@ func (s *Session) authCheck() (authStep, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}
@@ -425,7 +425,7 @@ func (s *Session) phoneNumber(authID string) ([]string, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +507,7 @@ func (s *Session) authSms(step authStep) error {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return err
 	}
@@ -596,7 +596,7 @@ func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string, skipSeco
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}
@@ -634,7 +634,7 @@ func (s *Session) onlineInfo() (string, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return "", err
 	}
@@ -687,7 +687,7 @@ func (s *Session) ClientResource() ([]byte, error) {
 	req.Header.Set("x-csrf-token", s.csrfToken)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -711,7 +711,7 @@ func (s *Session) checkCode() ([]byte, error) {
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return nil, err
 	}

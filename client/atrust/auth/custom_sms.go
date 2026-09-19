@@ -54,7 +54,7 @@ func (s *Session) sendCustomSMS() error {
 	}
 	s.setAuthJSONHeaders(req)
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (s *Session) customSMSCheckCode(code string, skipSecondaryAuth bool) (authS
 	}
 	s.setAuthJSONHeaders(req)
 
-	resp, err := s.client.Do(req)
+	resp, err := s.do(req)
 	if err != nil {
 		return authStep{}, err
 	}
