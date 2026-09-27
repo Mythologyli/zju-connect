@@ -57,6 +57,7 @@ type Client struct {
 	testMultiLine     bool
 	parseResource     bool
 	useDomainResource bool
+	tcpTunnelOnly     bool
 
 	httpClient        *http.Client
 	underlayDialer    client.UnderlayDialer
@@ -189,11 +190,7 @@ func (c *Client) DNSServers() ([]string, error) {
 }
 
 func (c *Client) CanUseTCPTunnel() bool {
-	return false
-}
-
-func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {
-	return nil, errors.New("not supported")
+	return c.tcpTunnelOnly
 }
 
 func (c *Client) Setup() error {
@@ -254,15 +251,18 @@ func (c *Client) Setup() error {
 		}
 	}
 
-	// Error may occur if we request too fast
-	if time.Since(startTime) < time.Second {
-		time.Sleep(time.Second - time.Since(startTime))
-	}
+	if c.tcpTunnelOnly {
+		log.Println("Server disabled virtual IP allocation; using TCP tunnel")
+	} else {
+		// Error may occur if we request too fast
+		if time.Since(startTime) < time.Second {
+			time.Sleep(time.Second - time.Since(startTime))
+		}
 
-	// Finally, use the token to get client IP
-	err = c.requestIP()
-	if err != nil {
-		return err
+		// Finally, use the token to get client IP
+		if err := c.requestIP(); err != nil {
+			return err
+		}
 	}
 
 	// Periodic session keepalive. Without this, sangfor servers with strict

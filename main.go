@@ -125,6 +125,9 @@ func main() {
 			}
 			log.Fatalf("VPN client setup error: %s", err)
 		}
+		if vpnClient.CanUseTCPTunnel() {
+			conf.TCPTunnelMode = true
+		}
 	case "atrust":
 		var err error
 		var resourceData []byte
