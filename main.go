@@ -383,8 +383,12 @@ func main() {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
 	}
 	if conf.TUNMode {
-		clientIP, _ := vpnClient.IP()
-		go service.ServeDNS(clientIP.String()+":53", localResolver)
+		clientIP, err := vpnClient.IP()
+		if err != nil || clientIP == nil {
+			log.Printf("Client IP unavailable, skip DNS binding: %v", err)
+		} else {
+			go service.ServeDNS(clientIP.String()+":53", localResolver)
+		}
 	}
 
 	if conf.SocksBind != "" {
