@@ -50,7 +50,7 @@ func (e *fakeHeartBeatExtension) Read(b []byte) (n int, err error) {
 }
 
 // Create a special TLS connection to the VPN server
-func (c *Client) tlsConn(ctx context.Context) (*tls.UConn, error) {
+func (c *Client) tlsConn(ctx context.Context, tunnelType string) (*tls.UConn, error) {
 	// Dial the VPN server
 	dialConn, err := c.dialContext(ctx, "tcp", c.server)
 	if err != nil {
@@ -72,7 +72,8 @@ func (c *Client) tlsConn(ctx context.Context) (*tls.UConn, error) {
 	conn.HandshakeState.Hello.Vers = tls.VersionTLS11
 	conn.HandshakeState.Hello.CipherSuites = []uint16{tls.TLS_RSA_WITH_RC4_128_SHA, tls.FAKE_TLS_EMPTY_RENEGOTIATION_INFO_SCSV}
 	conn.HandshakeState.Hello.CompressionMethods = []uint8{0}
-	conn.HandshakeState.Hello.SessionId = []byte{'L', '3', 'I', 'P', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	conn.HandshakeState.Hello.SessionId = make([]byte, 32)
+	copy(conn.HandshakeState.Hello.SessionId, tunnelType)
 	conn.Extensions = []tls.TLSExtension{&fakeHeartBeatExtension{}}
 	clearDeadline, err := armConnectionContext(ctx, conn)
 	if err != nil {
@@ -98,7 +99,7 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 
 	ctx, cancel := c.rawRequestContext()
 	defer cancel()
-	conn, err := c.tlsConn(ctx)
+	conn, err := c.tlsConn(ctx, "L3IP")
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +167,7 @@ func (c *Client) SendConn() (*tls.UConn, error) {
 
 	ctx, cancel := c.rawRequestContext()
 	defer cancel()
-	conn, err := c.tlsConn(ctx)
+	conn, err := c.tlsConn(ctx, "L3IP")
 	if err != nil {
 		return nil, err
 	}

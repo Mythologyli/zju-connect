@@ -69,6 +69,13 @@ func (c *Client) parseResources(resources string) error {
 		return err
 	}
 
+	c.tcpTunnelOnly = false
+	if root := doc.SelectElement("Resource"); root != nil {
+		if other := root.SelectElement("Other"); other != nil {
+			c.tcpTunnelOnly = other.SelectAttrValue("allocateVip", "") == "0"
+		}
+	}
+
 	ipSetBuilder := netaddr.IPSetBuilder{}
 	c.ipResources = make([]client.IPResource, 0)
 	c.domainResources = make(client.DomainResources)
@@ -256,7 +263,7 @@ func (c *Client) parseResources(resources string) error {
 		c.dnsServer = ""
 	}
 
-	if c.dnsServer == "" {
+	if c.dnsServer == "" && !c.tcpTunnelOnly {
 		return errors.New("DNS server invalid")
 	}
 
