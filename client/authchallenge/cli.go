@@ -114,15 +114,28 @@ func (h *CLIHandler) HandleExternalLogin(challenge ExternalLoginChallenge) (Exte
 	if challenge.LoginURL != "" {
 		_, _ = fmt.Fprintf(h.output, "Visit %s to login, and catch the callback url\n", challenge.LoginURL)
 	}
-	callback, err := h.readLine(challenge.Message)
-	if err != nil {
-		return ExternalLoginResponse{}, err
+	if challenge.LoginURL != "" && challenge.CallbackURL != "" {
+		_, _ = fmt.Fprintln(h.output, "Paste the callback URL, or enter 'browser' to capture it using installed Chrome/Edge.")
 	}
-	callback = strings.TrimSpace(callback)
-	if callback == "" {
-		return ExternalLoginResponse{}, fmt.Errorf("callback URL is empty")
+	for {
+		callback, err := h.readLine(challenge.Message)
+		if err != nil {
+			return ExternalLoginResponse{}, err
+		}
+		callback = strings.TrimSpace(callback)
+		if callback == "browser" && challenge.LoginURL != "" && challenge.CallbackURL != "" {
+			response, err := captureExternalLogin(challenge, h.output)
+			if err == nil {
+				return response, nil
+			}
+			_, _ = fmt.Fprintf(h.output, "Browser capture failed: %v\nPaste the callback URL, or enter 'browser' to retry.\n", err)
+			continue
+		}
+		if callback == "" {
+			return ExternalLoginResponse{}, fmt.Errorf("callback URL is empty")
+		}
+		return ExternalLoginResponse{CallbackURL: callback}, nil
 	}
-	return ExternalLoginResponse{CallbackURL: callback}, nil
 }
 
 func (h *CLIHandler) readLine(message string) (string, error) {

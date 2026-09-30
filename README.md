@@ -78,6 +78,8 @@
      包含三个登录方式。方式一的登录域为 `Radius`，认证类型为 `auth/psw`。如果要使用方式一登录，则需要在运行参数中添加 `-login-domain Radius -auth-type "auth/psw"`。
   3. 目前支持的认证类型包括 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证）。
 
+  使用 CAS 或 HTTPS OAuth2 登录时，可在回调地址提示处输入 `browser`，使用本机已安装的 Chrome/Edge 完成登录并自动截获回调；也可以照常手动粘贴回调地址。自动捕获失败后仍可手动输入。
+
 #### 作为服务运行
 
 [链接](docs/service.md)

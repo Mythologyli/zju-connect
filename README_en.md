@@ -73,6 +73,8 @@
      In this example, there are three methods. To use the first method (Radius), you must append -login-domain Radius -auth-type "auth/psw" to your execution command.
   3. Supported Authentication Types: `auth/psw` (password), `auth/cas` (CAS), `auth/smsCheckCode` (SMS verification code).
 
+  For CAS or HTTPS OAuth2 login, enter `browser` at the callback URL prompt to sign in with an installed Chrome/Edge browser and capture the callback automatically. You can still paste the callback URL manually, including after browser capture fails.
+
 #### Run as a service
 
 [Link](docs/service_en.md)

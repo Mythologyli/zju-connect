@@ -53,10 +53,16 @@ func (s *Session) casCallbackFromTicket(loginDomain, ticket string) string {
 }
 
 func (s *Session) interactiveCas(loginURL string) (string, error) {
+	login, err := url.Parse(loginURL)
+	if err != nil {
+		return "", err
+	}
+	base, _ := url.Parse(s.baseURL)
 	response, err := s.challengeHandler.HandleExternalLogin(authchallenge.ExternalLoginChallenge{
-		Kind:     authchallenge.ExternalLoginCAS,
-		LoginURL: loginURL,
-		Message:  "Please enter the callback url:",
+		Kind:        authchallenge.ExternalLoginCAS,
+		LoginURL:    base.ResolveReference(login).String(),
+		CallbackURL: s.baseURL + "/passport/v1/auth/cas",
+		Message:     "Please enter the callback url:",
 	})
 	if err != nil {
 		return "", err
