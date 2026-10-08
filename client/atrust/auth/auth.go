@@ -118,9 +118,6 @@ func NewSession(server string, tlsKeyLogWriter io.Writer, dialContext ...client.
 }
 
 func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Writer, dialContext ...client.DialContextFunc) *Session {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -143,12 +140,8 @@ func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Wr
 	}
 }
 
-func (s *Session) do(req *http.Request) (*http.Response, error) {
-	ctx := s.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return s.client.Do(req.WithContext(ctx))
+func (s *Session) request(req *http.Request) (*http.Response, error) {
+	return s.client.Do(req.WithContext(s.ctx))
 }
 
 type AuthInfo struct {

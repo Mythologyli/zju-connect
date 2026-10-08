@@ -103,7 +103,7 @@ func (s *Session) cas(callback string) error {
 	}
 	defer func() { s.client.CheckRedirect = prevCheckRedirect }()
 
-	resp, err := s.do(req)
+	resp, err := s.request(req)
 	if err != nil {
 		return err
 	}

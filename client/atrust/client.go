@@ -315,9 +315,6 @@ func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 }
 
 func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	setupCtx, cancelSetup := context.WithCancel(ctx)
 	defer cancelSetup()
 	stopLifecycleCancellation := context.AfterFunc(c.lifecycleCtx, cancelSetup)

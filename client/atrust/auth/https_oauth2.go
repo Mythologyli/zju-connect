@@ -109,7 +109,7 @@ func (s *Session) httpsOauth2(callback string) error {
 	}
 	defer func() { s.client.CheckRedirect = prevCheckRedirect }()
 
-	resp, err := s.do(req)
+	resp, err := s.request(req)
 	if err != nil {
 		return err
 	}

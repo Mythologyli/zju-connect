@@ -51,9 +51,6 @@ func selectBestNodes(nodeGroups map[string]NodeGroup, probe nodeGroupsProbeFunc)
 }
 
 func getBestReachableNodes(ctx context.Context, nodeGroups map[string][]string, dialContext client.DialContextFunc, keyLogWriter io.Writer) map[string]string {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	bestNodes := make(map[string]string)
 	for group, nodes := range nodeGroups {
 		if len(nodes) > 0 {
