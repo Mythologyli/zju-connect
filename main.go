@@ -186,6 +186,10 @@ func main() {
 		}
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
+		if conf.SessionRefreshInterval == 0 {
+			log.Println("Session refresh is disabled: the client will not notice a session that has died " +
+				"(keep-alive traffic is what holds it open; use -keep-alive-url)")
+		}
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(atrustclient.SetupOptions{
 			ServerAddress:            conf.ServerAddress,
 			ServerPort:               conf.ServerPort,

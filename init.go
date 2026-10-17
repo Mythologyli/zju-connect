@@ -475,6 +475,11 @@ func zjuServerWorkaround(cfg *configs.Config) {
 }
 
 func validateConfig(cfg configs.Config) error {
+	if cfg.SessionRefreshInterval != 0 && cfg.SessionRefreshInterval < 30 {
+		// 0 disables the renewal loop on purpose; anything else below the floor
+		// is a mistake that would hammer the portal.
+		return fmt.Errorf("ZJU Connect: session-refresh-interval must be 0 (disabled) or at least 30 seconds")
+	}
 	if cfg.Protocol != "easyconnect" && cfg.Protocol != "atrust" {
 		return fmt.Errorf("unsupported VPN protocol: %s", cfg.Protocol)
 	}

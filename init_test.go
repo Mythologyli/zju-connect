@@ -14,7 +14,7 @@ func TestSessionRefreshConfiguration(t *testing.T) {
 		env  []string
 		want int
 	}{
-		{"default", nil, nil, 1800},
+		{"default", nil, nil, 60},
 		{"file", []string{"--config", file}, nil, 900},
 		{"environment", []string{"--config", file}, []string{"ZJU_CONNECT_SESSION_REFRESH_INTERVAL=600"}, 600},
 		{"cli", []string{"--config", file, "-session-refresh-interval", "300"}, []string{"ZJU_CONNECT_SESSION_REFRESH_INTERVAL=600"}, 300},
@@ -29,6 +29,25 @@ func TestSessionRefreshConfiguration(t *testing.T) {
 				t.Fatalf("session refresh seconds = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSessionRefreshIntervalFloorIsEnforced(t *testing.T) {
+	for _, value := range []string{"1", "29"} {
+		if _, _, err := loadStartupOptions(
+			[]string{"-session-refresh-interval", value},
+			func() []string { return nil },
+		); err == nil {
+			t.Fatalf("session-refresh-interval %s was accepted", value)
+		}
+	}
+	for _, value := range []string{"0", "30"} {
+		if _, _, err := loadStartupOptions(
+			[]string{"-session-refresh-interval", value},
+			func() []string { return nil },
+		); err != nil {
+			t.Fatalf("session-refresh-interval %s was rejected: %v", value, err)
+		}
 	}
 }
 
