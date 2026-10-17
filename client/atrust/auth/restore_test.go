@@ -30,6 +30,14 @@ type restorePortalStub struct {
 	exchangeMsg  string
 	onlineBody   string
 	ticketBody   string
+
+	// The content type each POST was sent with, and a status override that answers
+	// with that status and an empty body (what the gateway does to a POST without
+	// a JSON content type).
+	ticketContentType   string
+	exchangeContentType string
+	ticketStatus        int
+	exchangeStatus      int
 }
 
 func newRestorePortalStub(t *testing.T) *restorePortalStub {
@@ -48,6 +56,7 @@ func newRestorePortalStub(t *testing.T) *restorePortalStub {
 		stub.calls = append(stub.calls, r.URL.Path)
 		exchangeSID, exchangeCode, exchangeMsg := stub.exchangeSID, stub.exchangeCode, stub.exchangeMsg
 		onlineBody, ticketBody := stub.onlineBody, stub.ticketBody
+		ticketStatus, exchangeStatus := stub.ticketStatus, stub.exchangeStatus
 		authConfigSID := ""
 		if r.URL.Path == "/passport/v1/public/authConfig" {
 			// Each authConfig re-issues the session cookies; a test needs to tell
@@ -57,6 +66,10 @@ func newRestorePortalStub(t *testing.T) *restorePortalStub {
 		}
 		if r.URL.Path == "/passport/v1/public/sessionIdExchange" {
 			stub.exchangeBody = string(body)
+			stub.exchangeContentType = r.Header.Get("Content-Type")
+		}
+		if r.URL.Path == "/passport/v1/public/ticketExchange" {
+			stub.ticketContentType = r.Header.Get("Content-Type")
 		}
 		stub.mu.Unlock()
 
@@ -66,6 +79,10 @@ func newRestorePortalStub(t *testing.T) *restorePortalStub {
 			http.SetCookie(w, &http.Cookie{Name: "sid", Value: authConfigSID, Path: "/"})
 			_, _ = w.Write([]byte(`{"code":0,"data":{"isLogin":1,"csrfToken":"csrf-2","authServerInfoList":[]}}`))
 		case "/passport/v1/public/sessionIdExchange":
+			if exchangeStatus != 0 {
+				w.WriteHeader(exchangeStatus)
+				return
+			}
 			if cookie, err := r.Cookie("sid"); err != nil || cookie.Value != "sid-from-authconfig-1" {
 				t.Errorf("sessionIdExchange cookie = %v, %v, want the sid the pre-flight authConfig issued", cookie, err)
 			}
@@ -83,6 +100,10 @@ func newRestorePortalStub(t *testing.T) *restorePortalStub {
 		case "/passport/v1/user/onlineInfo":
 			_, _ = w.Write([]byte(onlineBody))
 		case "/passport/v1/public/ticketExchange":
+			if ticketStatus != 0 {
+				w.WriteHeader(ticketStatus)
+				return
+			}
 			_, _ = w.Write([]byte(ticketBody))
 		default:
 			http.NotFound(w, r)
@@ -131,6 +152,24 @@ func (p *restorePortalStub) exchangePayload() string {
 	return p.exchangeBody
 }
 
+func (p *restorePortalStub) setTicketStatus(status int) {
+	p.mu.Lock()
+	p.ticketStatus = status
+	p.mu.Unlock()
+}
+
+func (p *restorePortalStub) setExchangeStatus(status int) {
+	p.mu.Lock()
+	p.exchangeStatus = status
+	p.mu.Unlock()
+}
+
+func (p *restorePortalStub) postContentTypes() (ticket, exchange string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ticketContentType, p.exchangeContentType
+}
+
 func (p *restorePortalStub) session(t *testing.T, csrf string) *Session {
 	t.Helper()
 	session := NewSession(strings.TrimPrefix(p.server.URL, "https://"), nil)
@@ -151,6 +190,56 @@ func TestTicketExchangeReturnsTheSIDTicket(t *testing.T) {
 	}
 	if calls := stub.callList(); !slices.Equal(calls, []string{"/passport/v1/public/ticketExchange"}) {
 		t.Fatalf("calls = %v, want just the ticket exchange", calls)
+	}
+}
+
+// TestTicketExchangeSendsAJSONContentType: measured against the gateway on
+// 2026-10-17, this POST answers 401 with an empty body unless it carries a JSON
+// content type - even though it carries no body at all.
+func TestTicketExchangeSendsAJSONContentType(t *testing.T) {
+	stub := newRestorePortalStub(t)
+
+	if _, err := stub.session(t, "csrf-1").TicketExchange(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ticketType, _ := stub.postContentTypes()
+	if ticketType != "application/json" {
+		t.Fatalf("ticketExchange content type = %q, want application/json", ticketType)
+	}
+}
+
+// TestRestoreByTicketSendsAJSONContentType checks the same for the exchange, which
+// the stub already asserts through its csrf header check.
+func TestRestoreByTicketSendsAJSONContentType(t *testing.T) {
+	stub := newRestorePortalStub(t)
+
+	if _, err := stub.session(t, "csrf-1").RestoreByTicket(context.Background(), "ticket"); err != nil {
+		t.Fatal(err)
+	}
+	_, exchangeType := stub.postContentTypes()
+	if exchangeType != "application/json" {
+		t.Fatalf("sessionIdExchange content type = %q, want application/json", exchangeType)
+	}
+}
+
+// TestBodylessRefusalsAreReportedAsStatus pins the error the operator hit: a 401
+// with no body must not surface as "invalid json".
+func TestBodylessRefusalsAreReportedAsStatus(t *testing.T) {
+	stub := newRestorePortalStub(t)
+	stub.setTicketStatus(http.StatusUnauthorized)
+	stub.setExchangeStatus(http.StatusUnauthorized)
+
+	_, err := stub.session(t, "csrf-1").TicketExchange(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("ticketExchange error = %v, want the HTTP status in it", err)
+	}
+	if strings.Contains(err.Error(), "json") {
+		t.Fatalf("a body-less refusal was reported as a json failure: %v", err)
+	}
+
+	_, err = stub.session(t, "csrf-1").RestoreByTicket(context.Background(), "ticket")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("sessionIdExchange error = %v, want the HTTP status in it", err)
 	}
 }
 
