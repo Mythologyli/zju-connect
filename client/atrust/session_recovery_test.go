@@ -279,6 +279,50 @@ func TestRenewalFailureRunsTheLadderOnce(t *testing.T) {
 	}
 }
 
+// TestPrepareRestoreTicketStoresOneWhileTheSessionIsAlive: the exchange needs a
+// live session, so the ticket has to be taken before the session dies; without it
+// the ladder has nothing to restore from.
+func TestPrepareRestoreTicketStoresOneWhileTheSessionIsAlive(t *testing.T) {
+	stub := newRecoveryStub(t)
+	c, _ := recoveringClient(t, stub)
+
+	c.sessionMu.RLock()
+	session := c.session
+	c.sessionMu.RUnlock()
+
+	c.prepareRestoreTicket(context.Background(), session)
+
+	if got := c.sidTicket(); len(got) != 73 {
+		t.Fatalf("sidTicket length = %d, want the 73 characters the gateway returns", len(got))
+	}
+	if _, ticketHits, _, _ := stub.hits(); ticketHits != 1 {
+		t.Fatalf("ticket exchanges = %d, want 1", ticketHits)
+	}
+
+	// Holding one is enough: a second call must not spend another exchange.
+	c.prepareRestoreTicket(context.Background(), session)
+	if _, ticketHits, _, _ := stub.hits(); ticketHits != 1 {
+		t.Fatalf("ticket exchanges after the second call = %d, want 1", ticketHits)
+	}
+}
+
+func TestPrepareRestoreTicketSurvivesARefusal(t *testing.T) {
+	stub := newRecoveryStub(t)
+	stub.set(`{"code":500,"message":"no"}`, &stub.ticketBody)
+	c, _ := recoveringClient(t, stub)
+
+	c.sessionMu.RLock()
+	session := c.session
+	c.sessionMu.RUnlock()
+
+	// Best effort: a portal that will not hand out a ticket must not break setup.
+	c.prepareRestoreTicket(context.Background(), session)
+
+	if got := c.sidTicket(); got != "" {
+		t.Fatalf("sidTicket = %q, want nothing stored", got)
+	}
+}
+
 func TestRetryableReloginError(t *testing.T) {
 	for _, tt := range []struct {
 		name string

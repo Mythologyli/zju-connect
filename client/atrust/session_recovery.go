@@ -183,6 +183,29 @@ func (c *Client) runSessionRecovery(code int64, where string) {
 	c.setSessionState(SessionReloginRequired, where, code)
 }
 
+// prepareRestoreTicket mints a sidTicket while the session is still alive and
+// stores it. Without one, the ladder's restore step has nothing to exchange when
+// the session dies: ticketExchange itself needs a live session, so the ticket has
+// to be taken while the portal still answers. Best effort by design - a failure
+// here costs nothing but an unattended restore.
+func (c *Client) prepareRestoreTicket(ctx context.Context, session *auth.Session) {
+	if c.sidTicket() != "" {
+		return
+	}
+
+	ticket, err := session.TicketExchange(ctx)
+	if err != nil {
+		log.Printf("aTrust could not obtain a sidTicket for later restores: %v", err)
+		return
+	}
+
+	c.sessionMu.Lock()
+	c.SIDTicket = ticket
+	c.sessionMu.Unlock()
+	c.persistAuthData()
+	log.Printf("aTrust sidTicket stored (%d characters); a dead session can be restored without a login", len(ticket))
+}
+
 // restoreFromTicket runs the restore step of the ladder. It returns false and no
 // error when there is no ticket to try at all.
 func (c *Client) restoreFromTicket(ctx context.Context, session *auth.Session) (bool, error) {
