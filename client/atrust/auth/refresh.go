@@ -31,7 +31,10 @@ func (s *Session) Snapshot() (LoginResult, error) {
 	if sid == "" {
 		return LoginResult{}, ErrSessionInvalid
 	}
-	return LoginResult{SID: sid, Cookies: cookies, Ticket: s.ticket}, nil
+	s.stateMu.Lock()
+	ticket := s.ticket
+	s.stateMu.Unlock()
+	return LoginResult{SID: sid, Cookies: cookies, Ticket: ticket}, nil
 }
 
 // Refresh maintains an existing session; it never starts an interactive login.

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -150,8 +151,17 @@ func main() {
 			log.Printf("Client data will be saved to %s", conf.ClientDataFile)
 		}
 
+		sidTicket := conf.SIDTicket
+		if conf.SIDTicketFile != "" {
+			content, readErr := os.ReadFile(conf.SIDTicketFile)
+			if readErr != nil {
+				log.Fatalf("Read sid ticket file error: %s", readErr)
+			}
+			sidTicket = strings.TrimSpace(string(content))
+		}
+
 		var loginMethod auth.LoginMethod
-		if conf.SID == "" || conf.DeviceID == "" || resourceData == nil {
+		if (conf.SID == "" && sidTicket == "") || conf.DeviceID == "" || resourceData == nil {
 			loginMethod, err = auth.NewLoginMethod(auth.LoginMethodOptions{
 				AuthType:      conf.AuthType,
 				Username:      conf.Username,
@@ -169,10 +179,11 @@ func main() {
 
 		vpnClient = atrustclient.NewClient(atrustclient.ClientOptions{
 			Session: atrustclient.SessionOptions{
-				Username: conf.Username,
-				SID:      conf.SID,
-				DeviceID: conf.DeviceID,
-				SignKey:  conf.SignKey,
+				Username:  conf.Username,
+				SID:       conf.SID,
+				DeviceID:  conf.DeviceID,
+				SignKey:   conf.SignKey,
+				SIDTicket: sidTicket,
 			},
 			UnderlayDialer:  underlayDialer,
 			TLSKeyLogWriter: tlsKeyLogWriter,
@@ -199,6 +210,7 @@ func main() {
 			ResourceData:             resourceData,
 			BestNodesRefreshInterval: time.Duration(conf.UpdateBestNodesInterval) * time.Second,
 			SessionRefreshInterval:   time.Duration(conf.SessionRefreshInterval) * time.Second,
+			AutoRelogin:              conf.AutoRelogin,
 			SaveClientData:           saveClientDataFunc,
 		})
 		if err != nil {
@@ -439,7 +451,7 @@ func main() {
 		if len(targets) == 0 && !useRemoteDNS {
 			log.Println("Keep alive is disabled: no application target is available and remote DNS is disabled")
 		} else {
-			startKeepAlive(vpnResolver, vpnDialer, targets, conf)
+			startKeepAlive(vpnResolver, vpnDialer, targets, conf, vpnClient)
 		}
 	}
 
@@ -468,6 +480,7 @@ func startKeepAlive(
 	dialer *dial.Dialer,
 	targets []service.KeepAliveTarget,
 	conf configs.Config,
+	vpnClient client.Client,
 ) {
 	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
 	hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
@@ -480,27 +493,31 @@ func startKeepAlive(
 		Targets:  targets,
 		Interval: time.Duration(conf.KeepAliveInterval) * time.Second,
 		Routing:  service.KeepAliveRouting(dialer),
-		Handler:  keepAliveHandler,
+		Handler:  keepAliveHandler(vpnClient),
 	})
 }
 
-// keepAliveHandler reports what the keep-alive learned. A session failure is the
-// one outcome that means the tunnel is up but authorizing nothing; the recovery
-// ladder is not built yet, so say exactly that instead of leaving the user to
-// discover it through a dead browser.
-func keepAliveHandler(result service.KeepAliveResult) {
-	switch result.Category {
-	case service.KeepAliveSession:
-		log.Printf("KeepAlive: the session behind the tunnel is gone (target=%s code=%d, %d consecutive failed rounds)",
-			result.Target, result.Code, result.ConsecutiveFailures)
-	case service.KeepAliveTransport:
-		log.Printf("KeepAlive: transport failure for %d consecutive rounds (target=%s): %v",
-			result.ConsecutiveFailures, result.Target, result.Err)
-	case service.KeepAliveTargetFailure:
-		log.Printf("KeepAlive: no usable target for %d consecutive rounds (target=%s): %v",
-			result.ConsecutiveFailures, result.Target, result.Err)
-	case service.KeepAliveOK:
-		log.Printf("KeepAlive: recovered after %d failed rounds (target=%s)",
-			result.ConsecutiveFailures, result.Target)
+// keepAliveHandler reports what the keep-alive learned, and tells the client that
+// the tunnel carried application traffic - which is the only proof that a restored
+// session actually works.
+func keepAliveHandler(vpnClient client.Client) func(service.KeepAliveResult) {
+	return func(result service.KeepAliveResult) {
+		if atrust, ok := vpnClient.(*atrustclient.Client); ok {
+			atrust.ObserveTunnelTraffic(result.Category == service.KeepAliveOK)
+		}
+		switch result.Category {
+		case service.KeepAliveSession:
+			log.Printf("KeepAlive: the session behind the tunnel is gone (target=%s code=%d, %d consecutive failed rounds)",
+				result.Target, result.Code, result.ConsecutiveFailures)
+		case service.KeepAliveTransport:
+			log.Printf("KeepAlive: transport failure for %d consecutive rounds (target=%s): %v",
+				result.ConsecutiveFailures, result.Target, result.Err)
+		case service.KeepAliveTargetFailure:
+			log.Printf("KeepAlive: no usable target for %d consecutive rounds (target=%s): %v",
+				result.ConsecutiveFailures, result.Target, result.Err)
+		case service.KeepAliveOK:
+			log.Printf("KeepAlive: recovered after %d failed rounds (target=%s)",
+				result.ConsecutiveFailures, result.Target)
+		}
 	}
 }

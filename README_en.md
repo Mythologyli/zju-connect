@@ -210,6 +210,8 @@ The old `disable_zju_dns` and `zju_dns_server` names, including their command-li
 + `trust-device`: Trust the current device (requires logged-in `-client-data-file`), does not start the tunnel.
 + `untrust-device`: Untrust the current device (requires logged-in `-client-data-file`), does not start the tunnel.
 + `sid`: aTrust SID, for debugging purposes, generally no need to add this argument.
++ `sid-ticket` / `sid-ticket-file`: an aTrust `sidTicket`, used to restore a session without a password (`sid-ticket-file` reads it from a file, so it stays out of the process arguments). The restore still needs the same `device-id` and `sign-key` pair the session was minted with - a mismatched pair brings the tunnel up while every authorization through it is rejected.
++ `auto-relogin`: repeat a full login when the session dies. Off by default: a full login rotates the device token and drops other clients of the same account, so the default ladder stops at "renew, restore from the ticket, report that a re-login is needed". When enabled it is still attempt-bounded and rate-limited.
 + `device-id`: aTrust device ID, for debugging purposes, generally no need to add this argument.
 + `sign-key`: aTrust signature key, for debugging purposes, generally no need to add this argument.
 + `resource-file`: aTrust resource file, for debugging purposes, generally no need to add this argument.

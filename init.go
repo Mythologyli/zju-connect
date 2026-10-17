@@ -136,11 +136,14 @@ func newFlagSet(defaults configs.Config) *pflag.FlagSet {
 	flags.String("cas-ticket", defaults.CasTicket, "aTrust CAS Ticket")
 	flags.String("oauth2-code", defaults.OAuth2Code, "aTrust OAuth2 code")
 	flags.String("sid", defaults.SID, "aTrust SID")
+	flags.String("sid-ticket", defaults.SIDTicket, "aTrust sidTicket to restore a session with (no password needed)")
+	flags.String("sid-ticket-file", defaults.SIDTicketFile, "File to read the aTrust sidTicket from")
 	flags.String("device-id", defaults.DeviceID, "aTrust Device ID")
 	flags.String("sign-key", defaults.SignKey, "aTrust Sign Key")
 	flags.String("resource-file", defaults.ResourceFile, "aTrust Resource File")
 	flags.Int("update-best-nodes-interval", defaults.UpdateBestNodesInterval, "Interval to update best nodes in seconds")
 	flags.Int("session-refresh-interval", defaults.SessionRefreshInterval, "aTrust session refresh interval in seconds (0 disables)")
+	flags.Bool("auto-relogin", defaults.AutoRelogin, "Repeat a full aTrust login when a session dies (rotates the device token)")
 
 	for _, spec := range collectionSpecs {
 		if spec.Repeatable {

@@ -226,6 +226,10 @@
 
 + `sid`: aTrust SID，调试用途，一般不需要加此参数
 
++ `sid-ticket` / `sid-ticket-file`: aTrust `sidTicket`，用于不输入密码恢复会话（`sid-ticket-file` 从文件读取，避免出现在进程参数里）。恢复仍然需要同一个 `device-id` 与 `sign-key` 配对，否则隧道能起来但每个授权都会被服务端拒绝
+
++ `auto-relogin`: 会话失效时自动重新登录，默认关闭。一次完整登录会轮换 device token 并踢掉同账号的其他客户端，所以默认只做到「续期 → 用 sidTicket 恢复 → 报告需要重新登录」为止；打开后仍受尝试次数与冷却限制
+
 + `device-id`: aTrust 设备 ID，调试用途，一般不需要加此参数
 
 + `sign-key`: aTrust 签名密钥，调试用途，一般不需要加此参数
