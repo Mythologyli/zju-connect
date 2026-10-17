@@ -202,6 +202,81 @@ func matchIPResourceForTunnel(index *ipresource.Index, target net.IP, network st
 	return index.Match(target, network, port)
 }
 
+// Routing is where a connection would go, without dialing it.
+type Routing string
+
+const (
+	RoutingTunnel Routing = "tunnel"
+	RoutingDirect Routing = "direct"
+	// RoutingDenied means the address is neither in the granted resources nor
+	// dialed directly: DialIPPort refuses it, because sending it upstream makes
+	// the gateway shut the L3 tunnel down.
+	RoutingDenied Routing = "denied"
+)
+
+// TargetRouting reports what Dial would do with this address. It mirrors the
+// decision DialIPPort makes - including the client-side ACL - so a caller can
+// label a probe as tunnel/direct/denied without sending traffic.
+func (d *Dialer) TargetRouting(ctx context.Context, network string, addr string) (Routing, error) {
+	if strings.Count(addr, ":") > 1 {
+		// IPv6 destinations are dialed directly, like Dial does.
+		return RoutingDirect, nil
+	}
+
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", err
+	}
+	if host == "" {
+		return RoutingDirect, nil
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		ctx, ip, err = d.resolver.Resolve(ctx, host)
+		if err != nil {
+			return RoutingDirect, nil
+		}
+		if strings.Count(ip.String(), ":") > 0 {
+			return RoutingDirect, nil
+		}
+	}
+
+	useVPN := d.alwaysUseVPN
+	matchedResource := false
+
+	if res := ctx.Value(resolve.ContextKeyDomainResource); res != nil {
+		switch resources := res.(type) {
+		case []client.DomainResource:
+			_, matchedResource = matchDomainResourceForTunnel(resources, network, port)
+		case client.DomainResource:
+			_, matchedResource = matchDomainResourceForTunnel([]client.DomainResource{resources}, network, port)
+		}
+		if matchedResource {
+			useVPN = true
+		}
+	}
+
+	if !matchedResource && d.ipResources != nil {
+		if _, matched := matchIPResourceForTunnel(d.resourceIndex, ip, network, port); matched {
+			useVPN = true
+			matchedResource = true
+		}
+	}
+
+	if useVPN && !matchedResource && d.ipResources != nil {
+		return RoutingDenied, nil
+	}
+	if useVPN {
+		return RoutingTunnel, nil
+	}
+	return RoutingDirect, nil
+}
+
 func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Conn, error) {
 	// If addr is IPv6, use direct connection
 	if strings.Count(addr, ":") > 1 {
