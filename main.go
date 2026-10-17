@@ -192,7 +192,14 @@ func main() {
 		var saveClientDataFunc func(data []byte) error
 		if conf.ClientDataFile != "" {
 			saveClientDataFunc = func(data []byte) error {
-				return os.WriteFile(conf.ClientDataFile, data, 0600)
+				if err := os.WriteFile(conf.ClientDataFile, data, 0600); err != nil {
+					return err
+				}
+				// WriteFile does not change the mode of a file that already
+				// exists, and an older build (or a hand-made file) may be group or
+				// world readable: this file holds the cookies, the sign key and the
+				// tickets.
+				return os.Chmod(conf.ClientDataFile, 0600)
 			}
 		}
 
