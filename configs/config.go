@@ -25,6 +25,8 @@ type Config struct {
 	CustomDNSList       []SingleCustomDNS      `koanf:"custom_dns"`
 	DisableKeepAlive    bool                   `koanf:"disable_keep_alive"`
 	KeepAliveURL        string                 `koanf:"keep_alive_url"`
+	KeepAliveURLs       []string               `koanf:"keep_alive_urls"`
+	KeepAliveInterval   int                    `koanf:"keep_alive_interval"`
 	TCPTunnelMode       bool                   `koanf:"tcp_tunnel_mode"`
 	TUNMode             bool                   `koanf:"tun_mode"`
 	AddRoute            bool                   `koanf:"add_route"`
@@ -85,5 +87,6 @@ func Default() Config {
 		LoginDomain:             "Radius",
 		UpdateBestNodesInterval: 300,
 		SessionRefreshInterval:  1800,
+		KeepAliveInterval:       60,
 	}
 }
