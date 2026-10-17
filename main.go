@@ -415,15 +415,22 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if conf.KeepAliveURL == "" && !useRemoteDNS {
-			log.Println("Keep alive is disabled because remote DNS is disabled, and no KeepAliveURL is provided")
+		namedTargets, warnings := service.NamedKeepAliveTargets(append([]string{conf.KeepAliveURL}, conf.KeepAliveURLs...))
+		for _, warning := range warnings {
+			log.Printf("KeepAlive: %s", warning)
+		}
+
+		derivedTargets, notes := service.DeriveKeepAliveTargets(ipResources)
+		if len(namedTargets) == 0 {
+			for _, note := range notes {
+				log.Printf("KeepAlive: %s", note)
+			}
+		}
+		targets := append(namedTargets, derivedTargets...)
+		if len(targets) == 0 && !useRemoteDNS {
+			log.Println("Keep alive is disabled: no application target is available and remote DNS is disabled")
 		} else {
-			keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
-			hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
-				keepAliveCancel()
-				return nil
-			})
-			go service.KeepAlive(keepAliveCtx, vpnResolver, vpnDialer, conf.KeepAliveURL)
+			startKeepAlive(vpnResolver, vpnDialer, targets, conf)
 		}
 	}
 
@@ -444,5 +451,47 @@ func main() {
 		}
 	} else {
 		log.Println("Shutdown ZJU-Connect success, Bye~")
+	}
+}
+
+func startKeepAlive(
+	resolver *resolve.Resolver,
+	dialer *dial.Dialer,
+	targets []service.KeepAliveTarget,
+	conf configs.Config,
+) {
+	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
+	hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
+		keepAliveCancel()
+		return nil
+	})
+
+	log.Printf("KeepAlive: probing %d target(s) every %ds", len(targets), conf.KeepAliveInterval)
+	go service.KeepAlive(keepAliveCtx, resolver, dialer, service.KeepAliveOptions{
+		Targets:  targets,
+		Interval: time.Duration(conf.KeepAliveInterval) * time.Second,
+		Routing:  service.KeepAliveRouting(dialer),
+		Handler:  keepAliveHandler,
+	})
+}
+
+// keepAliveHandler reports what the keep-alive learned. A session failure is the
+// one outcome that means the tunnel is up but authorizing nothing; the recovery
+// ladder is not built yet, so say exactly that instead of leaving the user to
+// discover it through a dead browser.
+func keepAliveHandler(result service.KeepAliveResult) {
+	switch result.Category {
+	case service.KeepAliveSession:
+		log.Printf("KeepAlive: the session behind the tunnel is gone (target=%s code=%d, %d consecutive failed rounds)",
+			result.Target, result.Code, result.ConsecutiveFailures)
+	case service.KeepAliveTransport:
+		log.Printf("KeepAlive: transport failure for %d consecutive rounds (target=%s): %v",
+			result.ConsecutiveFailures, result.Target, result.Err)
+	case service.KeepAliveTargetFailure:
+		log.Printf("KeepAlive: no usable target for %d consecutive rounds (target=%s): %v",
+			result.ConsecutiveFailures, result.Target, result.Err)
+	case service.KeepAliveOK:
+		log.Printf("KeepAlive: recovered after %d failed rounds (target=%s)",
+			result.ConsecutiveFailures, result.Target)
 	}
 }
