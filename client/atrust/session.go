@@ -94,9 +94,17 @@ func (c *Client) startSessionRefresh(refresh func(context.Context) (auth.LoginRe
 			case <-timer.C:
 			}
 
-			if state := c.currentSessionState(); state == SessionRestoring || state == SessionReloginRequired || state == SessionOffline {
-				// A recovery is running, or the session is waiting for a new login:
-				// do not pile portal requests onto it.
+			c.sessionMu.RLock()
+			recovering := c.recovering
+			state := c.sessionState
+			c.sessionMu.RUnlock()
+
+			if recovering || state == SessionReloginRequired || state == SessionOffline {
+				// A ladder run is in flight, or the session is waiting for a new
+				// login: do not pile portal requests onto it. Note that `restoring`
+				// is *not* in this list - a restore waits for tunnel traffic to
+				// confirm it, and if nothing confirms it the renewal is the only
+				// thing that would notice the session dying again.
 				timer.Reset(interval)
 				continue
 			}

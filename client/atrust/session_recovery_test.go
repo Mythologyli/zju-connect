@@ -323,6 +323,50 @@ func TestPrepareRestoreTicketSurvivesARefusal(t *testing.T) {
 	}
 }
 
+// TestRenewalPausesOnlyWhileALoginIsPending: a restore that is waiting for tunnel
+// traffic must not stop the renewals - if nothing ever confirms the restore, the
+// renewal is the only thing left that would notice the session dying again.
+func TestRenewalPausesOnlyWhileALoginIsPending(t *testing.T) {
+	stub := newRecoveryStub(t)
+	c, _ := recoveringClient(t, stub)
+
+	c.sessionMu.Lock()
+	c.clientAuthData = auth.ClientAuthData{DeviceID: "device"}
+	c.sessionMu.Unlock()
+
+	renewals := make(chan struct{}, 16)
+	c.startSessionRefresh(func(context.Context) (auth.LoginResult, error) {
+		select {
+		case renewals <- struct{}{}:
+		default:
+		}
+		return auth.LoginResult{SID: "new", Cookies: []auth.Cookie{{Name: "sid", Value: "new"}}}, nil
+	}, 5*time.Millisecond)
+	defer c.Close()
+
+	awaitRenewal := func(what string) {
+		t.Helper()
+		select {
+		case <-renewals:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("no renewal happened while %s", what)
+		}
+	}
+
+	awaitRenewal("the session is online")
+
+	c.setSessionState(SessionRestoring, "test", 0)
+	awaitRenewal("a restore is waiting for tunnel traffic")
+
+	c.setSessionState(SessionReloginRequired, "test", 0)
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-renewals:
+		t.Fatal("renewals continued while a re-login is pending")
+	default:
+	}
+}
+
 func TestRetryableReloginError(t *testing.T) {
 	for _, tt := range []struct {
 		name string
