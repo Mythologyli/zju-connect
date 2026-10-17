@@ -30,6 +30,7 @@ type SessionOptions struct {
 	DeviceID     string
 	MACAddresses []string
 	SignKey      string
+	SIDTicket    string
 }
 
 type ClientOptions struct {
@@ -48,7 +49,11 @@ type SetupOptions struct {
 	BestNodesRefreshInterval time.Duration
 	ChallengeHandler         authchallenge.Handler
 	SessionRefreshInterval   time.Duration
-	SaveClientData           func([]byte) error
+	// AutoRelogin lets the recovery ladder repeat a full login when a renewal and
+	// a restore both failed. It is off by default: a full login rotates the device
+	// token and drops other clients of the same account.
+	AutoRelogin    bool
+	SaveClientData func([]byte) error
 }
 
 type Client struct {
@@ -58,10 +63,28 @@ type Client struct {
 	MACAddresses []string
 	ConnectionID string
 	SignKey      string
+	// SIDTicket is the portal-issued ticket the restore path exchanges for a
+	// session; it is the material that survives a restart without a password.
+	SIDTicket string
 
 	sessionMu   sync.RWMutex
 	sessionErr  error
 	refreshDone chan struct{}
+
+	// Session maintenance: the session itself, the material a restart needs, and
+	// what the last recovery learned. All of it is guarded by sessionMu, except
+	// session and clientAuthData, which are written once during setup before any
+	// goroutine reads them (and read under the lock afterwards).
+	session             *auth.Session
+	clientAuthData      auth.ClientAuthData
+	saveClientData      func([]byte) error
+	loginMethod         auth.LoginMethod
+	loginOptions        auth.LoginOptions
+	autoRelogin         bool
+	sessionState        SessionState
+	sessionStateHandler func(SessionState)
+	recovering          bool
+	lastRecovery        time.Time
 
 	serverAddress   string
 	ipResources     []client.IPResource
@@ -102,6 +125,7 @@ func NewClient(options ClientOptions) *Client {
 		DeviceID:        options.Session.DeviceID,
 		MACAddresses:    options.Session.MACAddresses,
 		SignKey:         options.Session.SignKey,
+		SIDTicket:       options.Session.SIDTicket,
 		underlayDialer:  options.UnderlayDialer,
 		tlsKeyLogWriter: options.TLSKeyLogWriter,
 		lifecycleCtx:    lifecycleCtx,
@@ -110,7 +134,28 @@ func NewClient(options ClientOptions) *Client {
 }
 
 func (c *Client) canResume(resourceData []byte) bool {
-	return c.SID != "" && c.DeviceID != "" && resourceData != nil
+	if c.SID == "" || c.DeviceID == "" || resourceData == nil {
+		return false
+	}
+	if c.SignKey == "" {
+		// A resume must supply the sign key the session was minted with, because
+		// the server checks it together with the device id. Minting a fresh one
+		// here is how a "connected but dead" tunnel is produced: the L3 tunnel
+		// comes up, a VIP is allocated, and every authorization through it is
+		// rejected (code 10000030 sig or deviceId verify failed).
+		log.Println("Not resuming: the stored session has no sign key (it is stored with the device id); " +
+			"a fresh login is required")
+		return false
+	}
+	return true
+}
+
+// canRestoreByTicket reports whether a sidTicket can be exchanged for a session.
+// The exchange runs on the cookie family the portal issues, so no stored cookie is
+// required - but the restored session still has to present the sign key it was
+// minted with, and a resource list to work from.
+func (c *Client) canRestoreByTicket(resourceData []byte) bool {
+	return c.SIDTicket != "" && c.DeviceID != "" && c.SignKey != "" && resourceData != nil
 }
 
 func (c *Client) Close() {
@@ -266,7 +311,9 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 			return err
 		}
 	}
-	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s ticket=%s sid_ticket=%s",
+		clientAuthData.DeviceID, len(clientAuthData.Cookies),
+		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.Ticket), log.Redact(clientAuthData.SIDTicket))
 
 	if clientAuthData.DeviceID == "" {
 		clientAuthData.DeviceID = strings.ToLower(randHex(32))
@@ -350,9 +397,19 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 			return nil, err
 		}
 	}
-	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s ticket=%s sid_ticket=%s",
+		clientAuthData.DeviceID, len(clientAuthData.Cookies),
+		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.Ticket), log.Redact(clientAuthData.SIDTicket))
 	if clientAuthData.DeviceID == "" && c.DeviceID != "" {
 		clientAuthData.DeviceID = c.DeviceID
+	}
+	if c.SignKey == "" {
+		// The stored key is the one the session was minted with; never replace it
+		// with a fresh one for a stored session (see canResume).
+		c.SignKey = clientAuthData.SignKey
+	}
+	if c.SIDTicket == "" {
+		c.SIDTicket = clientAuthData.SIDTicket
 	}
 	if len(clientAuthData.MACAddresses) == 0 && len(c.MACAddresses) > 0 {
 		clientAuthData.MACAddresses = c.MACAddresses
@@ -365,6 +422,9 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 		authServerHost = fmt.Sprintf("%s:%d", options.ServerAddress, options.ServerPort)
 	}
 	sess := auth.NewSessionContext(setupCtx, authServerHost, c.tlsKeyLogWriter, c.underlayDialer.DialContext)
+	c.sessionMu.Lock()
+	c.session = sess
+	c.sessionMu.Unlock()
 	serverVersionInfo, manifestErr := sess.ServerVersionInfo()
 	serverVersionInfo, err := resolveServerVersionInfo(clientAuthData.ServerVersionInfo, serverVersionInfo, manifestErr)
 	if err != nil {
@@ -382,15 +442,35 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	log.Printf("aTrust TCP tunnel zero-RTT: %t", c.tcpTunnelZeroRTT)
 
 	resourceData := options.ResourceData
-	if c.canResume(resourceData) {
+
+	// The session is established in one of three ways, in this order: the stored
+	// material is complete (resume), a sidTicket can be exchanged for a session
+	// (silent restore), or a login is needed.
+	resumed := c.canResume(resourceData)
+	established := false
+	restoredFromTicket := false
+	switch {
+	case resumed:
 		log.Println("Skipping login")
 
 		c.ConnectionID = buildConnectionID(c.DeviceID)
-		if c.SignKey == "" {
-			c.SignKey = randHex(64)
-		}
 		sess.Restore(c.DeviceID, c.SID, clientAuthData.Cookies)
-	} else {
+		established = true
+	case c.canRestoreByTicket(resourceData):
+		log.Println("Restoring the aTrust session from a sidTicket")
+
+		c.ConnectionID = buildConnectionID(c.DeviceID)
+		if _, err := sess.RestoreByTicket(setupCtx, c.SIDTicket); err != nil {
+			// A ticket that cannot be exchanged is not fatal: fall through to a
+			// login, which is what the recovery ladder does too.
+			log.Printf("aTrust sidTicket restore failed, logging in instead: %v", err)
+		} else {
+			established = true
+			restoredFromTicket = true
+		}
+	}
+
+	if !established {
 		if clientAuthData.DeviceID == "" {
 			clientAuthData.DeviceID = strings.ToLower(randHex(32))
 		}
@@ -433,12 +513,13 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	c.setSessionSID(snapshot.SID, nil)
 	clientAuthData.DeviceID = c.DeviceID
 	clientAuthData.Cookies = snapshot.Cookies
+	clientAuthData.SignKey = c.SignKey
+	clientAuthData.CSRFToken = sess.CSRFToken()
 	if snapshot.Ticket != "" {
 		clientAuthData.Ticket = snapshot.Ticket
 	}
-	authData, err := json.Marshal(clientAuthData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal client data: %w", err)
+	if c.SIDTicket != "" {
+		clientAuthData.SIDTicket = c.SIDTicket
 	}
 
 	// The session is no longer the setup call's: it now belongs to the client, on
@@ -446,6 +527,23 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	// cancelled the moment this function returns, and a session holding it can
 	// neither renew nor notice that the session died.
 	sess.SetLifetime(c.lifecycleCtx)
+
+	c.sessionMu.Lock()
+	c.clientAuthData = clientAuthData
+	c.saveClientData = options.SaveClientData
+	c.loginMethod = options.LoginMethod
+	c.loginOptions = auth.LoginOptions{
+		DeviceID:         c.DeviceID,
+		TOTPSecret:       options.TOTPSecret,
+		ChallengeHandler: options.ChallengeHandler,
+	}
+	c.autoRelogin = options.AutoRelogin
+	c.sessionMu.Unlock()
+
+	authData := c.persistAuthData()
+	if authData == nil {
+		return nil, fmt.Errorf("failed to marshal client data")
+	}
 
 	err = c.parseResource(resourceData)
 	if err != nil {
@@ -475,13 +573,18 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	c.l3TunnelMu.Lock()
 	c.l3Tunnel = l3Tunnel
 	c.l3TunnelMu.Unlock()
-	if options.SaveClientData != nil {
-		if err := options.SaveClientData(authData); err != nil {
-			return nil, fmt.Errorf("failed to save client data: %w", err)
-		}
-	}
 	if options.SessionRefreshInterval > 0 {
-		c.startSessionRefresh(sess.Refresh, clientAuthData, options.SaveClientData, options.SessionRefreshInterval)
+		c.startSessionRefresh(sess.Refresh, options.SessionRefreshInterval)
+	}
+
+	// A login has just been validated by the portal, so the session is online. A
+	// resumed one has only been pointed at the stored SID: the tunnel comes up
+	// while the data plane may reject everything (a mismatched sign key does
+	// exactly that), so it stays unproven until traffic crosses it.
+	if resumed || restoredFromTicket {
+		c.setSessionState(SessionRestoring, "session restored from stored material", 0)
+	} else {
+		c.setSessionState(SessionOnline, "logged in", 0)
 	}
 
 	if options.BestNodesRefreshInterval > 0 {

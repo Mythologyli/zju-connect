@@ -369,6 +369,43 @@ func TestCLICollectionsOverrideEnvironmentCollections(t *testing.T) {
 	}
 }
 
+func TestSIDTicketAndAutoReloginFlags(t *testing.T) {
+	configFile := writeConfig(t, "sid_ticket = \"from-config\"\nauto_relogin = true\n")
+
+	for _, tt := range []struct {
+		name       string
+		args       []string
+		wantTicket string
+		wantAuto   bool
+	}{
+		{"defaults", nil, "", false},
+		{"the ticket flag", []string{"-sid-ticket", "from-flag"}, "from-flag", false},
+		{"the config keys", []string{"--config", configFile}, "from-config", true},
+		{"the auto-relogin flag", []string{"-auto-relogin"}, "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			options, _, err := loadStartupOptions(tt.args, func() []string { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := options.Config.SIDTicket; got != tt.wantTicket {
+				t.Fatalf("SIDTicket = %q, want %q", got, tt.wantTicket)
+			}
+			if got := options.Config.AutoRelogin; got != tt.wantAuto {
+				t.Fatalf("AutoRelogin = %t, want %t", got, tt.wantAuto)
+			}
+		})
+	}
+
+	options, _, err := loadStartupOptions([]string{"-sid-ticket-file", "/run/secrets/atrust-ticket"}, func() []string { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := options.Config.SIDTicketFile; got != "/run/secrets/atrust-ticket" {
+		t.Fatalf("SIDTicketFile = %q", got)
+	}
+}
+
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")

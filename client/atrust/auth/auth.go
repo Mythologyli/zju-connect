@@ -60,7 +60,18 @@ type ClientAuthData struct {
 	DeviceID          string          `json:"device_id"`
 	MACAddresses      []string        `json:"mac_addresses,omitempty"`
 	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
-	Ticket            string          `json:"ticket,omitempty"`
+	// Ticket is the renewal ticket of the last authConfig.
+	Ticket string `json:"ticket,omitempty"`
+	// CSRFToken comes from the last authConfig and is what the restore path
+	// (sessionIdExchange) has to send, so a cold restore needs it.
+	CSRFToken string `json:"csrf_token,omitempty"`
+	// SignKey must be stored together with DeviceID: the server checks the pair,
+	// and a resume that cannot supply the original key brings the tunnel up while
+	// every authorization through it is rejected.
+	SignKey string `json:"sign_key,omitempty"`
+	// SIDTicket is the portal-issued ticket (ticketExchange) that the restore
+	// path exchanges for a session.
+	SIDTicket string `json:"sid_ticket,omitempty"`
 }
 
 type ServerVersionInfo struct {
@@ -98,8 +109,16 @@ type Session struct {
 	// ctxMu guards ctx. The session starts on the context of the setup call that
 	// builds it and is rebound to the client's lifetime context once setup hands
 	// it over; see SetLifetime.
-	ctxMu        sync.RWMutex
-	ctx          context.Context
+	ctxMu sync.RWMutex
+	ctx   context.Context
+	// stateMu guards the fields a portal answer updates (csrfToken, ticket,
+	// pubKey, pubKeyExp, antiReplayRand, signKey). It is never held while a
+	// request is in flight: it exists so the renewal and the restore path, which
+	// run on different goroutines once the client is up, cannot interleave their
+	// updates into a half-updated session. The login path touches the same
+	// fields, but only before the client is running; everything after that reads
+	// through CSRFToken/Snapshot.
+	stateMu      sync.Mutex
 	client       *http.Client
 	deviceID     string
 	macAddresses []string
@@ -164,6 +183,15 @@ func (s *Session) lifetimeCtx() context.Context {
 	s.ctxMu.RLock()
 	defer s.ctxMu.RUnlock()
 	return s.ctx
+}
+
+// CSRFToken returns the token the portal issued last; the restore path has to
+// send it, and a caller outside the session (the client data record) has to read
+// it.
+func (s *Session) CSRFToken() string {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.csrfToken
 }
 
 func (s *Session) request(req *http.Request) (*http.Response, error) {

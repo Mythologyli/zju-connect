@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -149,8 +150,17 @@ func main() {
 			log.Printf("Client data will be saved to %s", conf.ClientDataFile)
 		}
 
+		sidTicket := conf.SIDTicket
+		if conf.SIDTicketFile != "" {
+			content, readErr := os.ReadFile(conf.SIDTicketFile)
+			if readErr != nil {
+				log.Fatalf("Read sid ticket file error: %s", readErr)
+			}
+			sidTicket = strings.TrimSpace(string(content))
+		}
+
 		var loginMethod auth.LoginMethod
-		if conf.SID == "" || conf.DeviceID == "" || resourceData == nil {
+		if (conf.SID == "" && sidTicket == "") || conf.DeviceID == "" || resourceData == nil {
 			loginMethod, err = auth.NewLoginMethod(auth.LoginMethodOptions{
 				AuthType:      conf.AuthType,
 				Username:      conf.Username,
@@ -173,6 +183,7 @@ func main() {
 				DeviceID:     conf.DeviceID,
 				MACAddresses: conf.MACAddresses,
 				SignKey:      conf.SignKey,
+				SIDTicket:    sidTicket,
 			},
 			UnderlayDialer:  underlayDialer,
 			TLSKeyLogWriter: tlsKeyLogWriter,
@@ -199,6 +210,7 @@ func main() {
 			ResourceData:             resourceData,
 			BestNodesRefreshInterval: time.Duration(conf.UpdateBestNodesInterval) * time.Second,
 			SessionRefreshInterval:   time.Duration(conf.SessionRefreshInterval) * time.Second,
+			AutoRelogin:              conf.AutoRelogin,
 			SaveClientData:           saveClientDataFunc,
 		})
 		if err != nil {

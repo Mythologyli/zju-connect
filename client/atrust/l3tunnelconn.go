@@ -92,6 +92,9 @@ type l3TunnelConn struct {
 	authWake           chan struct{}
 	writeFrameHook     func([]byte) error
 	dataStream         []byte
+	// onSessionInvalid tells the client that a data-plane answer said the session
+	// is gone, so the ladder can run instead of the process exiting.
+	onSessionInvalid func(code int64, where string)
 }
 
 type authIP struct {
@@ -181,7 +184,7 @@ type frame struct {
 	payload []byte
 }
 
-func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, conntrackMgr *conntrackMgr, onVIP func([]net.IP)) (*l3TunnelConn, error) {
+func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, string, *tls.Config) (*tls.Conn, error), addr string, info clientInfo, signKeyHex string, conntrackMgr *conntrackMgr, onVIP func([]net.IP), onSessionInvalid func(code int64, where string)) (*l3TunnelConn, error) {
 	tlsConn, err := dialTLS(ctx, "tcp", addr, tunnelTLSConfig(nil))
 	if err != nil {
 		return nil, err
@@ -206,6 +209,7 @@ func newL3TunnelConn(ctx context.Context, dialTLS func(context.Context, string, 
 		heartbeatInterval:  defaultHeartbeatInterval,
 		heartbeatMissLimit: defaultHeartbeatMissLimit,
 		authWake:           make(chan struct{}, 1),
+		onSessionInvalid:   onSessionInvalid,
 	}
 	if err := c.withContextDeadline(ctx, c.authTunnel); err != nil {
 		_ = c.Close()
@@ -526,8 +530,14 @@ func (c *l3TunnelConn) handleAuthResp(status byte, payload []byte) {
 		c.markAuthErrorFromPayload(payload, err)
 		return
 	}
-	if resp.Code == 10000004 || resp.Code == 75500002 {
-		log.Fatalf("l3-tunnel resource auth: aTrust session is invalid (code %d): %s", resp.Code, resp.Message)
+	if isSessionInvalidCode(resp.Code) {
+		if c.onSessionInvalid != nil {
+			c.onSessionInvalid(resp.Code, "l3-tunnel resource auth")
+		}
+		c.markAuthErrorFromPayload(payload, &sessionInvalidError{
+			Where: "l3-tunnel resource auth", Code: resp.Code, Message: resp.Message,
+		})
+		return
 	}
 	ct := c.conntrackMgr.getByID(resp.Data.ConntrackHash)
 	if ct == nil {
@@ -935,8 +945,11 @@ func (c *l3TunnelConn) authTunnel() error {
 		if err := json.Unmarshal(payload, &resp); err != nil {
 			return err
 		}
-		if resp.Code == 10000004 || resp.Code == 75500002 {
-			log.Fatalf("l3-tunnel: aTrust session is invalid (code %d): %s", resp.Code, resp.Message)
+		if isSessionInvalidCode(resp.Code) {
+			if c.onSessionInvalid != nil {
+				c.onSessionInvalid(resp.Code, "l3-tunnel tunnel auth")
+			}
+			return &sessionInvalidError{Where: "l3-tunnel tunnel auth", Code: resp.Code, Message: resp.Message}
 		}
 		if resp.Code != 0 {
 			return fmt.Errorf("l3-tunnel tunnel auth failed: %d %s", resp.Code, resp.Message)
