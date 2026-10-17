@@ -62,12 +62,12 @@ func main() {
 		LocalDNSServer: conf.LocalDNSServer,
 	})
 	if underlayErr != nil {
-		log.Fatalf("Create underlay dialer: %v", underlayErr)
+		hook_func.Fatalf("Create underlay dialer: %v", underlayErr)
 	}
 	tlsKeyLogWriter, tlsKeyLogErr := keylog.Open(conf.DebugTLSLogFile)
 	if tlsKeyLogErr != nil {
 		_ = underlayDialer.Close()
-		log.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
+		hook_func.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
 	}
 	if conf.DebugPCAPFile != "" {
 		log.Printf("VPN underlay PCAP capture enabled: %s", conf.DebugPCAPFile)
@@ -82,12 +82,12 @@ func main() {
 		if conf.CertFile != "" {
 			p12Data, err := os.ReadFile(conf.CertFile)
 			if err != nil {
-				log.Fatalf("Read certificate file error: %s", err)
+				hook_func.Fatalf("Read certificate file error: %s", err)
 			}
 
 			key, cert, err := pkcs12.Decode(p12Data, conf.CertPassword)
 			if err != nil {
-				log.Fatalf("Decode certificate file error: %s", err)
+				hook_func.Fatalf("Decode certificate file error: %s", err)
 			}
 
 			tlsCert = tls.Certificate{
@@ -124,7 +124,7 @@ func main() {
 			if tlsKeyLogWriter != nil {
 				_ = tlsKeyLogWriter.Close()
 			}
-			log.Fatalf("VPN client setup error: %s", err)
+			hook_func.Fatalf("VPN client setup error: %s", err)
 		}
 		if vpnClient.CanUseTCPTunnel() {
 			conf.TCPTunnelMode = true
@@ -136,7 +136,7 @@ func main() {
 		if conf.ResourceFile != "" {
 			resourceData, err = os.ReadFile(conf.ResourceFile)
 			if err != nil {
-				log.Fatalf("Read resource file error: %s", err)
+				hook_func.Fatalf("Read resource file error: %s", err)
 			}
 		}
 
@@ -154,7 +154,7 @@ func main() {
 		if conf.SIDTicketFile != "" {
 			content, readErr := os.ReadFile(conf.SIDTicketFile)
 			if readErr != nil {
-				log.Fatalf("Read sid ticket file error: %s", readErr)
+				hook_func.Fatalf("Read sid ticket file error: %s", readErr)
 			}
 			sidTicket = strings.TrimSpace(string(content))
 		}
@@ -172,7 +172,7 @@ func main() {
 				OAuth2Code:    conf.OAuth2Code,
 			})
 			if err != nil {
-				log.Fatalf("Configure aTrust login: %v", err)
+				hook_func.Fatalf("Configure aTrust login: %v", err)
 			}
 		}
 
@@ -219,7 +219,7 @@ func main() {
 			if tlsKeyLogWriter != nil {
 				_ = tlsKeyLogWriter.Close()
 			}
-			log.Fatalf("VPN client setup error: %s", err)
+			hook_func.Fatalf("VPN client setup error: %s", err)
 		}
 	}
 
@@ -314,12 +314,12 @@ func main() {
 	if conf.TCPTunnelMode {
 		vpnStack, err = tcptunnel.NewStack(vpnClient)
 		if err != nil {
-			log.Fatalf("TCP Tunnel stack setup error: %s", err)
+			hook_func.Fatalf("TCP Tunnel stack setup error: %s", err)
 		}
 	} else if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, conf.FakeIP, ipResources)
 		if err != nil {
-			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
+			hook_func.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
 
 		if conf.AddRoute && ipSet != nil {
@@ -340,7 +340,7 @@ func main() {
 	} else {
 		vpnStack, err = gvisor.NewStack(vpnClient)
 		if err != nil {
-			log.Fatalf("gVisor stack setup error: %s", err)
+			hook_func.Fatalf("gVisor stack setup error: %s", err)
 		}
 	}
 
