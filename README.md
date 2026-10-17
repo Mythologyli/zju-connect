@@ -216,7 +216,7 @@
 
 + `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
 
-+ `session-refresh-interval`: aTrust SID 刷新间隔，单位为秒，默认为 `1800`。设置为 `0` 则禁用定时刷新。
++ `session-refresh-interval`: aTrust 会话续期间隔，单位为秒，默认为 `60`，最小 `30`（`0` 表示禁用）。续期请求按官方客户端的写法发送 `authConfig?needTicket=1`，并取回新的 ticket。注意：续期只能**提前发现**会话已死，真正让会话不过期的是 `keep-alive-url` 的隧道流量；设为 `0` 时客户端不会察觉会话已经失效。
 
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 
