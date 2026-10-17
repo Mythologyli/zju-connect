@@ -25,7 +25,7 @@ func TestNewSessionContextCancelsRequest(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := session.do(req)
+		_, err := session.request(req)
 		done <- err
 	}()
 	cancel()
