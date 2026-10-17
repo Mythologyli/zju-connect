@@ -220,12 +220,15 @@ func (c *Client) restoreFromTicket(ctx context.Context, session *auth.Session) (
 
 	snapshot, err := session.RestoreByTicket(ctx, ticket)
 	if errors.Is(err, auth.ErrStaleTicket) {
-		// The stored ticket is no good any more: ask for a fresh one, once.
-		ticket, err = c.mintTicket(ctx, session)
-		if err != nil {
-			return false, err
+		// The stored ticket is no good any more: ask for a fresh one, once. That
+		// needs a live session, which is exactly what is missing when the portal
+		// has already expired the session - so the failure has to say both things.
+		log.Printf("aTrust session recovery: the stored sidTicket was refused (%v); asking for a new one", err)
+		fresh, mintErr := c.mintTicket(ctx, session)
+		if mintErr != nil {
+			return false, fmt.Errorf("the stored sidTicket was refused (%v) and the portal cannot issue a new one while the session is gone (%v)", err, mintErr)
 		}
-		snapshot, err = session.RestoreByTicket(ctx, ticket)
+		snapshot, err = session.RestoreByTicket(ctx, fresh)
 	}
 	if err != nil {
 		return false, err

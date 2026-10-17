@@ -62,6 +62,12 @@ func (c *Client) persistAuthData() []byte {
 	c.sessionMu.Lock()
 	save := c.saveClientData
 	data := c.clientAuthData
+	if c.SIDTicket != "" {
+		// The client's own field is the source of truth: it is where a ticket minted
+		// at setup or by the ladder lands. Writing anything else here loses it on
+		// restart, and the ladder then has nothing to restore from.
+		data.SIDTicket = c.SIDTicket
+	}
 	c.sessionMu.Unlock()
 
 	encoded, err := json.Marshal(data)
