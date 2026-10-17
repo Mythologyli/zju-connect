@@ -530,6 +530,11 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 		return nil, fmt.Errorf("failed to marshal client data")
 	}
 
+	// Take the restore ticket now, while the session is known to be alive: the
+	// exchange needs a live session, so it cannot be the thing the ladder does
+	// after the session died.
+	c.prepareRestoreTicket(setupCtx, sess)
+
 	err = c.parseResource(resourceData)
 	if err != nil {
 		return nil, err
