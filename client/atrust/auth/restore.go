@@ -63,6 +63,10 @@ func (s *Session) TicketExchange(ctx context.Context) (string, error) {
 		return "", err
 	}
 	req.Header.Set("User-Agent", UserAgent)
+	// Measured against the gateway: this POST only succeeds with a JSON content
+	// type. Without it the portal answers 401 with an empty body - even though the
+	// request carries no body at all - which then looks like a JSON parse failure.
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-csrf-token", s.CSRFToken())
 	req.Header.Set("x-sdp-rid", s.rid)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
@@ -77,6 +81,11 @@ func (s *Session) TicketExchange(ctx context.Context) (string, error) {
 		return "", err
 	}
 	log.DebugPrintf("Received ticket exchange: %s", log.RedactSecrets(string(body)))
+
+	if resp.StatusCode != http.StatusOK {
+		// A refusal with no body must not be reported as a parse failure.
+		return "", fmt.Errorf("ticketExchange HTTP %d", resp.StatusCode)
+	}
 
 	var re struct {
 		Code    int    `json:"code"`
@@ -158,6 +167,10 @@ func (s *Session) sessionIDExchange(ctx context.Context, sidTicket string) error
 		return err
 	}
 	log.DebugPrintf("Received session id exchange: %s", log.RedactSecrets(string(body)))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("sessionIdExchange HTTP %d", resp.StatusCode)
+	}
 
 	var re struct {
 		Code    int    `json:"code"`
