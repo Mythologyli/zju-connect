@@ -1,7 +1,9 @@
 package service
 
 import (
+	"fmt"
 	"net"
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -71,6 +73,7 @@ func TestNamedKeepAliveTargets(t *testing.T) {
 func TestDeriveKeepAliveTargets(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
+		routes    []string
 		resources []client.IPResource
 		wantURLs  []string
 		wantNotes bool
@@ -109,9 +112,54 @@ func TestDeriveKeepAliveTargets(t *testing.T) {
 			wantURLs:  nil,
 			wantNotes: true,
 		},
+		{
+			name:   "the routes the tunnel installed are probed before the granted resources",
+			routes: []string{"10.0.0.55/32", "10.0.0.1/32"},
+			resources: []client.IPResource{
+				httpResource("10.0.0.1", "", 1, 65535, "all"),
+				httpResource("10.0.0.55", "", 8080, 8080, "tcp"),
+			},
+			wantURLs:  []string{"http://10.0.0.55:8080/", "http://10.0.0.1/"},
+			wantNotes: true,
+		},
+		{
+			name:      "a route to an address the account was not granted is refused",
+			routes:    []string{"10.0.0.9/32"},
+			resources: []client.IPResource{httpResource("10.0.0.1", "", 1, 65535, "all")},
+			wantURLs:  []string{"http://10.0.0.1/"},
+			wantNotes: true,
+		},
+		{
+			name:      "a route that covers a range names no single address",
+			routes:    []string{"10.0.0.0/24"},
+			resources: []client.IPResource{httpResource("10.0.0.10", "", 1, 65535, "all")},
+			wantURLs:  []string{"http://10.0.0.10/"},
+			wantNotes: true,
+		},
+		{
+			name:      "an ipv6 route names no address to probe",
+			routes:    []string{"2001:db8::1/128"},
+			resources: []client.IPResource{httpResource("10.0.0.1", "", 1, 65535, "all")},
+			wantURLs:  []string{"http://10.0.0.1/"},
+			wantNotes: true,
+		},
+		{
+			name:      "a route already granted as a resource target is probed once",
+			routes:    []string{"10.0.0.10/32"},
+			resources: []client.IPResource{httpResource("10.0.0.10", "", 1, 65535, "tcp")},
+			wantURLs:  []string{"http://10.0.0.10/"},
+			wantNotes: true,
+		},
+		{
+			name:      "a route granted without a plain HTTP port is not probed on port 80",
+			routes:    []string{"10.0.0.7/32"},
+			resources: []client.IPResource{httpResource("10.0.0.7", "", 22, 22, "tcp")},
+			wantURLs:  []string{"http://10.0.0.7:22/"},
+			wantNotes: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			targets, notes := DeriveKeepAliveTargets(tt.resources)
+			targets, notes := DeriveKeepAliveTargets(parsePrefixes(tt.routes), tt.resources)
 			if got := urls(targets); !slices.Equal(got, tt.wantURLs) {
 				t.Fatalf("targets = %v, want %v (notes: %v)", got, tt.wantURLs, notes)
 			}
@@ -130,15 +178,37 @@ func TestDeriveKeepAliveTargets(t *testing.T) {
 	}
 }
 
+func parsePrefixes(values []string) []netip.Prefix {
+	prefixes := make([]netip.Prefix, 0, len(values))
+	for _, value := range values {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			panic(fmt.Sprintf("test wrote the invalid prefix %q", value))
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes
+}
+
 func TestDeriveKeepAliveTargetsIsBounded(t *testing.T) {
 	resources := make([]client.IPResource, 0, maxDerivedCandidates+2)
+	routes := make([]netip.Prefix, 0, maxDerivedCandidates+2)
+	addresses := make([]string, 0, maxDerivedCandidates+2)
 	for i := range maxDerivedCandidates + 2 {
-		resources = append(resources, httpResource(
-			net.IPv4(10, 0, byte(i), 1).String(), "", 1, 65535, "all"))
+		address := net.IPv4(10, 0, 0, byte(i+1)).String()
+		addresses = append(addresses, address)
+		resources = append(resources, httpResource(address, "", 1, 65535, "all"))
+		routes = append(routes, netip.MustParsePrefix(address+"/32"))
 	}
 
-	targets, _ := DeriveKeepAliveTargets(resources)
+	targets, _ := DeriveKeepAliveTargets(routes, resources)
 	if len(targets) != maxDerivedCandidates {
 		t.Fatalf("targets = %d, want the %d-candidate bound", len(targets), maxDerivedCandidates)
+	}
+	for i, target := range targets {
+		want := "http://" + addresses[i] + "/"
+		if target.URL != want {
+			t.Fatalf("target %d = %s, want %s (the routes set the order)", i, target.URL, want)
+		}
 	}
 }

@@ -139,7 +139,7 @@
 
 + `disable-keep-alive`: Disable periodic keep-alive. It is on by default
 
-+ `keep-alive-url`: Target of the keep-alive request, either repeated or comma separated. It has to be a **`http://` address reachable inside the VPN** (for example `http://10.0.0.1/`). An `https://` target is reached with CONNECT, which is not application traffic and does not hold the session open (it is still probed, with a warning). The default is empty: a target is then derived from the resource list the server granted; only if nothing can be derived does keep-alive fall back to the server-provided DNS probe (a name lookup is not application traffic and does not hold the session)
++ `keep-alive-url`: Target of the keep-alive request, either repeated or comma separated. It has to be a **`http://` address reachable inside the VPN** (for example `http://10.0.0.1/`). An `https://` target is reached with CONNECT, which is not application traffic and does not hold the session open (it is still probed, with a warning). The default is empty: a target is then derived from the route table the tunnel installed itself (with `-add-route` those are single-address routes, and the address also has to be granted to the account), and only when no single-address route yields one does it fall back to the resource list the server granted; only if neither yields anything does keep-alive fall back to the server-provided DNS probe (a name lookup is not application traffic and does not hold the session)
 
 + `keep-alive-interval`: Keep-alive interval in seconds, default `60`, minimum `10`, jittered by ±10%. On this deployment an idle session expires after roughly 10 minutes, so do not raise it past that
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/miekg/dns"
@@ -35,6 +36,8 @@ type Stack struct {
 	l3Conn              io.ReadWriteCloser
 	resolve             zcdns.LocalServer
 	ipResources         []client.IPResource
+	routesMu            sync.Mutex
+	routes              []netip.Prefix
 	resourceIndexOnce   sync.Once
 	resourceIndex       *ipresource.Index
 	resourceCache       *resourceDecisionCache
@@ -44,6 +47,35 @@ type Stack struct {
 
 func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 	s.resolve = r
+}
+
+// recordRoute remembers a route this stack installed on the tunnel device. The
+// routes the tunnel has are what it carries right now, so the keep-alive can
+// prefer them over the resources the server granted.
+func (s *Stack) recordRoute(target string) {
+	prefix, err := netip.ParsePrefix(target)
+	if err != nil {
+		return
+	}
+	prefix = prefix.Masked()
+
+	s.routesMu.Lock()
+	defer s.routesMu.Unlock()
+	for _, existing := range s.routes {
+		if existing == prefix {
+			return
+		}
+	}
+	s.routes = append(s.routes, prefix)
+}
+
+// Routes returns the routes this stack installed on the tunnel device, in the
+// order they were installed. It is empty when the client did not install any
+// (no -add-route, or another stack than the TUN one).
+func (s *Stack) Routes() []netip.Prefix {
+	s.routesMu.Lock()
+	defer s.routesMu.Unlock()
+	return append([]netip.Prefix(nil), s.routes...)
 }
 
 func (s *Stack) SetupIPPool(ipPool *ippool.IPPool[[]client.DomainResource]) {

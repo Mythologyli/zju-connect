@@ -7,6 +7,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"runtime"
@@ -294,6 +295,9 @@ func main() {
 	}
 
 	var vpnStack stack.Stack
+	// The routes the tunnel installed: what it carries right now, which is the
+	// first source of keep-alive targets.
+	var tunnelRoutes []netip.Prefix
 	if conf.TCPTunnelMode {
 		vpnStack, err = tcptunnel.NewStack(vpnClient)
 		if err != nil {
@@ -319,6 +323,7 @@ func main() {
 			_ = vpnTUNStack.AddRoute("198.18.0.0/16")
 		}
 
+		tunnelRoutes = vpnTUNStack.Routes()
 		vpnStack = vpnTUNStack
 	} else {
 		vpnStack, err = gvisor.NewStack(vpnClient)
@@ -420,7 +425,7 @@ func main() {
 			log.Printf("KeepAlive: %s", warning)
 		}
 
-		derivedTargets, notes := service.DeriveKeepAliveTargets(ipResources)
+		derivedTargets, notes := service.DeriveKeepAliveTargets(tunnelRoutes, ipResources)
 		if len(namedTargets) == 0 {
 			for _, note := range notes {
 				log.Printf("KeepAlive: %s", note)

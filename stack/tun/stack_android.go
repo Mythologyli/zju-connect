@@ -3,6 +3,7 @@ package tun
 import (
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"syscall"
@@ -101,6 +102,13 @@ func (ep *Endpoint) Read(buf []byte) (int, error) {
 }
 
 func (s *Stack) AddRoute(target string) error {
+	return nil
+}
+
+// Routes is empty on android: the routes into the tunnel belong to the
+// VpnService, this stack installs none, so the keep-alive derives its targets
+// from the granted resources.
+func (s *Stack) Routes() []netip.Prefix {
 	return nil
 }
 
