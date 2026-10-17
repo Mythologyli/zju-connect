@@ -56,10 +56,10 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 	if mod {
 		params.Set("mod", "1")
 	}
-	if needTicket {
+	if needTicket || refresh {
+		// Renewal is needTicket=1: it is what makes the portal hand back a fresh
+		// ticket, which the restore path needs. needTicket=0 only checks validity.
 		params.Set("needTicket", "1")
-	} else if refresh {
-		params.Set("needTicket", "0")
 	}
 
 	u := s.baseURL + "/passport/v1/public/authConfig"
@@ -104,6 +104,7 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 			PubKey         string             `json:"pubKey"`
 			PubKeyExp      string             `json:"pubKeyExp"`
 			AntiReplayRand string             `json:"antiReplayRand"`
+			Ticket         string             `json:"ticket"`
 			AntiMITM       antiMITMAttackData `json:"antiMITMAttackData"`
 		} `json:"data"`
 	}
@@ -143,6 +144,10 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
 	s.signKey = sangforSignatureKey(re.Data.AntiMITM)
+	if re.Data.Ticket != "" {
+		// A response may omit the ticket; that must not throw away a good one.
+		s.ticket = re.Data.Ticket
+	}
 
 	isLogin := 0
 	if re.Data.IsLogin != nil {

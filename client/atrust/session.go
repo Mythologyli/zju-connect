@@ -50,6 +50,7 @@ func (c *Client) startSessionRefresh(refresh func(context.Context) (auth.LoginRe
 			c.setSessionSID(snapshot.SID, nil)
 			log.Printf("aTrust session refreshed (SID changed: %t)", oldSID != snapshot.SID)
 			data.Cookies = snapshot.Cookies
+			data.Ticket = snapshot.Ticket
 			if save != nil {
 				encoded, err := json.Marshal(data)
 				if err == nil {

@@ -12,6 +12,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -59,6 +60,7 @@ type ClientAuthData struct {
 	DeviceID          string          `json:"device_id"`
 	MACAddresses      []string        `json:"mac_addresses,omitempty"`
 	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
+	Ticket            string          `json:"ticket,omitempty"`
 }
 
 type ServerVersionInfo struct {
@@ -93,6 +95,10 @@ func (i ServerVersionInfo) TCPTunnelZeroRTT() bool {
 }
 
 type Session struct {
+	// ctxMu guards ctx. The session starts on the context of the setup call that
+	// builds it and is rebound to the client's lifetime context once setup hands
+	// it over; see SetLifetime.
+	ctxMu        sync.RWMutex
 	ctx          context.Context
 	client       *http.Client
 	deviceID     string
@@ -144,9 +150,25 @@ func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Wr
 	}
 }
 
+// SetLifetime rebinds the session from the context of the call that created it to
+// one that lives as long as the client. The setup context is cancelled the moment
+// setup returns, so a session that keeps it can neither renew nor notice a dead
+// session: every request made afterwards is born cancelled.
+func (s *Session) SetLifetime(ctx context.Context) {
+	s.ctxMu.Lock()
+	s.ctx = ctx
+	s.ctxMu.Unlock()
+}
+
+func (s *Session) lifetimeCtx() context.Context {
+	s.ctxMu.RLock()
+	defer s.ctxMu.RUnlock()
+	return s.ctx
+}
+
 func (s *Session) request(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancel(req.Context())
-	stop := context.AfterFunc(s.ctx, cancel)
+	stop := context.AfterFunc(s.lifetimeCtx(), cancel)
 
 	resp, err := s.client.Do(req.WithContext(ctx))
 	if err != nil {
@@ -189,6 +211,9 @@ type LoginResult struct {
 	Username string
 	SID      string
 	Cookies  []Cookie
+	// Ticket is the renewal ticket the portal hands out when authConfig is asked
+	// with needTicket=1; the restore path (sessionIdExchange) needs it later.
+	Ticket string
 }
 
 type LoginMethod interface {
