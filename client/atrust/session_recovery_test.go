@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -31,6 +32,10 @@ type recoveryStub struct {
 	// also refusing the authConfig the restore needs afterwards.
 	authConfigHits     int
 	authConfigFailures int
+	// exchangeRefusals makes the first N session exchanges answer a stale-ticket
+	// code, which is what the gateway did when the stored ticket was too old.
+	exchangeRefusals    int
+	exchangeRefusalCode int
 
 	ticketBody   string
 	exchangeBody string
@@ -50,6 +55,7 @@ func newRecoveryStub(t *testing.T) *recoveryStub {
 	stub.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stub.mu.Lock()
 		refuseAuthConfig := false
+		refuseExchange := ""
 		switch r.URL.Path {
 		case "/passport/v1/public/authConfig":
 			stub.authConfigHits++
@@ -58,6 +64,13 @@ func newRecoveryStub(t *testing.T) *recoveryStub {
 			stub.ticketHits++
 		case "/passport/v1/public/sessionIdExchange":
 			stub.exchangeHits++
+			if stub.exchangeHits <= stub.exchangeRefusals {
+				code := stub.exchangeRefusalCode
+				if code == 0 {
+					code = 75500304 // stale-ticket
+				}
+				refuseExchange = fmt.Sprintf(`{"code":%d,"message":"stale-ticket"}`, code)
+			}
 		case "/passport/v1/user/onlineInfo":
 			stub.onlineHits++
 		}
@@ -73,7 +86,11 @@ func newRecoveryStub(t *testing.T) *recoveryStub {
 		case "/passport/v1/public/ticketExchange":
 			body = stub.ticketBody
 		case "/passport/v1/public/sessionIdExchange":
-			body = stub.exchangeBody
+			if refuseExchange != "" {
+				body = refuseExchange
+			} else {
+				body = stub.exchangeBody
+			}
 		case "/passport/v1/user/onlineInfo":
 			body = stub.onlineBody
 		}
@@ -93,6 +110,12 @@ func newRecoveryStub(t *testing.T) *recoveryStub {
 func (p *recoveryStub) refuseEveryRenewal() {
 	p.mu.Lock()
 	p.authConfigFailures = 1 << 20
+	p.mu.Unlock()
+}
+
+func (p *recoveryStub) refuseExchanges(count int) {
+	p.mu.Lock()
+	p.exchangeRefusals = count
 	p.mu.Unlock()
 }
 
@@ -364,6 +387,70 @@ func TestRenewalPausesOnlyWhileALoginIsPending(t *testing.T) {
 	case <-renewals:
 		t.Fatal("renewals continued while a re-login is pending")
 	default:
+	}
+}
+
+// TestMintedTicketIsPersistedForRestarts is the regression for the live find of
+// 2026-10-17: the ticket was minted and held in memory, but never written to the
+// record - so a restart lost it and the ladder had nothing to restore from.
+func TestMintedTicketIsPersistedForRestarts(t *testing.T) {
+	stub := newRecoveryStub(t)
+	c, _ := recoveringClient(t, stub)
+
+	var saved []byte
+	c.sessionMu.Lock()
+	c.clientAuthData = auth.ClientAuthData{DeviceID: "device"}
+	c.saveClientData = func(data []byte) error {
+		saved = append([]byte(nil), data...)
+		return nil
+	}
+	c.sessionMu.Unlock()
+
+	c.sessionMu.RLock()
+	session := c.session
+	c.sessionMu.RUnlock()
+
+	c.prepareRestoreTicket(context.Background(), session)
+	if len(saved) == 0 {
+		t.Fatal("nothing was persisted")
+	}
+
+	var record auth.ClientAuthData
+	if err := json.Unmarshal(saved, &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.SIDTicket) != 73 {
+		t.Fatalf("persisted sid_ticket length = %d, want 73: a restart would lose the ticket", len(record.SIDTicket))
+	}
+}
+
+// TestStaleTicketIsReplacedOnce: the gateway refused the stored ticket when the
+// session had died, so the ladder asks for a fresh one - and only once.
+func TestStaleTicketIsReplacedOnce(t *testing.T) {
+	stub := newRecoveryStub(t)
+	// The first renewal is refused (that is the detector), the restore's own calls
+	// are answered; the first session exchange refuses the stored ticket.
+	stub.refuseExchanges(1)
+	c, _ := recoveringClient(t, stub)
+
+	c.sessionMu.Lock()
+	c.SIDTicket = strings.Repeat("s", 73)
+	c.clientAuthData = auth.ClientAuthData{DeviceID: "device"}
+	c.sessionMu.Unlock()
+
+	c.reportSessionInvalid(75500002, "test")
+	waitForState(t, c, SessionRestoring)
+	time.Sleep(100 * time.Millisecond)
+
+	_, ticketHits, exchangeHits, _ := stub.hits()
+	if ticketHits != 1 {
+		t.Fatalf("ticket mints = %d, want exactly one after a stale refusal", ticketHits)
+	}
+	if exchangeHits != 2 {
+		t.Fatalf("session exchanges = %d, want the refused one and the retry", exchangeHits)
+	}
+	if state := c.currentSessionState(); state != SessionRestoring {
+		t.Fatalf("state = %q, want %q until traffic confirms the restore", state, SessionRestoring)
 	}
 }
 
