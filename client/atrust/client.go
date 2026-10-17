@@ -418,10 +418,19 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	c.setSessionSID(snapshot.SID, nil)
 	clientAuthData.DeviceID = c.DeviceID
 	clientAuthData.Cookies = snapshot.Cookies
+	if snapshot.Ticket != "" {
+		clientAuthData.Ticket = snapshot.Ticket
+	}
 	authData, err := json.Marshal(clientAuthData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal client data: %w", err)
 	}
+
+	// The session is no longer the setup call's: it now belongs to the client, on
+	// a context that lives as long as the client does. The setup context is
+	// cancelled the moment this function returns, and a session holding it can
+	// neither renew nor notice that the session died.
+	sess.SetLifetime(c.lifecycleCtx)
 
 	err = c.parseResource(resourceData)
 	if err != nil {
