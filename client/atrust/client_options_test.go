@@ -1,11 +1,42 @@
 package atrust
 
 import (
+	"bytes"
+	stdlog "log"
 	"strings"
 	"testing"
 
+	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/underlay"
 )
+
+// TestSessionDebugMaterialRedactsTheSignKey: the debug dump names the session
+// material, and the sign key is a credential. It may appear only in Redact form.
+func TestSessionDebugMaterialRedactsTheSignKey(t *testing.T) {
+	const signKey = "0123456789abcdef0123456789abcdef"
+	c := NewClient(ClientOptions{Session: SessionOptions{
+		SID: "sid", DeviceID: "device", SignKey: signKey,
+	}})
+	t.Cleanup(c.Close)
+	c.ConnectionID = "connection"
+
+	oldOutput := stdlog.Writer()
+	var output bytes.Buffer
+	stdlog.SetOutput(&output)
+	t.Cleanup(func() { stdlog.SetOutput(oldOutput) })
+	log.EnableDebug()
+	t.Cleanup(log.DisableDebug)
+
+	c.debugSessionMaterial()
+
+	got := output.String()
+	if strings.Contains(got, signKey) {
+		t.Fatalf("debug output contains the sign key: %q", got)
+	}
+	if !strings.Contains(got, log.Redact(signKey)) {
+		t.Fatalf("debug output does not carry the redacted key: %q", got)
+	}
+}
 
 func TestNewClientMapsOptions(t *testing.T) {
 	dialer, err := underlay.New(underlay.Options{AutoDetect: false})

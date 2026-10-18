@@ -266,7 +266,7 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 			return err
 		}
 	}
-	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+	log.DebugPrintf("Given auth data: device=%s cookies=%d", clientAuthData.DeviceID, len(clientAuthData.Cookies))
 
 	if clientAuthData.DeviceID == "" {
 		clientAuthData.DeviceID = strings.ToLower(randHex(32))
@@ -350,7 +350,7 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 			return nil, err
 		}
 	}
-	log.DebugPrintf("Given auth data: %+v", clientAuthData)
+	log.DebugPrintf("Given auth data: device=%s cookies=%d", clientAuthData.DeviceID, len(clientAuthData.Cookies))
 	if clientAuthData.DeviceID == "" && c.DeviceID != "" {
 		clientAuthData.DeviceID = c.DeviceID
 	}
@@ -443,7 +443,7 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 		return nil, err
 	}
 
-	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s", c.SID, c.DeviceID, c.ConnectionID, c.SignKey)
+	c.debugSessionMaterial()
 
 	c.BestNodes = getBestNodes(setupCtx, c.NodeGroups, c.underlayDialer.DialContext, c.tlsKeyLogWriter)
 	if err := setupCtx.Err(); err != nil {
@@ -480,6 +480,13 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	}
 
 	return authData, nil
+}
+
+// debugSessionMaterial prints the identifiers a debug log needs, with the sign
+// key redacted: it is a credential.
+func (c *Client) debugSessionMaterial() {
+	log.DebugPrintf("SID: %s, DeviceID: %s, ConnectionID: %s, SignKey: %s",
+		c.SID, c.DeviceID, c.ConnectionID, log.Redact(c.SignKey))
 }
 
 func newUnderlayDialer(bindInterface string, autoDetectInterface bool, localDNSServer string) (*underlay.Dialer, error) {
