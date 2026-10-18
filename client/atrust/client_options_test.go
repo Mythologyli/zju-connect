@@ -68,6 +68,35 @@ func TestCanResumeTruthTable(t *testing.T) {
 	}
 }
 
+// TestCanRestoreByTicketTruthTable pins the prerequisites of a password-free
+// restore: the exchange needs the ticket, and the restored session needs the same
+// device/sign-key pair it was minted with. Nothing about the resource file: the
+// list is fetched through the restored session.
+func TestCanRestoreByTicketTruthTable(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		ticket   string
+		deviceID string
+		signKey  string
+		want     bool
+	}{
+		{name: "all present", ticket: "ticket", deviceID: "device", signKey: "key", want: true},
+		{name: "missing ticket", deviceID: "device", signKey: "key"},
+		{name: "missing device", ticket: "ticket", signKey: "key"},
+		{name: "missing sign key", ticket: "ticket", deviceID: "device"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient(ClientOptions{Session: SessionOptions{
+				SIDTicket: tt.ticket, DeviceID: tt.deviceID, SignKey: tt.signKey,
+			}})
+			t.Cleanup(c.Close)
+			if got := c.canRestoreByTicket(); got != tt.want {
+				t.Fatalf("canRestoreByTicket() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestClientAuthDataKeepsTheResumeMaterial: the sign key is only useful if it
 // survives the client-data round trip, together with the device id it is paired
 // with and the sidTicket the restore path exchanges.

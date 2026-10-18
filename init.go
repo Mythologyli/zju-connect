@@ -131,7 +131,8 @@ func newFlagSet(defaults configs.Config) *pflag.FlagSet {
 	flags.String("cas-ticket", defaults.CasTicket, "aTrust CAS Ticket")
 	flags.String("oauth2-code", defaults.OAuth2Code, "aTrust OAuth2 code")
 	flags.String("sid", defaults.SID, "aTrust SID")
-	flags.String("sid-ticket", defaults.SIDTicket, "aTrust sidTicket to restore a session with (no password needed)")
+	// A sidTicket is a bearer secret, so it is deliberately not a command-line
+	// flag: the config key or -sid-ticket-file keeps it out of argv.
 	flags.String("sid-ticket-file", defaults.SIDTicketFile, "File to read the aTrust sidTicket from")
 	flags.String("device-id", defaults.DeviceID, "aTrust Device ID")
 	flags.String("sign-key", defaults.SignKey, "aTrust Sign Key")

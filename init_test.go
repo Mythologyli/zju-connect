@@ -379,7 +379,6 @@ func TestSIDTicketAndAutoReloginFlags(t *testing.T) {
 		wantAuto   bool
 	}{
 		{"defaults", nil, "", false},
-		{"the ticket flag", []string{"-sid-ticket", "from-flag"}, "from-flag", false},
 		{"the config keys", []string{"--config", configFile}, "from-config", true},
 		{"the auto-relogin flag", []string{"-auto-relogin"}, "", true},
 	} {

@@ -21,10 +21,11 @@ import (
 type recoveryStub struct {
 	server *httptest.Server
 
-	mu           sync.Mutex
-	ticketHits   int
-	exchangeHits int
-	onlineHits   int
+	mu                 sync.Mutex
+	ticketHits         int
+	exchangeHits       int
+	onlineHits         int
+	clientResourceHits int
 
 	// authConfigHits counts the calls; the first authConfigFailures of them are
 	// refused, which is how a test says "the renewal starts the ladder" without
@@ -72,9 +73,13 @@ func newRecoveryStub(t *testing.T) *recoveryStub {
 			}
 		case "/passport/v1/user/onlineInfo":
 			stub.onlineHits++
+		case "/controller/v1/user/clientResource":
+			stub.clientResourceHits++
 		}
 		body := ""
 		switch r.URL.Path {
+		case "/controller/v1/user/clientResource":
+			body = `{"code":0,"data":{"appList":{"data":{"appInfo":[],"config":{"nodeGroupConf":{"majorNodeGroup":{"id":"group"},"nodeGroupList":[]}}}},"sdpPolicy":{"data":{}}}}`
 		case "/passport/v1/public/authConfig":
 			if refuseAuthConfig {
 				body = `{"code":75500002,"message":"会话无效"}`
@@ -124,6 +129,12 @@ func (p *recoveryStub) hits() (authConfig, ticket, exchange, online int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.authConfigHits, p.ticketHits, p.exchangeHits, p.onlineHits
+}
+
+func (p *recoveryStub) clientResourceHitsCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.clientResourceHits
 }
 
 func (p *recoveryStub) authConfigHitsFor(t *testing.T) int {
@@ -186,6 +197,43 @@ func TestSessionInvalidDataPlaneAnswersDoNotExit(t *testing.T) {
 		if len(reported) != 1 || reported[0] != int64(code) {
 			t.Fatalf("l3 tunnel code %d: reported %v, want one report of that code", code, reported)
 		}
+	}
+}
+
+// TestTicketRestoreWithoutResourceFile: a ticket, the matching device id and the
+// sign key are enough to establish the session; the resource list is fetched
+// through the restored session instead of requiring -resource-file. This is the
+// path the GUI takes, since it passes no resource file at all.
+func TestTicketRestoreWithoutResourceFile(t *testing.T) {
+	stub := newRecoveryStub(t)
+	c := NewClient(ClientOptions{Session: SessionOptions{
+		DeviceID:  "device",
+		SignKey:   "key",
+		SIDTicket: strings.Repeat("t", 73),
+	}})
+	t.Cleanup(c.Close)
+
+	c.sessionMu.Lock()
+	c.session = auth.NewSession(stub.host(), nil)
+	c.sessionMu.Unlock()
+
+	var clientAuthData auth.ClientAuthData
+	established, err := c.establishSession(context.Background(), c.session, SetupOptions{}, &clientAuthData, nil)
+	if err != nil {
+		t.Fatalf("establishSession: %v", err)
+	}
+	if established.resumed || !established.restored {
+		t.Fatalf("establishment = %+v, want a ticket restore", established)
+	}
+	if len(established.resourceData) == 0 {
+		t.Fatal("the resource list was not fetched through the restored session")
+	}
+	if got := stub.clientResourceHitsCount(); got != 1 {
+		t.Fatalf("clientResource calls = %d, want 1", got)
+	}
+	if sid, err := c.sessionSID(); err != nil || sid != "" {
+		// establishSession does not publish the snapshot itself; the caller does.
+		t.Fatalf("SID = %q, %v", sid, err)
 	}
 }
 

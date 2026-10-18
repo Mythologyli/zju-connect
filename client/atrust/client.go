@@ -154,9 +154,10 @@ func (c *Client) canResume(resourceData []byte) bool {
 // canRestoreByTicket reports whether a sidTicket can be exchanged for a session.
 // The exchange runs on the cookie family the portal issues, so no stored cookie is
 // required - but the restored session still has to present the sign key it was
-// minted with, and a resource list to work from.
-func (c *Client) canRestoreByTicket(resourceData []byte) bool {
-	return c.SIDTicket != "" && c.DeviceID != "" && c.SignKey != "" && resourceData != nil
+// minted with. The resource list is fetched through the restored session, so it
+// does not have to be on disk.
+func (c *Client) canRestoreByTicket() bool {
+	return c.SIDTicket != "" && c.DeviceID != "" && c.SignKey != ""
 }
 
 func (c *Client) Close() {
@@ -402,7 +403,7 @@ func (c *Client) establishSession(
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		sess.Restore(c.DeviceID, c.SID, clientAuthData.Cookies)
 		return established, nil
-	case c.canRestoreByTicket(established.resourceData):
+	case c.canRestoreByTicket():
 		log.Println("Restoring the aTrust session from a sidTicket")
 
 		c.ConnectionID = buildConnectionID(c.DeviceID)
@@ -411,6 +412,14 @@ func (c *Client) establishSession(
 			// login, which is what the recovery ladder does too.
 			log.Printf("aTrust sidTicket restore failed, logging in instead: %v", err)
 		} else {
+			// The restored session is authenticated, so the resource list is
+			// fetched the same way the login branch does it instead of requiring
+			// a debug file on disk.
+			fetched, err := sess.ClientResource()
+			if err != nil {
+				return established, fmt.Errorf("restored the session, but fetching the resource list failed: %w", err)
+			}
+			established.resourceData = fetched
 			established.restored = true
 			return established, nil
 		}

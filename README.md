@@ -224,7 +224,7 @@
 
 + `sid`: aTrust SID，调试用途，一般不需要加此参数
 
-+ `sid-ticket` / `sid-ticket-file`: aTrust `sidTicket`，用于不输入密码恢复会话（`sid-ticket-file` 从文件读取，避免出现在进程参数里）。恢复仍然需要同一个 `device-id` 与 `sign-key` 配对，否则隧道能起来但每个授权都会被服务端拒绝
++ `sid-ticket-file`（或配置项 `sid_ticket`）：aTrust `sidTicket`，用于不输入密码恢复会话。`sidTicket` 是 bearer secret，所以不提供命令行参数；请使用文件或配置文件。恢复需要 `sidTicket`、同一个 `device-id` 与 `sign-key` 三者配对，否则隧道能起来但每个授权都会被服务端拒绝。恢复成功后资源列表由客户端通过已恢复的会话拉取，不需要 `-resource-file`。若同时设置了配置项与文件且内容不同，客户端会报错而不是让其中一个静默生效。用 SID 恢复（resume）仍然需要已有的资源快照，因此资源列表不会在 resume 时重新拉取；缺少资源文件时会改为登录。
 
 + `auto-relogin`: 会话失效时自动重新登录，默认关闭。一次完整登录会轮换 device token 并踢掉同账号的其他客户端，所以默认只做到「续期 → 用 sidTicket 恢复 → 报告需要重新登录」为止，且 `relogin-required` 之后不再重试。打开后每个冷却窗口只尝试一次；凭据错误或服务端表示「暂时不能登录」时会停止重试。
 

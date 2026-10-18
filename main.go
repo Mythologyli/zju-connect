@@ -156,7 +156,11 @@ func main() {
 			if readErr != nil {
 				hook_func.Fatalf("Read sid ticket file error: %s", readErr)
 			}
-			sidTicket = strings.TrimSpace(string(content))
+			fromFile := strings.TrimSpace(string(content))
+			if sidTicket != "" && sidTicket != fromFile {
+				hook_func.Fatalf("The aTrust sidTicket is set both in the config and in %s; use one source", conf.SIDTicketFile)
+			}
+			sidTicket = fromFile
 		}
 
 		// Build the login method unconditionally and let the client decide whether
