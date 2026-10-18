@@ -111,7 +111,8 @@ func newFlagSet(defaults configs.Config) *pflag.FlagSet {
 	flags.String("debug-pcap-file", defaults.DebugPCAPFile, "Save reconstructed VPN traffic to a PCAP file")
 	flags.String("debug-tls-log-file", defaults.DebugTLSLogFile, "Save TLS session secrets in NSS key log format")
 	flags.Bool("disable-keep-alive", defaults.DisableKeepAlive, "Disable keep alive")
-	flags.String("keep-alive-url", defaults.KeepAliveURL, "Keep alive URL")
+	flags.String("keep-alive-url", defaults.KeepAliveURL, "Keep alive URL (comma separated)")
+	flags.Int("keep-alive-interval", defaults.KeepAliveInterval, "Keep alive interval in seconds (minimum 10)")
 	flags.String("remote-dns-server", defaults.RemoteDNSServer, "Remote DNS server address")
 	flags.String("zju-dns-server", defaults.RemoteDNSServer, "Remote DNS server address")
 	_ = flags.MarkDeprecated("zju-dns-server", "use --remote-dns-server instead")
@@ -420,6 +421,7 @@ func applyCollectionValues(k *koanf.Koanf, values collectionValues) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -475,6 +477,9 @@ func zjuServerWorkaround(cfg *configs.Config) {
 }
 
 func validateConfig(cfg configs.Config) error {
+	if cfg.KeepAliveInterval < 10 {
+		return fmt.Errorf("ZJU Connect: keep-alive-interval must be at least 10 seconds")
+	}
 	if cfg.Protocol != "easyconnect" && cfg.Protocol != "atrust" {
 		return fmt.Errorf("unsupported VPN protocol: %s", cfg.Protocol)
 	}

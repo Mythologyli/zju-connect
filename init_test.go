@@ -350,6 +350,61 @@ func TestCLICollectionsOverrideEnvironmentCollections(t *testing.T) {
 	}
 }
 
+// TestKeepAliveConfiguration covers the one target source (the existing
+// comma-separated key) and the interval.
+func TestKeepAliveConfiguration(t *testing.T) {
+	configFile := writeConfig(t, `
+keep_alive_url = "http://file.example.com/"
+keep_alive_interval = 900
+`)
+
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		env      []string
+		wantURLs string
+		wantSecs int
+	}{
+		{
+			name:     "the key of an existing config file",
+			args:     []string{"--config", configFile},
+			wantURLs: "http://file.example.com/",
+			wantSecs: 900,
+		},
+		{
+			name:     "one comma separated flag",
+			args:     []string{"-keep-alive-url", "http://a.example.com/,http://b.example.com/"},
+			wantURLs: "http://a.example.com/,http://b.example.com/",
+			wantSecs: 60,
+		},
+		{
+			name:     "the environment",
+			env:      []string{"ZJU_CONNECT_KEEP_ALIVE_URL=http://a.example.com/,http://b.example.com/"},
+			wantURLs: "http://a.example.com/,http://b.example.com/",
+			wantSecs: 60,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			options, _, err := loadStartupOptions(tt.args, func() []string { return tt.env })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := options.Config.KeepAliveURL; got != tt.wantURLs {
+				t.Fatalf("KeepAliveURL = %q, want %q", got, tt.wantURLs)
+			}
+			if got := options.Config.KeepAliveInterval; got != tt.wantSecs {
+				t.Fatalf("KeepAliveInterval = %d, want %d", got, tt.wantSecs)
+			}
+		})
+	}
+}
+
+func TestKeepAliveIntervalFloorIsEnforced(t *testing.T) {
+	if _, _, err := loadStartupOptions([]string{"-keep-alive-interval", "5"}, func() []string { return nil }); err == nil {
+		t.Fatal("a keep-alive interval below the floor was accepted")
+	}
+}
+
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")

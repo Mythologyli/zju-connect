@@ -416,15 +416,22 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if conf.KeepAliveURL == "" && !useRemoteDNS {
-			log.Println("Keep alive is disabled because remote DNS is disabled, and no KeepAliveURL is provided")
+		namedTargets, warnings := service.NamedKeepAliveTargets(conf.KeepAliveURL)
+		for _, warning := range warnings {
+			log.Printf("KeepAlive: %s", warning)
+		}
+
+		derivedTargets, notes := service.DeriveKeepAliveTargets(ipResources)
+		if len(namedTargets) == 0 {
+			for _, note := range notes {
+				log.Printf("KeepAlive: %s", note)
+			}
+		}
+		targets := append(namedTargets, derivedTargets...)
+		if len(targets) == 0 && !useRemoteDNS {
+			log.Println("Keep alive is disabled: no application target is available and remote DNS is disabled")
 		} else {
-			keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
-			hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
-				keepAliveCancel()
-				return nil
-			})
-			go service.KeepAlive(keepAliveCtx, vpnResolver, vpnDialer, conf.KeepAliveURL)
+			startKeepAlive(vpnResolver, vpnDialer, targets, conf)
 		}
 	}
 
@@ -446,4 +453,23 @@ func main() {
 	} else {
 		log.Println("Shutdown ZJU-Connect success, Bye~")
 	}
+}
+
+func startKeepAlive(
+	resolver *resolve.Resolver,
+	dialer *dial.Dialer,
+	targets []service.KeepAliveTarget,
+	conf configs.Config,
+) {
+	keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
+	hook_func.RegisterTerminalFunc("CloseKeepAlive", func(ctx context.Context) error {
+		keepAliveCancel()
+		return nil
+	})
+
+	log.Printf("KeepAlive: probing %d target(s) every %ds", len(targets), conf.KeepAliveInterval)
+	go service.KeepAlive(keepAliveCtx, resolver, dialer, service.KeepAliveOptions{
+		Targets:  targets,
+		Interval: time.Duration(conf.KeepAliveInterval) * time.Second,
+	})
 }
