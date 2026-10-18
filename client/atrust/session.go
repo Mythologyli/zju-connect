@@ -1,11 +1,10 @@
 package atrust
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client/atrust/auth"
@@ -44,9 +43,6 @@ func (c *Client) applySessionSnapshot(snapshot auth.LoginResult) {
 	if c.DeviceID != "" {
 		c.clientAuthData.DeviceID = c.DeviceID
 	}
-	if snapshot.Ticket != "" {
-		c.clientAuthData.Ticket = snapshot.Ticket
-	}
 	if csrfToken != "" {
 		c.clientAuthData.CSRFToken = csrfToken
 	}
@@ -57,7 +53,8 @@ func (c *Client) applySessionSnapshot(snapshot auth.LoginResult) {
 
 // persistAuthData writes the session material and returns what it wrote. It is the
 // only writer of the client data file, so the renewal, the restore and the ladder
-// cannot disagree about what the file holds.
+// cannot disagree about what the file holds. A renewal that produced the same
+// snapshot leaves the file alone: the material did not change.
 func (c *Client) persistAuthData() []byte {
 	c.sessionMu.Lock()
 	save := c.saveClientData
@@ -75,6 +72,15 @@ func (c *Client) persistAuthData() []byte {
 		log.Printf("Failed to marshal client data: %v", err)
 		return nil
 	}
+
+	c.sessionMu.Lock()
+	if bytes.Equal(encoded, c.lastPersisted) {
+		c.sessionMu.Unlock()
+		return encoded
+	}
+	c.lastPersisted = append([]byte(nil), encoded...)
+	c.sessionMu.Unlock()
+
 	if save != nil {
 		if err := save(encoded); err != nil {
 			log.Printf("Failed to save client data: %v", err)
@@ -105,7 +111,7 @@ func (c *Client) startSessionRefresh(refresh func(context.Context) (auth.LoginRe
 			state := c.sessionState
 			c.sessionMu.RUnlock()
 
-			if recovering || state == SessionReloginRequired || state == SessionOffline {
+			if recovering || state == SessionReloginRequired {
 				// A ladder run is in flight, or the session is waiting for a new
 				// login: do not pile portal requests onto it. Note that `restoring`
 				// is *not* in this list - a restore waits for tunnel traffic to
@@ -127,8 +133,9 @@ func (c *Client) startSessionRefresh(refresh func(context.Context) (auth.LoginRe
 				timer.Reset(interval)
 			case errors.Is(err, auth.ErrSessionInvalid):
 				// The session is gone. This used to be log.Fatalf, which took the
-				// whole process (and the TUN device and routes) down with it.
-				c.setSessionState(SessionRenewing, "session refresh was refused", sessionCodeFromError(err))
+				// whole process (and the TUN device and routes) down with it. The
+				// ladder publishes the state; a separate momentary "renewing"
+				// state had no consumer.
 				c.reportSessionInvalid(sessionCodeFromError(err), "session refresh")
 				timer.Reset(interval)
 			default:
@@ -139,17 +146,13 @@ func (c *Client) startSessionRefresh(refresh func(context.Context) (auth.LoginRe
 	}()
 }
 
-// sessionCodeFromError pulls the portal code out of an error message, so the state
-// line and the ladder carry the code the gateway sent instead of a bare string.
+// sessionCodeFromError returns the portal code the auth layer carried on the
+// error, so the state line and the ladder report the gateway's code instead of a
+// bare string. Classification happens where the answer is parsed, not here.
 func sessionCodeFromError(err error) int64 {
-	if err == nil {
+	code, ok := auth.CodeFromError(err)
+	if !ok {
 		return 0
 	}
-	message := err.Error()
-	for _, code := range []int64{75500002, 75500001, 75500006, 75500304, 75500307, 10000004, 10000030, 10000000} {
-		if strings.Contains(message, strconv.FormatInt(code, 10)) {
-			return code
-		}
-	}
-	return 0
+	return int64(code)
 }

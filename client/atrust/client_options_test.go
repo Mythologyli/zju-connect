@@ -70,13 +70,12 @@ func TestCanResumeTruthTable(t *testing.T) {
 
 // TestClientAuthDataKeepsTheResumeMaterial: the sign key is only useful if it
 // survives the client-data round trip, together with the device id it is paired
-// with and the ticket the restore path needs.
+// with and the sidTicket the restore path exchanges.
 func TestClientAuthDataKeepsTheResumeMaterial(t *testing.T) {
 	saved := auth.ClientAuthData{
 		Cookies:   []auth.Cookie{{Host: "vpn.example", Scheme: "https", Name: "sid", Value: "sid-1"}},
 		DeviceID:  "device-1",
 		SignKey:   "sign-key-1",
-		Ticket:    "auth-config-ticket",
 		SIDTicket: "sid-ticket-1",
 		CSRFToken: "csrf-1",
 	}
@@ -94,9 +93,8 @@ func TestClientAuthDataKeepsTheResumeMaterial(t *testing.T) {
 		t.Fatalf("resume pair = (%q, %q), want (%q, %q)",
 			loaded.SignKey, loaded.DeviceID, saved.SignKey, saved.DeviceID)
 	}
-	if loaded.SIDTicket != saved.SIDTicket || loaded.Ticket != saved.Ticket {
-		t.Fatalf("tickets = (%q, %q), want (%q, %q)",
-			loaded.SIDTicket, loaded.Ticket, saved.SIDTicket, saved.Ticket)
+	if loaded.SIDTicket != saved.SIDTicket {
+		t.Fatalf("sidTicket = %q, want %q", loaded.SIDTicket, saved.SIDTicket)
 	}
 	if loaded.CSRFToken != saved.CSRFToken || len(loaded.Cookies) != 1 {
 		t.Fatalf("session material = %+v, want the csrf token and the cookies", loaded)

@@ -32,7 +32,7 @@ func TestSessionRefreshPublishesAndPersists(t *testing.T) {
 	c.startSessionRefresh(func(ctx context.Context) (auth.LoginResult, error) {
 		calls++
 		if calls == 1 {
-			return auth.LoginResult{SID: "new", Cookies: []auth.Cookie{{Name: "sid", Value: "new"}}, Ticket: "ticket-new"}, nil
+			return auth.LoginResult{SID: "new", Cookies: []auth.Cookie{{Name: "sid", Value: "new"}}}, nil
 		}
 		close(retried)
 		<-ctx.Done()
@@ -60,14 +60,43 @@ func TestSessionRefreshPublishesAndPersists(t *testing.T) {
 	if saved.DeviceID != "device" || len(saved.ServerVersionInfo) == 0 || saved.Cookies[0].Value != "new" {
 		t.Fatalf("saved = %+v", saved)
 	}
-	if saved.Ticket != "ticket-new" {
-		t.Fatalf("saved ticket = %q, want the renewal ticket to survive the round trip", saved.Ticket)
-	}
 	if sid, err := c.sessionSID(); sid != "new" || err != nil {
 		t.Fatalf("retained SID = %q, %v", sid, err)
 	}
 	if sid, err := (clientInfo{sidProvider: c.sessionSID}).currentSID(); sid != "new" || err != nil {
 		t.Fatalf("L3 SID = %q, %v", sid, err)
+	}
+}
+
+// TestPersistAuthDataSkipsUnchangedSnapshots: the renewal runs every minute and
+// usually produces the same material, so an unchanged snapshot must not rewrite
+// the client data file.
+func TestPersistAuthDataSkipsUnchangedSnapshots(t *testing.T) {
+	c := NewClient(ClientOptions{})
+	t.Cleanup(c.Close)
+
+	saves := 0
+	c.sessionMu.Lock()
+	c.saveClientData = func([]byte) error {
+		saves++
+		return nil
+	}
+	c.sessionMu.Unlock()
+
+	snapshot := auth.LoginResult{
+		SID:     "sid",
+		Cookies: []auth.Cookie{{Host: "vpn.example", Scheme: "https", Name: "sid", Value: "sid-1"}},
+	}
+	c.applySessionSnapshot(snapshot)
+	c.applySessionSnapshot(snapshot)
+	if saves != 1 {
+		t.Fatalf("saves = %d, want 1 for two identical snapshots", saves)
+	}
+
+	snapshot.Cookies[0].Value = "sid-2"
+	c.applySessionSnapshot(snapshot)
+	if saves != 2 {
+		t.Fatalf("saves = %d, want 2 after the material changed", saves)
 	}
 }
 

@@ -18,18 +18,15 @@ type SessionState string
 
 const (
 	SessionOnline          SessionState = "online"
-	SessionRenewing        SessionState = "renewing"
 	SessionRestoring       SessionState = "restoring"
 	SessionReloginRequired SessionState = "relogin-required"
-	SessionOffline         SessionState = "offline"
 )
 
 const (
 	// sessionRecoveryCooldown keeps a session that keeps dying from hammering the
-	// portal: at most one ladder run per window, however many detectors fire.
+	// portal: at most one ladder run per window, however many detectors fire. It
+	// is also the only retry clock for an automatic re-login.
 	sessionRecoveryCooldown = time.Minute
-	// reloginAttemptLimit bounds one auto re-login run.
-	reloginAttemptLimit = 3
 )
 
 // sessionInvalidError is what a data-plane answer that says the session is gone
@@ -50,16 +47,7 @@ func (e *sessionInvalidError) Unwrap() error { return auth.ErrSessionInvalid }
 // isSessionInvalidCode reports whether a data-plane code means the session is
 // gone; 75500001 is the timeout variant of 75500002.
 func isSessionInvalidCode(code int64) bool {
-	return code == 10000004 || code == 75500001 || code == 75500002
-}
-
-// SetSessionStateHandler registers the observer of session state changes. It
-// should be called before setup; the handler runs on whichever goroutine observed
-// the change, so it must not block.
-func (c *Client) SetSessionStateHandler(handler func(SessionState)) {
-	c.sessionMu.Lock()
-	c.sessionStateHandler = handler
-	c.sessionMu.Unlock()
+	return auth.IsSessionDeathCode(int(code))
 }
 
 func (c *Client) currentSessionState() SessionState {
@@ -68,9 +56,9 @@ func (c *Client) currentSessionState() SessionState {
 	return c.sessionState
 }
 
-// setSessionState publishes a state change once: the stable stdout line (so a
-// caller can follow the session without parsing prose), the handler, and - when
-// the session needs a new login - the line a UI is expected to grep.
+// setSessionState publishes a state change once: the stable stdout line is the
+// contract a caller follows without parsing prose, and the reauthentication line
+// is the one a UI is expected to grep.
 func (c *Client) setSessionState(state SessionState, reason string, code int64) {
 	c.sessionMu.Lock()
 	if c.sessionState == state {
@@ -78,15 +66,11 @@ func (c *Client) setSessionState(state SessionState, reason string, code int64) 
 		return
 	}
 	c.sessionState = state
-	handler := c.sessionStateHandler
 	c.sessionMu.Unlock()
 
 	log.Printf("aTrust session state: %s reason=%s code=%d", state, reason, code)
 	if state == SessionReloginRequired {
 		log.Printf("aTrust session requires reauthentication (code=%d)", code)
-	}
-	if handler != nil {
-		handler(state)
 	}
 }
 
@@ -102,12 +86,22 @@ func (c *Client) ObserveTunnelTraffic(ok bool) {
 
 // reportSessionInvalid is what every data path calls when the gateway says the
 // session is gone: it publishes the state and runs the ladder once, while the
-// caller keeps its own error.
+// caller keeps its own error. Once the ladder has reached relogin-required, a
+// data-plane kick is not a new fact: with auto re-login off it is dropped, and
+// with it on the cooldown is the only retry clock, so a request storm cannot
+// become a login storm.
 func (c *Client) reportSessionInvalid(code int64, where string) {
-	if c.currentSessionState() == "" {
+	c.sessionMu.RLock()
+	state := c.sessionState
+	blocked := state == SessionReloginRequired && (!c.autoRelogin || c.reloginBlocked)
+	c.sessionMu.RUnlock()
+	if state == "" {
 		// Setup has not finished: there is nothing to recover yet, and the setup
 		// call's own error is what the caller sees.
 		log.Printf("aTrust session invalid during setup (%s, code %d)", where, code)
+		return
+	}
+	if blocked {
 		return
 	}
 	go c.runSessionRecovery(code, where)
@@ -127,7 +121,9 @@ func (c *Client) reportIfSessionInvalid(err error, where string) {
 // full login rotates the device token and drops other clients of the account.
 func (c *Client) runSessionRecovery(code int64, where string) {
 	c.sessionMu.Lock()
-	if c.recovering || time.Since(c.lastRecovery) < sessionRecoveryCooldown {
+	terminal := c.sessionState == SessionReloginRequired
+	if c.recovering || time.Since(c.lastRecovery) < sessionRecoveryCooldown ||
+		(terminal && (!c.autoRelogin || c.reloginBlocked)) {
 		c.sessionMu.Unlock()
 		return
 	}
@@ -143,7 +139,8 @@ func (c *Client) runSessionRecovery(code int64, where string) {
 	}()
 
 	if session == nil {
-		c.setSessionState(SessionOffline, where, code)
+		// Setup owns the session until it hands the client over; a detector that
+		// fires before that has no ladder to run.
 		return
 	}
 
@@ -170,10 +167,19 @@ func (c *Client) runSessionRecovery(code int64, where string) {
 		return
 	}
 
-	// 3. A full login, only when the operator asked for it.
+	// 3. A full login, only when the operator asked for it. One attempt per
+	// cooldown: the cooldown is the retry clock, so a detector cannot turn into
+	// three login POSTs in a minute.
 	if c.autoRelogin {
 		if err := c.relogin(ctx); err != nil {
 			log.Printf("aTrust automatic re-login failed: %v", err)
+			if !retryableReloginError(err) {
+				// Wrong credentials or a server-side "not now": retrying every
+				// cooldown cannot fix it and risks a lockout.
+				c.sessionMu.Lock()
+				c.reloginBlocked = true
+				c.sessionMu.Unlock()
+			}
 		} else {
 			log.Printf("aTrust automatic re-login succeeded; waiting for tunnel traffic to confirm it")
 			return
@@ -260,9 +266,9 @@ func (c *Client) mintTicket(ctx context.Context, session *auth.Session) (string,
 	return ticket, nil
 }
 
-// relogin repeats the login with the credentials setup was given. It is bounded,
-// and it refuses to retry the answers that mean "not now" rather than "wrong
-// credentials".
+// relogin repeats the login with the credentials setup was given. It makes one
+// attempt: the ladder's cooldown is the retry clock, and stacking immediate
+// retries on top of it is what turns a dead session into a burst of login POSTs.
 func (c *Client) relogin(ctx context.Context) error {
 	c.sessionMu.RLock()
 	session := c.session
@@ -274,23 +280,12 @@ func (c *Client) relogin(ctx context.Context) error {
 		return errors.New("no configured login method")
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= reloginAttemptLimit; attempt++ {
-		options.Cookies = nil // the session's own jar carries the cookie family
-		_, err := session.Login(method, options)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if !retryableReloginError(err) {
-			return err
-		}
-		log.Printf("aTrust automatic re-login attempt %d/%d failed: %v", attempt, reloginAttemptLimit, err)
+	options.Cookies = nil // the session's own jar carries the cookie family
+	_, err := session.Login(method, options)
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
-	return lastErr
+	return err
 }
 
 // retryableReloginError reports whether a failed login is worth another attempt.
@@ -300,11 +295,11 @@ func retryableReloginError(err error) bool {
 	if errors.Is(err, auth.ErrSessionInvalid) || errors.Is(err, auth.ErrStaleTicket) {
 		return false
 	}
-	message := err.Error()
-	for _, refusal := range []string{"75500006", "75500304", "75500307", "already-logged-in"} {
-		if strings.Contains(message, refusal) {
+	if code, ok := auth.CodeFromError(err); ok {
+		switch code {
+		case 75500006, 75500304, 75500307:
 			return false
 		}
 	}
-	return true
+	return !strings.Contains(err.Error(), "already-logged-in")
 }

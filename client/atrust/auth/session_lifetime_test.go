@@ -80,13 +80,15 @@ func TestRenewalDoesNotInheritTheSetupContext(t *testing.T) {
 	}
 
 	session.SetLifetime(context.Background())
-	snapshot, err := session.Refresh(context.Background())
-	if err != nil {
+	if _, err := session.Refresh(context.Background()); err != nil {
 		t.Fatalf("renewal on the lifetime context: %v", err)
 	}
 
-	if snapshot.Ticket != "ticket-1" {
-		t.Fatalf("renewal ticket = %q, want ticket-1", snapshot.Ticket)
+	session.stateMu.Lock()
+	ticket := session.ticket
+	session.stateMu.Unlock()
+	if ticket != "ticket-1" {
+		t.Fatalf("renewal ticket = %q, want ticket-1", ticket)
 	}
 	queries := stub.requests()
 	if len(queries) != 1 {
@@ -134,11 +136,13 @@ func TestRenewalKeepsTheTicketWhenAnAnswerOmitsIt(t *testing.T) {
 	}
 
 	stub.setResponse(authConfigBody(""))
-	snapshot, err := session.Refresh(context.Background())
-	if err != nil {
+	if _, err := session.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Ticket != "ticket-1" {
-		t.Fatalf("ticket = %q, want the stored ticket-1", snapshot.Ticket)
+	session.stateMu.Lock()
+	ticket := session.ticket
+	session.stateMu.Unlock()
+	if ticket != "ticket-1" {
+		t.Fatalf("ticket = %q, want the stored ticket-1", ticket)
 	}
 }

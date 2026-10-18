@@ -159,21 +159,21 @@ func main() {
 			sidTicket = strings.TrimSpace(string(content))
 		}
 
-		var loginMethod auth.LoginMethod
-		if (conf.SID == "" && sidTicket == "") || conf.DeviceID == "" || resourceData == nil {
-			loginMethod, err = auth.NewLoginMethod(auth.LoginMethodOptions{
-				AuthType:      conf.AuthType,
-				Username:      conf.Username,
-				Password:      conf.Password,
-				Phone:         conf.Phone,
-				Domain:        conf.LoginDomain,
-				GraphCodeFile: conf.GraphCodeFile,
-				CASTicket:     conf.CasTicket,
-				OAuth2Code:    conf.OAuth2Code,
-			})
-			if err != nil {
-				hook_func.Fatalf("Configure aTrust login: %v", err)
-			}
+		// Build the login method unconditionally and let the client decide whether
+		// it needs one: the client is the only owner of the resume/restore/login
+		// decision, because it is the layer that loads the stored material.
+		loginMethod, err := auth.NewLoginMethod(auth.LoginMethodOptions{
+			AuthType:      conf.AuthType,
+			Username:      conf.Username,
+			Password:      conf.Password,
+			Phone:         conf.Phone,
+			Domain:        conf.LoginDomain,
+			GraphCodeFile: conf.GraphCodeFile,
+			CASTicket:     conf.CasTicket,
+			OAuth2Code:    conf.OAuth2Code,
+		})
+		if err != nil {
+			hook_func.Fatalf("Configure aTrust login: %v", err)
 		}
 
 		vpnClient = atrustclient.NewClient(atrustclient.ClientOptions{

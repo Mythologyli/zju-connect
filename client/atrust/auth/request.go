@@ -57,8 +57,10 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 		params.Set("mod", "1")
 	}
 	if needTicket || refresh {
-		// Renewal is needTicket=1: it is what makes the portal hand back a fresh
-		// ticket, which the restore path needs. needTicket=0 only checks validity.
+		// Renewal is needTicket=1, the portal's own renewal form: needTicket=0 only
+		// checks validity and does not ask the portal to refresh the session
+		// material. The ticket in the answer feeds the in-memory login state; a
+		// password-free restore uses the separate sidTicket from ticketExchange.
 		params.Set("needTicket", "1")
 	}
 
@@ -113,10 +115,11 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 		return 0, nil, err
 	}
 	if re.Code != nil && *re.Code != 0 {
-		if *re.Code == 10000004 || *re.Code == 75500002 {
-			return 0, nil, fmt.Errorf("%w: authConfig code %d", ErrSessionInvalid, *re.Code)
+		coded := &PortalCodeError{Op: "authConfig", Code: *re.Code}
+		if IsSessionDeathCode(*re.Code) {
+			coded.Kind = ErrSessionInvalid
 		}
-		return 0, nil, fmt.Errorf("authConfig failed with code %d", *re.Code)
+		return 0, nil, coded
 	}
 	if refresh && (re.Code == nil || re.Data.IsLogin == nil) {
 		return 0, nil, fmt.Errorf("authConfig response missing code or isLogin")

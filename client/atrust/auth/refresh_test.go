@@ -15,9 +15,9 @@ func TestRefreshUsesLatestCookiesAndCSRF(t *testing.T) {
 	calls := 0
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		// The renewal asks for a ticket (needTicket=1) and never forces the
-		// first-auth path (no mod): asking for a ticket is what makes the portal hand back a fresh one,
-		// and asking with needTicket=0 was the defect this test used to pin.
+		// The renewal uses needTicket=1 (the portal's renewal form) and never
+		// forces the first-auth path (no mod); needTicket=0 was the defect this
+		// test used to pin.
 		if r.Method != "GET" || r.URL.Path != "/passport/v1/public/authConfig" || r.URL.Query().Get("needTicket") != "1" || r.URL.Query().Has("mod") {
 			t.Errorf("unexpected refresh request: %s %s", r.Method, r.URL)
 		}

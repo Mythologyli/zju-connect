@@ -25,16 +25,15 @@ func (s *Session) Restore(deviceID, sid string, cookies []Cookie) {
 	}
 }
 
-// Snapshot must be taken after the last HTTP response, which may replace sid.
+// Snapshot must be taken after the last HTTP response, which may replace sid. The
+// in-memory anti-MITM ticket stays on the session; it is not session material a
+// restart can use, and persisting it had no reader.
 func (s *Session) Snapshot() (LoginResult, error) {
 	sid, cookies := sessionCookies(s)
 	if sid == "" {
 		return LoginResult{}, ErrSessionInvalid
 	}
-	s.stateMu.Lock()
-	ticket := s.ticket
-	s.stateMu.Unlock()
-	return LoginResult{SID: sid, Cookies: cookies, Ticket: ticket}, nil
+	return LoginResult{SID: sid, Cookies: cookies}, nil
 }
 
 // Refresh maintains an existing session; it never starts an interactive login.

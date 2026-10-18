@@ -214,7 +214,7 @@
 
 + `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
 
-+ `session-refresh-interval`: aTrust 会话续期间隔，单位为秒，默认为 `60`，最小 `30`（`0` 表示禁用）。续期请求按官方客户端的写法发送 `authConfig?needTicket=1`，并取回新的 ticket。注意：续期只能**提前发现**会话已死，真正让会话不过期的是 `keep-alive-url` 的隧道流量；设为 `0` 时客户端不会察觉会话已经失效。
++ `session-refresh-interval`: aTrust 会话续期间隔，单位为秒，默认为 `60`，最小 `30`（`0` 表示禁用）。续期请求使用 `authConfig?needTicket=1`（服务端的续期形式）。注意：续期只能**提前发现**会话已死，真正让会话不过期的是 `keep-alive-url` 的隧道流量；设为 `0` 时客户端不会察觉会话已经失效。
 
 + `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
 
@@ -226,7 +226,7 @@
 
 + `sid-ticket` / `sid-ticket-file`: aTrust `sidTicket`，用于不输入密码恢复会话（`sid-ticket-file` 从文件读取，避免出现在进程参数里）。恢复仍然需要同一个 `device-id` 与 `sign-key` 配对，否则隧道能起来但每个授权都会被服务端拒绝
 
-+ `auto-relogin`: 会话失效时自动重新登录，默认关闭。一次完整登录会轮换 device token 并踢掉同账号的其他客户端，所以默认只做到「续期 → 用 sidTicket 恢复 → 报告需要重新登录」为止；打开后仍受尝试次数与冷却限制
++ `auto-relogin`: 会话失效时自动重新登录，默认关闭。一次完整登录会轮换 device token 并踢掉同账号的其他客户端，所以默认只做到「续期 → 用 sidTicket 恢复 → 报告需要重新登录」为止，且 `relogin-required` 之后不再重试。打开后每个冷却窗口只尝试一次；凭据错误或服务端表示「暂时不能登录」时会停止重试。
 
 + `device-id`: aTrust 设备 ID，调试用途，一般不需要加此参数
 

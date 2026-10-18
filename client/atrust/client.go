@@ -75,16 +75,17 @@ type Client struct {
 	// what the last recovery learned. All of it is guarded by sessionMu, except
 	// session and clientAuthData, which are written once during setup before any
 	// goroutine reads them (and read under the lock afterwards).
-	session             *auth.Session
-	clientAuthData      auth.ClientAuthData
-	saveClientData      func([]byte) error
-	loginMethod         auth.LoginMethod
-	loginOptions        auth.LoginOptions
-	autoRelogin         bool
-	sessionState        SessionState
-	sessionStateHandler func(SessionState)
-	recovering          bool
-	lastRecovery        time.Time
+	session        *auth.Session
+	clientAuthData auth.ClientAuthData
+	saveClientData func([]byte) error
+	lastPersisted  []byte
+	loginMethod    auth.LoginMethod
+	loginOptions   auth.LoginOptions
+	autoRelogin    bool
+	reloginBlocked bool
+	sessionState   SessionState
+	recovering     bool
+	lastRecovery   time.Time
 
 	serverAddress   string
 	ipResources     []client.IPResource
@@ -311,9 +312,9 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 			return err
 		}
 	}
-	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s ticket=%s sid_ticket=%s",
+	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s sid_ticket=%s",
 		clientAuthData.DeviceID, len(clientAuthData.Cookies),
-		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.Ticket), log.Redact(clientAuthData.SIDTicket))
+		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.SIDTicket))
 
 	if clientAuthData.DeviceID == "" {
 		clientAuthData.DeviceID = strings.ToLower(randHex(32))
@@ -373,6 +374,84 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	}
 }
 
+type sessionEstablishment struct {
+	resourceData []byte
+	resumed      bool
+	restored     bool
+}
+
+// establishSession is the single owner of the resume / ticket-restore / login
+// decision. The predicates and the action live together, so a combination the
+// caller believes is documented cannot pass one check and then call Login with a
+// nil method. The resource list is an input only for a resume; a restored session
+// fetches it through the authenticated session, exactly like a login does.
+func (c *Client) establishSession(
+	ctx context.Context,
+	sess *auth.Session,
+	options SetupOptions,
+	clientAuthData *auth.ClientAuthData,
+	resourceData []byte,
+) (sessionEstablishment, error) {
+	established := sessionEstablishment{resourceData: resourceData}
+	established.resumed = c.canResume(established.resourceData)
+
+	switch {
+	case established.resumed:
+		log.Println("Skipping login")
+
+		c.ConnectionID = buildConnectionID(c.DeviceID)
+		sess.Restore(c.DeviceID, c.SID, clientAuthData.Cookies)
+		return established, nil
+	case c.canRestoreByTicket(established.resourceData):
+		log.Println("Restoring the aTrust session from a sidTicket")
+
+		c.ConnectionID = buildConnectionID(c.DeviceID)
+		if _, err := sess.RestoreByTicket(ctx, c.SIDTicket); err != nil {
+			// A ticket that cannot be exchanged is not fatal: fall through to a
+			// login, which is what the recovery ladder does too.
+			log.Printf("aTrust sidTicket restore failed, logging in instead: %v", err)
+		} else {
+			established.restored = true
+			return established, nil
+		}
+	}
+
+	if clientAuthData.DeviceID == "" {
+		clientAuthData.DeviceID = strings.ToLower(randHex(32))
+	}
+	c.DeviceID = clientAuthData.DeviceID
+	c.ConnectionID = buildConnectionID(c.DeviceID)
+	c.SignKey = randHex(64)
+	if len(clientAuthData.MACAddresses) == 0 {
+		clientAuthData.MACAddresses = []string{randMACAddress()}
+	}
+	c.MACAddresses = clientAuthData.MACAddresses
+
+	if options.LoginMethod == nil {
+		log.Println("No auth type specified, trying to skip auth")
+	}
+
+	loginResult, err := sess.Login(options.LoginMethod, auth.LoginOptions{
+		DeviceID:         c.DeviceID,
+		MACAddresses:     c.MACAddresses,
+		Cookies:          clientAuthData.Cookies,
+		TOTPSecret:       options.TOTPSecret,
+		ChallengeHandler: options.ChallengeHandler,
+	})
+	if err != nil {
+		log.Println("Login error:", err)
+		return established, err
+	}
+	c.Username = loginResult.Username
+
+	established.resourceData, err = sess.ClientResource()
+	if err != nil {
+		log.Println("Error fetching client resource:", err)
+		return established, err
+	}
+	return established, nil
+}
+
 func (c *Client) Setup(options SetupOptions) ([]byte, error) {
 	return c.SetupContext(context.Background(), options)
 }
@@ -397,9 +476,9 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 			return nil, err
 		}
 	}
-	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s ticket=%s sid_ticket=%s",
+	log.DebugPrintf("Given auth data: device=%s cookies=%d sign_key=%s sid_ticket=%s",
 		clientAuthData.DeviceID, len(clientAuthData.Cookies),
-		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.Ticket), log.Redact(clientAuthData.SIDTicket))
+		log.Redact(clientAuthData.SignKey), log.Redact(clientAuthData.SIDTicket))
 	if clientAuthData.DeviceID == "" && c.DeviceID != "" {
 		clientAuthData.DeviceID = c.DeviceID
 	}
@@ -441,71 +520,14 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	c.tcpTunnelZeroRTT = parsedServerVersion.TCPTunnelZeroRTT()
 	log.Printf("aTrust TCP tunnel zero-RTT: %t", c.tcpTunnelZeroRTT)
 
-	resourceData := options.ResourceData
-
-	// The session is established in one of three ways, in this order: the stored
-	// material is complete (resume), a sidTicket can be exchanged for a session
-	// (silent restore), or a login is needed.
-	resumed := c.canResume(resourceData)
-	established := false
-	restoredFromTicket := false
-	switch {
-	case resumed:
-		log.Println("Skipping login")
-
-		c.ConnectionID = buildConnectionID(c.DeviceID)
-		sess.Restore(c.DeviceID, c.SID, clientAuthData.Cookies)
-		established = true
-	case c.canRestoreByTicket(resourceData):
-		log.Println("Restoring the aTrust session from a sidTicket")
-
-		c.ConnectionID = buildConnectionID(c.DeviceID)
-		if _, err := sess.RestoreByTicket(setupCtx, c.SIDTicket); err != nil {
-			// A ticket that cannot be exchanged is not fatal: fall through to a
-			// login, which is what the recovery ladder does too.
-			log.Printf("aTrust sidTicket restore failed, logging in instead: %v", err)
-		} else {
-			established = true
-			restoredFromTicket = true
-		}
+	establishment, err := c.establishSession(setupCtx, sess, options, &clientAuthData, options.ResourceData)
+	if err != nil {
+		return nil, err
 	}
+	resourceData := establishment.resourceData
+	resumed := establishment.resumed
+	restoredFromTicket := establishment.restored
 
-	if !established {
-		if clientAuthData.DeviceID == "" {
-			clientAuthData.DeviceID = strings.ToLower(randHex(32))
-		}
-		c.DeviceID = clientAuthData.DeviceID
-		c.ConnectionID = buildConnectionID(c.DeviceID)
-		c.SignKey = randHex(64)
-		if len(clientAuthData.MACAddresses) == 0 {
-			clientAuthData.MACAddresses = []string{randMACAddress()}
-		}
-		c.MACAddresses = clientAuthData.MACAddresses
-
-		if options.LoginMethod == nil {
-			log.Println("No auth type specified, trying to skip auth")
-		}
-
-		loginResult, err := sess.Login(options.LoginMethod, auth.LoginOptions{
-			DeviceID:         c.DeviceID,
-			MACAddresses:     c.MACAddresses,
-			Cookies:          clientAuthData.Cookies,
-			TOTPSecret:       options.TOTPSecret,
-			ChallengeHandler: options.ChallengeHandler,
-		})
-		if err != nil {
-			log.Println("Login error:", err)
-			return nil, err
-		}
-		c.Username = loginResult.Username
-
-		resourceData, err = sess.ClientResource()
-		if err != nil {
-			log.Println("Error fetching client resource:", err)
-			return nil, err
-		}
-
-	}
 	snapshot, err := sess.Snapshot()
 	if err != nil {
 		return nil, err
@@ -515,9 +537,6 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	clientAuthData.Cookies = snapshot.Cookies
 	clientAuthData.SignKey = c.SignKey
 	clientAuthData.CSRFToken = sess.CSRFToken()
-	if snapshot.Ticket != "" {
-		clientAuthData.Ticket = snapshot.Ticket
-	}
 	if c.SIDTicket != "" {
 		clientAuthData.SIDTicket = c.SIDTicket
 	}

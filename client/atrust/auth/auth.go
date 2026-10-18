@@ -60,8 +60,6 @@ type ClientAuthData struct {
 	DeviceID          string          `json:"device_id"`
 	MACAddresses      []string        `json:"mac_addresses,omitempty"`
 	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
-	// Ticket is the renewal ticket of the last authConfig.
-	Ticket string `json:"ticket,omitempty"`
 	// CSRFToken comes from the last authConfig and is what the restore path
 	// (sessionIdExchange) has to send, so a cold restore needs it.
 	CSRFToken string `json:"csrf_token,omitempty"`
@@ -112,12 +110,12 @@ type Session struct {
 	ctxMu sync.RWMutex
 	ctx   context.Context
 	// stateMu guards the fields a portal answer updates (csrfToken, ticket,
-	// pubKey, pubKeyExp, antiReplayRand, signKey). It is never held while a
-	// request is in flight: it exists so the renewal and the restore path, which
-	// run on different goroutines once the client is up, cannot interleave their
-	// updates into a half-updated session. The login path touches the same
-	// fields, but only before the client is running; everything after that reads
-	// through CSRFToken/Snapshot.
+	// pubKey, pubKeyExp, antiReplayRand, signKey). Each response writes them in
+	// one short critical section. It does not serialize requests: Refresh,
+	// RestoreByTicket and Login may run concurrently, and the last writer wins.
+	// Callers that must not interleave them serialize themselves; the recovery
+	// ladder's `recovering` guard and the renewal loop's pause are what do that
+	// for the session paths.
 	stateMu      sync.Mutex
 	client       *http.Client
 	deviceID     string
@@ -239,9 +237,6 @@ type LoginResult struct {
 	Username string
 	SID      string
 	Cookies  []Cookie
-	// Ticket is the renewal ticket the portal hands out when authConfig is asked
-	// with needTicket=1; the restore path (sessionIdExchange) needs it later.
-	Ticket string
 }
 
 type LoginMethod interface {

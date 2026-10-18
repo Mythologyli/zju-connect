@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -139,27 +138,9 @@ func (p *recoveryStub) set(body string, target *string) {
 	p.mu.Unlock()
 }
 
-// stateRecorder collects the state transitions a test wants to assert.
-type stateRecorder struct {
-	mu     sync.Mutex
-	states []SessionState
-}
-
-func (r *stateRecorder) record(state SessionState) {
-	r.mu.Lock()
-	r.states = append(r.states, state)
-	r.mu.Unlock()
-}
-
-func (r *stateRecorder) list() []SessionState {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]SessionState(nil), r.states...)
-}
-
 // recoveringClient is a client wired to the stub, with a session state that setup
 // would have produced.
-func recoveringClient(t *testing.T, stub *recoveryStub) (*Client, *stateRecorder) {
+func recoveringClient(t *testing.T, stub *recoveryStub) *Client {
 	t.Helper()
 
 	c := NewClient(ClientOptions{Session: SessionOptions{SID: "sid", DeviceID: "device", SignKey: "key"}})
@@ -170,10 +151,7 @@ func recoveringClient(t *testing.T, stub *recoveryStub) (*Client, *stateRecorder
 	c.sessionState = SessionOnline
 	c.sessionMu.Unlock()
 
-	recorder := &stateRecorder{}
-	c.SetSessionStateHandler(recorder.record)
-
-	return c, recorder
+	return c
 }
 
 func waitForState(t *testing.T, c *Client, want SessionState) {
@@ -211,12 +189,62 @@ func TestSessionInvalidDataPlaneAnswersDoNotExit(t *testing.T) {
 	}
 }
 
+// TestDocumentedCombinationsReachOneDecision: the client owns the
+// resume/restore/login decision, so the combinations main used to judge for
+// itself all end in the login path (and a clear error when no method is
+// configured), not in a nil-method call from a different predicate.
+func TestDocumentedCombinationsReachOneDecision(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/passport/v1/public/authConfig" {
+			_, _ = w.Write([]byte(`{"code":0,"data":{"isLogin":0,"authServerInfoList":[]}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	for _, tt := range []struct {
+		name       string
+		options    SessionOptions
+		resource   []byte
+		wantResume bool
+	}{
+		{
+			name:     "no stored material",
+			options:  SessionOptions{},
+			resource: nil,
+		},
+		{
+			name:     "SID and resource without the sign key",
+			options:  SessionOptions{SID: "sid", DeviceID: "device"},
+			resource: []byte("resource"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient(ClientOptions{Session: tt.options})
+			t.Cleanup(c.Close)
+			c.sessionMu.Lock()
+			c.session = auth.NewSession(strings.TrimPrefix(server.URL, "https://"), nil)
+			c.sessionMu.Unlock()
+
+			var data auth.ClientAuthData
+			established, err := c.establishSession(context.Background(), c.session, SetupOptions{}, &data, tt.resource)
+			if err == nil || !strings.Contains(err.Error(), "login method is nil") {
+				t.Fatalf("error = %v, want a clear nil-login-method error", err)
+			}
+			if established.resumed || established.restored {
+				t.Fatalf("establishment = %+v, want the login path", established)
+			}
+		})
+	}
+}
+
 // TestSessionRecoveryRestoresAndWaitsForTraffic: the ladder renews, restores from
 // a ticket, and does not call the session online until application traffic proves
 // it (a VIP being allocated proves nothing).
 func TestSessionRecoveryRestoresAndWaitsForTraffic(t *testing.T) {
 	stub := newRecoveryStub(t)
-	c, recorder := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.reportSessionInvalid(75500002, "test")
 	waitForState(t, c, SessionRestoring)
@@ -238,10 +266,6 @@ func TestSessionRecoveryRestoresAndWaitsForTraffic(t *testing.T) {
 
 	c.ObserveTunnelTraffic(true)
 	waitForState(t, c, SessionOnline)
-
-	if got := recorder.list(); !slices.Equal(got, []SessionState{SessionRestoring, SessionOnline}) {
-		t.Fatalf("state history = %v, want restoring then online", got)
-	}
 }
 
 // TestSessionRecoveryReportsReloginWithoutHammering: with every avenue refused the
@@ -251,7 +275,7 @@ func TestSessionRecoveryReportsReloginWithoutHammering(t *testing.T) {
 	stub := newRecoveryStub(t)
 	stub.refuseEveryRenewal()
 	stub.set(`{"code":500,"message":"no"}`, &stub.ticketBody)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.reportSessionInvalid(75500002, "first detector")
 	waitForState(t, c, SessionReloginRequired)
@@ -269,6 +293,83 @@ func TestSessionRecoveryReportsReloginWithoutHammering(t *testing.T) {
 		t.Fatalf("ticket requests = %d, want %d: the cooldown must hold",
 			ticketHitsAfterSecondKick, ticketHitsAfterFirstRun)
 	}
+
+	// Even after the cooldown, relogin-required is terminal without an explicit
+	// opt-in: a data-plane kick must not restart the ladder.
+	c.sessionMu.Lock()
+	c.lastRecovery = time.Now().Add(-2 * sessionRecoveryCooldown)
+	c.sessionMu.Unlock()
+	c.reportSessionInvalid(10000004, "late detector")
+	time.Sleep(100 * time.Millisecond)
+	_, ticketHitsAfterLateKick, _, _ := stub.hits()
+	if ticketHitsAfterLateKick != ticketHitsAfterFirstRun {
+		t.Fatalf("ticket requests = %d, want %d: relogin-required must be terminal",
+			ticketHitsAfterLateKick, ticketHitsAfterFirstRun)
+	}
+}
+
+// TestAutoReloginIsBoundedAfterANonRetryableFailure: with -auto-relogin on, the
+// cooldown is the only retry clock, and a failure that means "wrong credentials"
+// or "still online" stops further attempts rather than turning every cooldown
+// into another login POST.
+func TestAutoReloginIsBoundedAfterANonRetryableFailure(t *testing.T) {
+	stub := newRecoveryStub(t)
+	stub.refuseEveryRenewal()
+	stub.set(`{"code":500,"message":"no"}`, &stub.ticketBody)
+	c := recoveringClient(t, stub)
+
+	c.sessionMu.Lock()
+	c.autoRelogin = true
+	c.loginMethod = auth.PasswordLogin{}
+	c.loginOptions = auth.LoginOptions{DeviceID: "device"}
+	c.sessionMu.Unlock()
+
+	c.reportSessionInvalid(75500002, "detector")
+	waitForState(t, c, SessionReloginRequired)
+
+	c.sessionMu.RLock()
+	blocked := c.reloginBlocked
+	c.sessionMu.RUnlock()
+	if !blocked {
+		t.Fatal("a non-retryable login failure did not stop further attempts")
+	}
+
+	authConfigHitsBefore := stub.authConfigHitsFor(t)
+	c.sessionMu.Lock()
+	c.lastRecovery = time.Now().Add(-2 * sessionRecoveryCooldown)
+	c.sessionMu.Unlock()
+	c.reportSessionInvalid(75500002, "late detector")
+	time.Sleep(100 * time.Millisecond)
+	if got := stub.authConfigHitsFor(t); got != authConfigHitsBefore {
+		t.Fatalf("authConfig calls = %d, want %d: a blocked re-login must not retry",
+			got, authConfigHitsBefore)
+	}
+}
+
+// TestReloginMakesOneAttempt: the ladder already has a cooldown, so a single
+// relogin call must not stack immediate retries on top of it.
+func TestReloginMakesOneAttempt(t *testing.T) {
+	hits := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	c := NewClient(ClientOptions{})
+	t.Cleanup(c.Close)
+	c.sessionMu.Lock()
+	c.session = auth.NewSession(strings.TrimPrefix(server.URL, "https://"), nil)
+	c.loginMethod = auth.PasswordLogin{}
+	c.loginOptions = auth.LoginOptions{DeviceID: "device"}
+	c.sessionMu.Unlock()
+
+	if err := c.relogin(context.Background()); err == nil {
+		t.Fatal("relogin succeeded against a 500")
+	}
+	if hits != 1 {
+		t.Fatalf("login attempts = %d, want 1", hits)
+	}
 }
 
 // TestRenewalFailureRunsTheLadderOnce: the renewal is the detector that runs on a
@@ -278,7 +379,7 @@ func TestRenewalFailureRunsTheLadderOnce(t *testing.T) {
 	stub := newRecoveryStub(t)
 	stub.refuseEveryRenewal()
 	stub.set(`{"code":500,"message":"no"}`, &stub.ticketBody)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.sessionMu.Lock()
 	c.clientAuthData = auth.ClientAuthData{DeviceID: "device"}
@@ -307,7 +408,7 @@ func TestRenewalFailureRunsTheLadderOnce(t *testing.T) {
 // the ladder has nothing to restore from.
 func TestPrepareRestoreTicketStoresOneWhileTheSessionIsAlive(t *testing.T) {
 	stub := newRecoveryStub(t)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.sessionMu.RLock()
 	session := c.session
@@ -332,7 +433,7 @@ func TestPrepareRestoreTicketStoresOneWhileTheSessionIsAlive(t *testing.T) {
 func TestPrepareRestoreTicketSurvivesARefusal(t *testing.T) {
 	stub := newRecoveryStub(t)
 	stub.set(`{"code":500,"message":"no"}`, &stub.ticketBody)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.sessionMu.RLock()
 	session := c.session
@@ -351,7 +452,7 @@ func TestPrepareRestoreTicketSurvivesARefusal(t *testing.T) {
 // renewal is the only thing left that would notice the session dying again.
 func TestRenewalPausesOnlyWhileALoginIsPending(t *testing.T) {
 	stub := newRecoveryStub(t)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.sessionMu.Lock()
 	c.clientAuthData = auth.ClientAuthData{DeviceID: "device"}
@@ -395,7 +496,7 @@ func TestRenewalPausesOnlyWhileALoginIsPending(t *testing.T) {
 // record - so a restart lost it and the ladder had nothing to restore from.
 func TestMintedTicketIsPersistedForRestarts(t *testing.T) {
 	stub := newRecoveryStub(t)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	var saved []byte
 	c.sessionMu.Lock()
@@ -431,7 +532,7 @@ func TestStaleTicketIsReplacedOnce(t *testing.T) {
 	// The first renewal is refused (that is the detector), the restore's own calls
 	// are answered; the first session exchange refuses the stored ticket.
 	stub.refuseExchanges(1)
-	c, _ := recoveringClient(t, stub)
+	c := recoveringClient(t, stub)
 
 	c.sessionMu.Lock()
 	c.SIDTicket = strings.Repeat("s", 73)
@@ -461,9 +562,9 @@ func TestRetryableReloginError(t *testing.T) {
 		want bool
 	}{
 		{"a temporary network error", errors.New("dial tcp: connection refused"), true},
-		{"still online server-side", errors.New("login failed with code 75500006 (当前账号已在线)"), false},
-		{"a stale random check code", errors.New("login failed with code 75500307"), false},
-		{"a refused ticket", errors.New("login failed with code 75500304"), false},
+		{"still online server-side", &auth.PortalCodeError{Op: "login", Code: 75500006, Message: "当前账号已在线"}, false},
+		{"a stale random check code", &auth.PortalCodeError{Op: "login", Code: 75500307}, false},
+		{"a refused ticket", &auth.PortalCodeError{Op: "login", Code: 75500304}, false},
 		{"a dead session", auth.ErrSessionInvalid, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -479,8 +580,8 @@ func TestSessionCodeFromError(t *testing.T) {
 		err  error
 		want int64
 	}{
-		{errors.New("authConfig code 75500002"), 75500002},
-		{errors.New("10000004 invalid SID"), 10000004},
+		{&auth.PortalCodeError{Op: "authConfig", Code: 75500002}, 75500002},
+		{&auth.PortalCodeError{Op: "sessionIdExchange", Code: 10000004}, 10000004},
 		{errors.New("no code here"), 0},
 		{nil, 0},
 	} {

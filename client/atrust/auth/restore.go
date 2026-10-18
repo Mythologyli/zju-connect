@@ -22,35 +22,6 @@ var (
 	ErrRestoreNotConfirmed = errors.New("aTrust restore was not confirmed as online")
 )
 
-// sessionDeathCodes are the portal codes that mean the session is gone; 75500001
-// is the timeout variant of 75500002.
-var sessionDeathCodes = map[int]bool{10000004: true, 75500001: true, 75500002: true}
-
-// ticketError classifies a non-zero portal code on the restore and re-login path,
-// so the ladder can tell "mint a new ticket", "the session is gone" and "the
-// portal refused for another reason" apart instead of treating every answer as
-// fatal.
-func ticketError(step string, code int, message string) error {
-	switch {
-	case sessionDeathCodes[code]:
-		return fmt.Errorf("%w: %s code %d (%s)", ErrSessionInvalid, step, code, message)
-	case code == 75500304: // stale ticket
-		return fmt.Errorf("%w: %s code %d (%s)", ErrStaleTicket, step, code, message)
-	case code == 75500307:
-		// The random check code is only valid while logged in: the ticket source
-		// needs a live session, so a new ticket has to be minted rather than the
-		// same call retried.
-		return fmt.Errorf("%w: %s code %d (%s)", ErrStaleTicket, step, code, message)
-	case code == 75500006:
-		// The account is still online server-side (about 24 minutes after a
-		// client-side logout) and a fresh login is refused meanwhile. That is
-		// neither a wrong credential nor a reason to exit.
-		return fmt.Errorf("%s code %d (%s): the account is still online, retry later", step, code, message)
-	default:
-		return fmt.Errorf("%s failed with code %d (%s)", step, code, message)
-	}
-}
-
 // TicketExchange asks the portal for a sidTicket. It needs a live session: the
 // cookies carry the whole request (empty body, no CSRF token), and an expired jar
 // answers a non-zero code or no data - so this is not a way around a fresh login.
