@@ -73,7 +73,30 @@ type udpDatagram struct {
 	accountedBytes int64
 }
 
-func newUDPForward(vpnStack stack.Stack, src, dest string) *UDPForward {
+func newUDPForward(vpnStack stack.Stack, src, dest string) (*UDPForward, error) {
+	srcAddr, err := net.ResolveUDPAddr("udp", src)
+	if err != nil {
+		return nil, fmt.Errorf("resolve UDP forwarding bind address %q: %w", src, err)
+	}
+
+	host, portStr, err := net.SplitHostPort(dest)
+	if err != nil {
+		return nil, fmt.Errorf("parse UDP forwarding destination %q: %w", dest, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse UDP forwarding destination port %q: %w", portStr, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid UDP forwarding destination host: %s", host)
+	}
+
+	listenerConn, err := net.ListenUDP("udp", srcAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen UDP forwarding on %s: %w", src, err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	u := &UDPForward{
 		stack:              vpnStack,
@@ -88,33 +111,11 @@ func newUDPForward(vpnStack stack.Stack, src, dest string) *UDPForward {
 		maxQueuedBytes:     defaultUDPForwardMaxQueuedBytes,
 	}
 	u.bufferPool.New = func() any { return new(udpBuffer) }
-
-	var err error
-	u.src, err = net.ResolveUDPAddr("udp", src)
-	if err != nil {
-		panic(err)
-	}
-
-	host, portStr, err := net.SplitHostPort(dest)
-	if err != nil {
-		panic(err)
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		panic(err)
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		panic(fmt.Errorf("invalid host: %s", host))
-	}
+	u.src = srcAddr
 	u.dest = &net.UDPAddr{IP: ip, Port: port}
+	u.listenerConn = listenerConn
 
-	u.listenerConn, err = net.ListenUDP("udp", u.src)
-	if err != nil {
-		panic(err)
-	}
-
-	return u
+	return u, nil
 }
 
 func (u *UDPForward) startUDPForward() {
@@ -460,7 +461,10 @@ func cloneUDPAddr(addr *net.UDPAddr) *net.UDPAddr {
 func ServeUDPForwarding(vpnStack stack.Stack, bindAddress string, remoteAddress string) {
 	log.Printf("UDP port forwarding: %s -> %s", bindAddress, remoteAddress)
 
-	udpForward := newUDPForward(vpnStack, bindAddress, remoteAddress)
+	udpForward, err := newUDPForward(vpnStack, bindAddress, remoteAddress)
+	if err != nil {
+		hook_func.Fatalf("UDP forwarding setup failed: %v", err)
+	}
 
 	hook_func.RegisterTerminalFunc("CloseUDPForwardingPort", func(ctx context.Context) error {
 		log.Println("Closing UDP forwarding port...")

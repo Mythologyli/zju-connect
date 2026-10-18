@@ -112,9 +112,12 @@ func TestUDPForwardDialFailureReleasesConcurrentPackets(t *testing.T) {
 
 func TestUDPForwardGoroutinesAreBoundedPerClient(t *testing.T) {
 	upstream := newBlockingUDPConn()
-	forward := newUDPForward(udpForwardTestStack{dialUDP: func(context.Context, *net.UDPAddr) (net.Conn, error) {
+	forward, err := newUDPForward(udpForwardTestStack{dialUDP: func(context.Context, *net.UDPAddr) (net.Conn, error) {
 		return upstream, nil
 	}}, "127.0.0.1:0", "192.0.2.1:53")
+	if err != nil {
+		t.Fatalf("new UDP forwarder: %v", err)
+	}
 	done := make(chan struct{})
 	baseline := runtime.NumGoroutine()
 	go func() {
@@ -174,10 +177,13 @@ func TestUDPForwardPreservesDatagramsAndReusesSession(t *testing.T) {
 	}()
 
 	var dials atomic.Int32
-	forward := newUDPForward(udpForwardTestStack{dialUDP: func(ctx context.Context, _ *net.UDPAddr) (net.Conn, error) {
+	forward, err := newUDPForward(udpForwardTestStack{dialUDP: func(ctx context.Context, _ *net.UDPAddr) (net.Conn, error) {
 		dials.Add(1)
 		return (&net.Dialer{}).DialContext(ctx, "udp", upstream.LocalAddr().String())
 	}}, "127.0.0.1:0", "192.0.2.1:53")
+	if err != nil {
+		t.Fatalf("new UDP forwarder: %v", err)
+	}
 	done := make(chan struct{})
 	go func() {
 		forward.startUDPForward()
@@ -286,5 +292,19 @@ func BenchmarkUDPForwardHandle(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		forward.handle(payload, addr)
+	}
+}
+
+// TestNewUDPForwardReturnsErrors: a bad port-forwarding destination must be a
+// returned error, not a panic out of the goroutine that starts the listener.
+func TestNewUDPForwardReturnsErrors(t *testing.T) {
+	for _, dest := range []string{
+		"not-a-host:1",
+		"127.0.0.1:not-a-port",
+		"badhost:9",
+	} {
+		if _, err := newUDPForward(nil, "127.0.0.1:0", dest); err == nil {
+			t.Errorf("newUDPForward(dest=%q) = nil error, want an error", dest)
+		}
 	}
 }
