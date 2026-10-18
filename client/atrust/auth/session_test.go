@@ -58,3 +58,26 @@ func TestLoginReturnsRefreshedCookiesForExistingSession(t *testing.T) {
 		t.Fatalf("returned sid cookie = %q, want refreshed-session-cookie", sid)
 	}
 }
+
+func TestAuthInfoPreservesAuthIDAndSubType(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/passport/v1/public/authConfig" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"isLogin":1,"authServerInfoList":[{"loginDomain":"local","authId":"1","authType":"auth/psw","subType":"default","authName":"Local Password Auth","loginUrl":""}]}}`)
+	}))
+	defer server.Close()
+
+	host := strings.TrimPrefix(server.URL, "https://")
+	list, err := NewSession(host, nil).GetAuthInfoList()
+	if err != nil {
+		t.Fatalf("GetAuthInfoList() error = %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("auth info entries = %d, want 1", len(list))
+	}
+	if list[0].AuthID != "1" || list[0].SubType != "default" {
+		t.Fatalf("auth info = %+v, want authId=1 subType=default", list[0])
+	}
+}
