@@ -145,7 +145,29 @@ func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Wr
 }
 
 func (s *Session) request(req *http.Request) (*http.Response, error) {
-	return s.client.Do(req.WithContext(s.ctx))
+	ctx, cancel := context.WithCancel(req.Context())
+	stop := context.AfterFunc(s.ctx, cancel)
+
+	resp, err := s.client.Do(req.WithContext(ctx))
+	if err != nil {
+		stop()
+		cancel()
+		return nil, err
+	}
+
+	resp.Body = &releaseOnClose{ReadCloser: resp.Body, release: func() { stop(); cancel() }}
+	return resp, nil
+}
+
+type releaseOnClose struct {
+	io.ReadCloser
+	release func()
+}
+
+func (b *releaseOnClose) Close() error {
+	err := b.ReadCloser.Close()
+	b.release()
+	return err
 }
 
 type AuthInfo struct {
