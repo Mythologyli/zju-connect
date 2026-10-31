@@ -142,11 +142,6 @@ func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Wr
 }
 
 func (s *Session) request(req *http.Request) (*http.Response, error) {
-	// The request ends when either context does: the session's own one, or the
-	// one the caller put on the request (a per-call deadline or cancellation).
-	// The link to the session context is released when the caller closes the
-	// body, never before: the request context also governs reading the response
-	// body, so cancelling it earlier truncates a response nobody has read yet.
 	ctx, cancel := context.WithCancel(req.Context())
 	stop := context.AfterFunc(s.ctx, cancel)
 
@@ -161,7 +156,6 @@ func (s *Session) request(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// releaseOnClose runs release once the caller has closed the response body.
 type releaseOnClose struct {
 	io.ReadCloser
 	release func()
