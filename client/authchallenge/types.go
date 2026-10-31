@@ -11,6 +11,7 @@ const (
 	CodeSMS    CodeKind = "sms"
 	CodeTOTP   CodeKind = "totp"
 	CodeRadius CodeKind = "radius"
+	CodeDevice CodeKind = "device"
 )
 
 type CodeChallenge struct {

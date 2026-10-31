@@ -23,18 +23,6 @@ func (s *Session) completeEnhancedAuth(step authStep) (authStep, error) {
 	return s.requestAuthStep(http.MethodGet, step, nil)
 }
 
-func (s *Session) bindAuthDevice(step authStep) (authStep, error) {
-	payload := map[string]string{"deviceId": s.deviceID}
-	if step.AuthID != "" {
-		payload["authId"] = step.AuthID
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return authStep{}, err
-	}
-	return s.requestAuthStep(http.MethodPost, step, body)
-}
-
 func (s *Session) requestAuthStep(method string, step authStep, body []byte) (authStep, error) {
 	path := "/passport/v1/" + step.Service
 	log.Printf("Perform %s %s", method, path)

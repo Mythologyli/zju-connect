@@ -271,7 +271,7 @@ func (s *Session) continueAuth(step authStep) error {
 		case "auth/preEnhancedAuth", "auth/enhancedConfirm", "auth/enhancedDone":
 			step, err = s.completeEnhancedAuth(step)
 		case "auth/bindAuthDevice":
-			step, err = s.bindAuthDevice(step)
+			step, err = s.bindAuthDevice()
 		case "auth/token":
 			return fmt.Errorf("token authentication type is missing")
 		default:
