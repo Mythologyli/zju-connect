@@ -97,6 +97,7 @@ type Session struct {
 	client       *http.Client
 	deviceID     string
 	macAddresses []string
+	signKey      []byte
 	username     string
 	totpSecret   string
 
