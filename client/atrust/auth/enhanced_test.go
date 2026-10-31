@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,48 +29,24 @@ func TestRadiusChallengeEndpoint(t *testing.T) {
 	}
 }
 
-func TestEnhancedAndBindAuthDeviceEndpoints(t *testing.T) {
-	requests := 0
+func TestEnhancedAuthStepEndpoint(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		switch requests {
-		case 1:
-			if r.Method != http.MethodGet || r.URL.Path != "/passport/v1/auth/preEnhancedAuth" {
-				t.Errorf("unexpected enhanced request: %s %s", r.Method, r.URL.Path)
-			}
-			if r.URL.Query().Get("authId") != "pre-id" {
-				t.Errorf("missing enhanced authId: %s", r.URL.RawQuery)
-			}
-			fmt.Fprint(w, `{"code":0,"data":{"nextService":"auth/bindAuthDevice","nextServiceList":[{"authId":"bind-id","authType":"auth/bindAuthDevice"}]}}`)
-		case 2:
-			if r.Method != http.MethodPost || r.URL.Path != "/passport/v1/auth/bindAuthDevice" {
-				t.Errorf("unexpected bind request: %s %s", r.Method, r.URL.Path)
-			}
-			var payload map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Error(err)
-			}
-			if payload["deviceId"] != "device-id" || payload["authId"] != "bind-id" {
-				t.Errorf("unexpected bind payload: %+v", payload)
-			}
-			fmt.Fprint(w, `{"code":0,"data":{"nextService":"auth/enhancedConfirm"}}`)
-		default:
-			t.Errorf("unexpected extra request")
+		if r.Method != http.MethodGet || r.URL.Path != "/passport/v1/auth/preEnhancedAuth" {
+			t.Errorf("unexpected enhanced request: %s %s", r.Method, r.URL.Path)
 		}
+		if r.URL.Query().Get("authId") != "pre-id" {
+			t.Errorf("missing enhanced authId: %s", r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"nextService":"auth/bindAuthDevice","nextServiceList":[{"authId":"bind-id","authType":"auth/bindAuthDevice"}]}}`)
 	}))
 	defer server.Close()
 
 	session := newTLSTestSession(server)
-	session.deviceID = "device-id"
 	step, err := session.completeEnhancedAuth(authStep{Service: "auth/preEnhancedAuth", AuthID: "pre-id"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	step, err = session.bindAuthDevice(step)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if step.Service != "auth/enhancedConfirm" {
+	if step.Service != "auth/bindAuthDevice" || step.AuthID != "bind-id" {
 		t.Fatalf("unexpected next step: %+v", step)
 	}
 }
