@@ -25,10 +25,11 @@ import (
 )
 
 type SessionOptions struct {
-	Username string
-	SID      string
-	DeviceID string
-	SignKey  string
+	Username     string
+	SID          string
+	DeviceID     string
+	MACAddresses []string
+	SignKey      string
 }
 
 type ClientOptions struct {
@@ -54,6 +55,7 @@ type Client struct {
 	Username     string
 	SID          string
 	DeviceID     string
+	MACAddresses []string
 	ConnectionID string
 	SignKey      string
 
@@ -98,6 +100,7 @@ func NewClient(options ClientOptions) *Client {
 		Username:        options.Session.Username,
 		SID:             options.Session.SID,
 		DeviceID:        options.Session.DeviceID,
+		MACAddresses:    options.Session.MACAddresses,
 		SignKey:         options.Session.SignKey,
 		underlayDialer:  options.UnderlayDialer,
 		tlsKeyLogWriter: options.TLSKeyLogWriter,
@@ -268,6 +271,9 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	if clientAuthData.DeviceID == "" {
 		clientAuthData.DeviceID = strings.ToLower(randHex(32))
 	}
+	if len(clientAuthData.MACAddresses) == 0 {
+		clientAuthData.MACAddresses = []string{randMACAddress()}
+	}
 
 	var serverHost string
 	if serverPort == 443 {
@@ -294,8 +300,9 @@ func SetTrusted(serverAddress string, serverPort int, authData []byte, trusted b
 	sess := auth.NewSession(serverHost, tlsKeyLogWriter, dialer.DialContext)
 
 	if _, err := sess.Login(nil, auth.LoginOptions{
-		DeviceID: clientAuthData.DeviceID,
-		Cookies:  clientAuthData.Cookies,
+		DeviceID:     clientAuthData.DeviceID,
+		MACAddresses: clientAuthData.MACAddresses,
+		Cookies:      clientAuthData.Cookies,
 	}); err != nil {
 		return err
 	}
@@ -347,6 +354,9 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 	if clientAuthData.DeviceID == "" && c.DeviceID != "" {
 		clientAuthData.DeviceID = c.DeviceID
 	}
+	if len(clientAuthData.MACAddresses) == 0 && len(c.MACAddresses) > 0 {
+		clientAuthData.MACAddresses = c.MACAddresses
+	}
 
 	var authServerHost string
 	if options.ServerPort == 443 {
@@ -387,6 +397,10 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 		c.DeviceID = clientAuthData.DeviceID
 		c.ConnectionID = buildConnectionID(c.DeviceID)
 		c.SignKey = randHex(64)
+		if len(clientAuthData.MACAddresses) == 0 {
+			clientAuthData.MACAddresses = []string{randMACAddress()}
+		}
+		c.MACAddresses = clientAuthData.MACAddresses
 
 		if options.LoginMethod == nil {
 			log.Println("No auth type specified, trying to skip auth")
@@ -394,6 +408,7 @@ func (c *Client) SetupContext(ctx context.Context, options SetupOptions) ([]byte
 
 		loginResult, err := sess.Login(options.LoginMethod, auth.LoginOptions{
 			DeviceID:         c.DeviceID,
+			MACAddresses:     c.MACAddresses,
 			Cookies:          clientAuthData.Cookies,
 			TOTPSecret:       options.TOTPSecret,
 			ChallengeHandler: options.ChallengeHandler,
@@ -488,4 +503,13 @@ func resolveServerVersionInfo(cached, fetched []byte, fetchErr error) ([]byte, e
 func buildConnectionID(deviceID string) string {
 	sum := md5.Sum([]byte(deviceID))
 	return fmt.Sprintf("%X-%d", sum, time.Now().UnixMicro())
+}
+
+func randMACAddress() string {
+	mac := make([]byte, 6)
+	if _, err := rand.Read(mac); err != nil {
+		panic(err)
+	}
+	mac[0] = mac[0]&0xfe | 0x02 // locally administered, unicast
+	return net.HardwareAddr(mac).String()
 }
