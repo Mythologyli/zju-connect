@@ -48,18 +48,19 @@ type Config struct {
 	TwfID              string   `koanf:"twf_id"`
 
 	// aTrust fields
-	AuthType                string `koanf:"auth_type"`
-	Phone                   string `koanf:"phone"`
-	LoginDomain             string `koanf:"login_domain"`
-	ClientDataFile          string `koanf:"client_data_file"`
-	CasTicket               string `koanf:"cas_ticket"`
-	OAuth2Code              string `koanf:"oauth2_code"`
-	SID                     string `koanf:"sid"`
-	DeviceID                string `koanf:"device_id"`
-	SignKey                 string `koanf:"sign_key"`
-	ResourceFile            string `koanf:"resource_file"`
-	UpdateBestNodesInterval int    `koanf:"update_best_nodes_interval"`
-	SessionRefreshInterval  int    `koanf:"session_refresh_interval"`
+	AuthType                string   `koanf:"auth_type"`
+	Phone                   string   `koanf:"phone"`
+	LoginDomain             string   `koanf:"login_domain"`
+	ClientDataFile          string   `koanf:"client_data_file"`
+	CasTicket               string   `koanf:"cas_ticket"`
+	OAuth2Code              string   `koanf:"oauth2_code"`
+	SID                     string   `koanf:"sid"`
+	DeviceID                string   `koanf:"device_id"`
+	MACAddresses            []string `koanf:"mac_addresses"`
+	SignKey                 string   `koanf:"sign_key"`
+	ResourceFile            string   `koanf:"resource_file"`
+	UpdateBestNodesInterval int      `koanf:"update_best_nodes_interval"`
+	SessionRefreshInterval  int      `koanf:"session_refresh_interval"`
 }
 
 type SinglePortForwarding struct {

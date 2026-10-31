@@ -57,6 +57,7 @@ type Cookie struct {
 type ClientAuthData struct {
 	Cookies           []Cookie        `json:"cookies"`
 	DeviceID          string          `json:"device_id"`
+	MACAddresses      []string        `json:"mac_addresses,omitempty"`
 	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
 }
 
@@ -92,11 +93,13 @@ func (i ServerVersionInfo) TCPTunnelZeroRTT() bool {
 }
 
 type Session struct {
-	ctx        context.Context
-	client     *http.Client
-	deviceID   string
-	username   string
-	totpSecret string
+	ctx          context.Context
+	client       *http.Client
+	deviceID     string
+	macAddresses []string
+	signKey      []byte
+	username     string
+	totpSecret   string
 
 	baseHost string
 	baseURL  string
@@ -154,6 +157,7 @@ type AuthInfo struct {
 
 type LoginOptions struct {
 	DeviceID         string
+	MACAddresses     []string
 	Cookies          []Cookie
 	TOTPSecret       string
 	ChallengeHandler authchallenge.Handler
@@ -267,7 +271,7 @@ func (s *Session) continueAuth(step authStep) error {
 		case "auth/preEnhancedAuth", "auth/enhancedConfirm", "auth/enhancedDone":
 			step, err = s.completeEnhancedAuth(step)
 		case "auth/bindAuthDevice":
-			step, err = s.bindAuthDevice(step)
+			step, err = s.bindAuthDevice()
 		case "auth/token":
 			return fmt.Errorf("token authentication type is missing")
 		default:
@@ -327,6 +331,7 @@ func (s *Session) Login(method LoginMethod, opts LoginOptions) (LoginResult, err
 	}
 
 	s.deviceID = opts.DeviceID
+	s.macAddresses = opts.MACAddresses
 	s.totpSecret = opts.TOTPSecret
 	s.challengeHandler = opts.ChallengeHandler
 	if s.challengeHandler == nil {
