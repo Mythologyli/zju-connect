@@ -172,8 +172,10 @@ func (b *releaseOnClose) Close() error {
 
 type AuthInfo struct {
 	LoginDomain string `json:"loginDomain"`
+	AuthID      string `json:"authId"`
 	AuthType    string `json:"authType"`
 	AuthName    string `json:"authName"`
+	SubType     string `json:"subType"`
 	LoginURL    string `json:"loginUrl"`
 }
 
