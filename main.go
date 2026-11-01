@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -61,12 +62,12 @@ func main() {
 		LocalDNSServer: conf.LocalDNSServer,
 	})
 	if underlayErr != nil {
-		log.Fatalf("Create underlay dialer: %v", underlayErr)
+		hook_func.Fatalf("Create underlay dialer: %v", underlayErr)
 	}
 	tlsKeyLogWriter, tlsKeyLogErr := keylog.Open(conf.DebugTLSLogFile)
 	if tlsKeyLogErr != nil {
 		_ = underlayDialer.Close()
-		log.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
+		hook_func.Fatalf("Create TLS key log: %v", tlsKeyLogErr)
 	}
 	if conf.DebugPCAPFile != "" {
 		log.Printf("VPN underlay PCAP capture enabled: %s", conf.DebugPCAPFile)
@@ -81,12 +82,12 @@ func main() {
 		if conf.CertFile != "" {
 			p12Data, err := os.ReadFile(conf.CertFile)
 			if err != nil {
-				log.Fatalf("Read certificate file error: %s", err)
+				hook_func.Fatalf("Read certificate file error: %s", err)
 			}
 
 			key, cert, err := pkcs12.Decode(p12Data, conf.CertPassword)
 			if err != nil {
-				log.Fatalf("Decode certificate file error: %s", err)
+				hook_func.Fatalf("Decode certificate file error: %s", err)
 			}
 
 			tlsCert = tls.Certificate{
@@ -123,7 +124,7 @@ func main() {
 			if tlsKeyLogWriter != nil {
 				_ = tlsKeyLogWriter.Close()
 			}
-			log.Fatalf("VPN client setup error: %s", err)
+			hook_func.Fatalf("VPN client setup error: %s", err)
 		}
 		if vpnClient.CanUseTCPTunnel() {
 			conf.TCPTunnelMode = true
@@ -135,7 +136,7 @@ func main() {
 		if conf.ResourceFile != "" {
 			resourceData, err = os.ReadFile(conf.ResourceFile)
 			if err != nil {
-				log.Fatalf("Read resource file error: %s", err)
+				hook_func.Fatalf("Read resource file error: %s", err)
 			}
 		}
 
@@ -149,21 +150,34 @@ func main() {
 			log.Printf("Client data will be saved to %s", conf.ClientDataFile)
 		}
 
-		var loginMethod auth.LoginMethod
-		if conf.SID == "" || conf.DeviceID == "" || resourceData == nil {
-			loginMethod, err = auth.NewLoginMethod(auth.LoginMethodOptions{
-				AuthType:      conf.AuthType,
-				Username:      conf.Username,
-				Password:      conf.Password,
-				Phone:         conf.Phone,
-				Domain:        conf.LoginDomain,
-				GraphCodeFile: conf.GraphCodeFile,
-				CASTicket:     conf.CasTicket,
-				OAuth2Code:    conf.OAuth2Code,
-			})
-			if err != nil {
-				log.Fatalf("Configure aTrust login: %v", err)
+		sidTicket := conf.SIDTicket
+		if conf.SIDTicketFile != "" {
+			content, readErr := os.ReadFile(conf.SIDTicketFile)
+			if readErr != nil {
+				hook_func.Fatalf("Read sid ticket file error: %s", readErr)
 			}
+			fromFile := strings.TrimSpace(string(content))
+			if sidTicket != "" && sidTicket != fromFile {
+				hook_func.Fatalf("The aTrust sidTicket is set both in the config and in %s; use one source", conf.SIDTicketFile)
+			}
+			sidTicket = fromFile
+		}
+
+		// Build the login method unconditionally and let the client decide whether
+		// it needs one: the client is the only owner of the resume/restore/login
+		// decision, because it is the layer that loads the stored material.
+		loginMethod, err := auth.NewLoginMethod(auth.LoginMethodOptions{
+			AuthType:      conf.AuthType,
+			Username:      conf.Username,
+			Password:      conf.Password,
+			Phone:         conf.Phone,
+			Domain:        conf.LoginDomain,
+			GraphCodeFile: conf.GraphCodeFile,
+			CASTicket:     conf.CasTicket,
+			OAuth2Code:    conf.OAuth2Code,
+		})
+		if err != nil {
+			hook_func.Fatalf("Configure aTrust login: %v", err)
 		}
 
 		vpnClient = atrustclient.NewClient(atrustclient.ClientOptions{
@@ -173,6 +187,7 @@ func main() {
 				DeviceID:     conf.DeviceID,
 				MACAddresses: conf.MACAddresses,
 				SignKey:      conf.SignKey,
+				SIDTicket:    sidTicket,
 			},
 			UnderlayDialer:  underlayDialer,
 			TLSKeyLogWriter: tlsKeyLogWriter,
@@ -181,11 +196,22 @@ func main() {
 		var saveClientDataFunc func(data []byte) error
 		if conf.ClientDataFile != "" {
 			saveClientDataFunc = func(data []byte) error {
-				return os.WriteFile(conf.ClientDataFile, data, 0600)
+				if err := os.WriteFile(conf.ClientDataFile, data, 0600); err != nil {
+					return err
+				}
+				// WriteFile does not change the mode of a file that already
+				// exists, and an older build (or a hand-made file) may be group or
+				// world readable: this file holds the cookies, the sign key and the
+				// tickets.
+				return os.Chmod(conf.ClientDataFile, 0600)
 			}
 		}
 
 		log.Printf("VPN protocol: %s", conf.Protocol)
+		if conf.SessionRefreshInterval == 0 {
+			log.Println("Session refresh is disabled: the client will not notice a session that has died " +
+				"(keep-alive traffic is what holds it open; use -keep-alive-url)")
+		}
 		clientData, err = vpnClient.(*atrustclient.Client).Setup(atrustclient.SetupOptions{
 			ServerAddress:            conf.ServerAddress,
 			ServerPort:               conf.ServerPort,
@@ -195,6 +221,7 @@ func main() {
 			ResourceData:             resourceData,
 			BestNodesRefreshInterval: time.Duration(conf.UpdateBestNodesInterval) * time.Second,
 			SessionRefreshInterval:   time.Duration(conf.SessionRefreshInterval) * time.Second,
+			AutoRelogin:              conf.AutoRelogin,
 			SaveClientData:           saveClientDataFunc,
 		})
 		if err != nil {
@@ -203,7 +230,7 @@ func main() {
 			if tlsKeyLogWriter != nil {
 				_ = tlsKeyLogWriter.Close()
 			}
-			log.Fatalf("VPN client setup error: %s", err)
+			hook_func.Fatalf("VPN client setup error: %s", err)
 		}
 	}
 
@@ -298,12 +325,12 @@ func main() {
 	if conf.TCPTunnelMode {
 		vpnStack, err = tcptunnel.NewStack(vpnClient)
 		if err != nil {
-			log.Fatalf("TCP Tunnel stack setup error: %s", err)
+			hook_func.Fatalf("TCP Tunnel stack setup error: %s", err)
 		}
 	} else if conf.TUNMode {
 		vpnTUNStack, err := tun.NewStack(vpnClient, conf.DNSHijack, conf.FakeIP, ipResources)
 		if err != nil {
-			log.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
+			hook_func.Fatalf("Tun stack setup error, make sure you are root user : %s", err)
 		}
 
 		if conf.AddRoute && ipSet != nil {
@@ -324,7 +351,7 @@ func main() {
 	} else {
 		vpnStack, err = gvisor.NewStack(vpnClient)
 		if err != nil {
-			log.Fatalf("gVisor stack setup error: %s", err)
+			hook_func.Fatalf("gVisor stack setup error: %s", err)
 		}
 	}
 

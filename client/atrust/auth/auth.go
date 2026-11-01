@@ -12,6 +12,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -59,6 +60,16 @@ type ClientAuthData struct {
 	DeviceID          string          `json:"device_id"`
 	MACAddresses      []string        `json:"mac_addresses,omitempty"`
 	ServerVersionInfo json.RawMessage `json:"server_version_info,omitempty"`
+	// CSRFToken comes from the last authConfig and is what the restore path
+	// (sessionIdExchange) has to send, so a cold restore needs it.
+	CSRFToken string `json:"csrf_token,omitempty"`
+	// SignKey must be stored together with DeviceID: the server checks the pair,
+	// and a resume that cannot supply the original key brings the tunnel up while
+	// every authorization through it is rejected.
+	SignKey string `json:"sign_key,omitempty"`
+	// SIDTicket is the portal-issued ticket (ticketExchange) that the restore
+	// path exchanges for a session.
+	SIDTicket string `json:"sid_ticket,omitempty"`
 }
 
 type ServerVersionInfo struct {
@@ -93,7 +104,19 @@ func (i ServerVersionInfo) TCPTunnelZeroRTT() bool {
 }
 
 type Session struct {
-	ctx          context.Context
+	// ctxMu guards ctx. The session starts on the context of the setup call that
+	// builds it and is rebound to the client's lifetime context once setup hands
+	// it over; see SetLifetime.
+	ctxMu sync.RWMutex
+	ctx   context.Context
+	// stateMu guards the fields a portal answer updates (csrfToken, ticket,
+	// pubKey, pubKeyExp, antiReplayRand, signKey). Each response writes them in
+	// one short critical section. It does not serialize requests: Refresh,
+	// RestoreByTicket and Login may run concurrently, and the last writer wins.
+	// Callers that must not interleave them serialize themselves; the recovery
+	// ladder's `recovering` guard and the renewal loop's pause are what do that
+	// for the session paths.
+	stateMu      sync.Mutex
 	client       *http.Client
 	deviceID     string
 	macAddresses []string
@@ -144,9 +167,34 @@ func NewSessionContext(ctx context.Context, server string, tlsKeyLogWriter io.Wr
 	}
 }
 
+// SetLifetime rebinds the session from the context of the call that created it to
+// one that lives as long as the client. The setup context is cancelled the moment
+// setup returns, so a session that keeps it can neither renew nor notice a dead
+// session: every request made afterwards is born cancelled.
+func (s *Session) SetLifetime(ctx context.Context) {
+	s.ctxMu.Lock()
+	s.ctx = ctx
+	s.ctxMu.Unlock()
+}
+
+func (s *Session) lifetimeCtx() context.Context {
+	s.ctxMu.RLock()
+	defer s.ctxMu.RUnlock()
+	return s.ctx
+}
+
+// CSRFToken returns the token the portal issued last; the restore path has to
+// send it, and a caller outside the session (the client data record) has to read
+// it.
+func (s *Session) CSRFToken() string {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.csrfToken
+}
+
 func (s *Session) request(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancel(req.Context())
-	stop := context.AfterFunc(s.ctx, cancel)
+	stop := context.AfterFunc(s.lifetimeCtx(), cancel)
 
 	resp, err := s.client.Do(req.WithContext(ctx))
 	if err != nil {

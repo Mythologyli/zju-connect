@@ -57,6 +57,19 @@ func ExecTerminalFunc(ctx context.Context) []error {
 	return errList
 }
 
+// Fatalf releases what the terminal functions own, then exits. A genuine fatal
+// path (a stack that cannot be built, a certificate that cannot be read) must not
+// leave the TUN device and its routes behind. A session that merely died is not a
+// genuine fatal path: the recovery ladder handles that without exiting.
+func Fatalf(format string, v ...any) {
+	if errs := ExecTerminalFunc(context.Background()); errs != nil {
+		for _, err := range errs {
+			log.Println("Cleanup before exit failed:", err)
+		}
+	}
+	log.Fatalf(format, v...)
+}
+
 func IsTerminal() bool {
 	terminalMu.Lock()
 	defer terminalMu.Unlock()
