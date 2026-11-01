@@ -137,9 +137,11 @@
 
 + `dns-ttl`: DNS cache time, default is `3600` seconds
 
-+ `disable-keep-alive`: Disable periodic keep-alive, generally no need to add this argument
++ `disable-keep-alive`: Disable periodic keep-alive. It is on by default
 
-+ `keep-alive-url`: Uses HTTP keep-alive, suitable for situations where the server does not provide DNS. Set the URL to visit, for example, `https://www.cnki.net/favicon.ico`. The default is empty, in which case the server-provided DNS is used for keep-alive.
++ `keep-alive-url`: Target of the keep-alive request, comma separated for more than one. It has to be a **`http://` address reachable inside the VPN** (for example `http://10.0.0.1/`). An `https://` target is reached with CONNECT, which is not application traffic and does not hold the session open (it is still probed, with a warning). The default is empty: a target is then derived from the resource list the server granted, and only a grant that covers port 80 is used; a single-port grant such as 22 or 443 is not probed as an HTTP service. Only if that yields nothing does keep-alive fall back to the server-provided DNS probe (a name lookup is not application traffic and does not hold the session)
+
++ `keep-alive-interval`: Keep-alive interval in seconds, default `60`, minimum `10`. On this deployment an idle session expires after roughly 10 minutes, so do not raise it past that
 
 + `remote-dns-server`: Remote DNS server address, default is `auto`. Set to `auto` to use the DNS server obtained from the server; disable remote DNS if it fails to obtain
 
