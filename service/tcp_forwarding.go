@@ -39,7 +39,7 @@ func copyIO(src, dest net.Conn) {
 func ServeTCPForwarding(dialContext client.DialContextFunc, bindAddress string, remoteAddress string) {
 	ln, err := net.Listen("tcp", bindAddress)
 	if err != nil {
-		panic(err)
+		hook_func.Fatalf("TCP forwarding listen failed on %s: %v", bindAddress, err)
 	}
 
 	log.Printf("TCP port forwarding: %s -> %s", bindAddress, remoteAddress)
@@ -59,7 +59,7 @@ func ServeTCPForwarding(dialContext client.DialContextFunc, bindAddress string, 
 				log.Println("TCP forwarding port closed")
 				return
 			}
-			panic(err)
+			hook_func.Fatalf("TCP forwarding accept failed on %s: %v", bindAddress, err)
 		}
 
 		go handleTCPForwardingRequest(dialContext, conn, remoteAddress)

@@ -14,7 +14,7 @@ func TestSessionRefreshConfiguration(t *testing.T) {
 		env  []string
 		want int
 	}{
-		{"default", nil, nil, 1800},
+		{"default", nil, nil, 60},
 		{"file", []string{"--config", file}, nil, 900},
 		{"environment", []string{"--config", file}, []string{"ZJU_CONNECT_SESSION_REFRESH_INTERVAL=600"}, 600},
 		{"cli", []string{"--config", file, "-session-refresh-interval", "300"}, []string{"ZJU_CONNECT_SESSION_REFRESH_INTERVAL=600"}, 300},
@@ -29,6 +29,25 @@ func TestSessionRefreshConfiguration(t *testing.T) {
 				t.Fatalf("session refresh seconds = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSessionRefreshIntervalFloorIsEnforced(t *testing.T) {
+	for _, value := range []string{"1", "29"} {
+		if _, _, err := loadStartupOptions(
+			[]string{"-session-refresh-interval", value},
+			func() []string { return nil },
+		); err == nil {
+			t.Fatalf("session-refresh-interval %s was accepted", value)
+		}
+	}
+	for _, value := range []string{"0", "30"} {
+		if _, _, err := loadStartupOptions(
+			[]string{"-session-refresh-interval", value},
+			func() []string { return nil },
+		); err != nil {
+			t.Fatalf("session-refresh-interval %s was rejected: %v", value, err)
+		}
 	}
 }
 
@@ -347,6 +366,43 @@ func TestCLICollectionsOverrideEnvironmentCollections(t *testing.T) {
 	}
 	if got := options.Config.CustomProxyDomain; len(got) != 1 || got[0] != "cli.example.com" {
 		t.Fatalf("CustomProxyDomain = %v", got)
+	}
+}
+
+func TestSIDTicketAndAutoReloginFlags(t *testing.T) {
+	configFile := writeConfig(t, "sid_ticket = \"from-config\"\nauto_relogin = true\n")
+
+	for _, tt := range []struct {
+		name       string
+		args       []string
+		wantTicket string
+		wantAuto   bool
+	}{
+		{"defaults", nil, "", false},
+		{"the ticket flag", []string{"-sid-ticket", "from-flag"}, "from-flag", false},
+		{"the config keys", []string{"--config", configFile}, "from-config", true},
+		{"the auto-relogin flag", []string{"-auto-relogin"}, "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			options, _, err := loadStartupOptions(tt.args, func() []string { return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := options.Config.SIDTicket; got != tt.wantTicket {
+				t.Fatalf("SIDTicket = %q, want %q", got, tt.wantTicket)
+			}
+			if got := options.Config.AutoRelogin; got != tt.wantAuto {
+				t.Fatalf("AutoRelogin = %t, want %t", got, tt.wantAuto)
+			}
+		})
+	}
+
+	options, _, err := loadStartupOptions([]string{"-sid-ticket-file", "/run/secrets/atrust-ticket"}, func() []string { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := options.Config.SIDTicketFile; got != "/run/secrets/atrust-ticket" {
+		t.Fatalf("SIDTicketFile = %q", got)
 	}
 }
 

@@ -120,9 +120,9 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 
 				if hook_func.IsTerminal() {
 					return list.Len(), nil
-				} else {
-					panic(err)
 				}
+				hook_func.Fatalf("WritePackets: %v", err)
+				return list.Len(), nil
 			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])

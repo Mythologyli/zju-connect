@@ -48,19 +48,26 @@ type Config struct {
 	TwfID              string   `koanf:"twf_id"`
 
 	// aTrust fields
-	AuthType                string   `koanf:"auth_type"`
-	Phone                   string   `koanf:"phone"`
-	LoginDomain             string   `koanf:"login_domain"`
-	ClientDataFile          string   `koanf:"client_data_file"`
-	CasTicket               string   `koanf:"cas_ticket"`
-	OAuth2Code              string   `koanf:"oauth2_code"`
-	SID                     string   `koanf:"sid"`
+	AuthType       string `koanf:"auth_type"`
+	Phone          string `koanf:"phone"`
+	LoginDomain    string `koanf:"login_domain"`
+	ClientDataFile string `koanf:"client_data_file"`
+	CasTicket      string `koanf:"cas_ticket"`
+	OAuth2Code     string `koanf:"oauth2_code"`
+	SID            string `koanf:"sid"`
+	// SIDTicket is the portal-issued ticket the restore path exchanges for a
+	// session; SIDTicketFile reads it from a file instead of the command line.
+	SIDTicket               string   `koanf:"sid_ticket"`
+	SIDTicketFile           string   `koanf:"sid_ticket_file"`
 	DeviceID                string   `koanf:"device_id"`
 	MACAddresses            []string `koanf:"mac_addresses"`
 	SignKey                 string   `koanf:"sign_key"`
 	ResourceFile            string   `koanf:"resource_file"`
 	UpdateBestNodesInterval int      `koanf:"update_best_nodes_interval"`
 	SessionRefreshInterval  int      `koanf:"session_refresh_interval"`
+	// AutoRelogin lets a dead session repeat the full login. Off by default: a
+	// login rotates the device token and drops other clients of the account.
+	AutoRelogin bool `koanf:"auto_relogin"`
 }
 
 type SinglePortForwarding struct {
@@ -85,6 +92,6 @@ func Default() Config {
 		SecondaryDNSServer:      "auto",
 		LoginDomain:             "Radius",
 		UpdateBestNodesInterval: 300,
-		SessionRefreshInterval:  1800,
+		SessionRefreshInterval:  60,
 	}
 }

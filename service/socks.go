@@ -37,7 +37,7 @@ func ServeSocks5(bindAddr string, dialer *dial.Dialer, resolver *resolve.Resolve
 
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
-		panic("SOCKS5 listen failed: " + err.Error())
+		hook_func.Fatalf("SOCKS5 listen failed: %v", err)
 	}
 
 	hook_func.RegisterTerminalFunc("CloseSocks5Listener", func(ctx context.Context) error {

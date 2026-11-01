@@ -19,8 +19,8 @@ func parseIPAuthResponse(data []byte) error {
 		return fmt.Errorf("failed to parse IP tunnel auth response: %w", err)
 	}
 	if response.Code != 0 {
-		if response.Code == 10000004 || response.Code == 75500002 {
-			log.Fatalf("IP tunnel: aTrust session is invalid (code %d): %s", response.Code, response.Message)
+		if isSessionInvalidCode(response.Code) {
+			return &sessionInvalidError{Where: "IP tunnel auth", Code: response.Code, Message: response.Message}
 		}
 		return fmt.Errorf("IP tunnel authentication failed (code %d): %s", response.Code, response.Message)
 	}
@@ -126,6 +126,7 @@ func (c *Client) getIP(parent context.Context) error {
 	}
 	ip, err := readIPTunnelResponses(conn)
 	if err != nil {
+		c.reportIfSessionInvalid(err, "IP tunnel auth")
 		return err
 	}
 	c.setIP(ip)
