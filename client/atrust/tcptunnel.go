@@ -167,8 +167,8 @@ func parseTCPTunnelAuthResponse(data string) error {
 		return fmt.Errorf("failed to parse tcp tunnel auth response: %w", err)
 	}
 	if response.Code != 0 {
-		if response.Code == 10000004 || response.Code == 75500002 {
-			log.Fatalf("tcp tunnel: aTrust session is invalid (code %d): %s", response.Code, response.Message)
+		if isSessionInvalidCode(response.Code) {
+			return &sessionInvalidError{Where: "tcp tunnel auth", Code: response.Code, Message: response.Message}
 		}
 		return fmt.Errorf("tcp tunnel authentication failed (code %d): %s", response.Code, response.Message)
 	}
@@ -607,6 +607,7 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 	clearDeadlineErr := conn.SetReadDeadline(time.Time{})
 	if waitErr != nil {
 		_ = conn.Close()
+		c.reportIfSessionInvalid(waitErr, "tcp tunnel connect")
 		return nil, waitErr
 	}
 	if clearDeadlineErr != nil {
@@ -614,5 +615,8 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 		return nil, fmt.Errorf("failed to clear tcp tunnel handshake timeout: %w", clearDeadlineErr)
 	}
 	tunnelConn.reuse = c.tcpTunnelZeroRTT && reuse
+	// Application traffic just crossed the tunnel: that is the proof a restored
+	// session works, and the only one that counts.
+	c.ObserveTunnelTraffic(true)
 	return tunnelConn, nil
 }

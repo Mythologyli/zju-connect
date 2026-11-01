@@ -56,10 +56,12 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 	if mod {
 		params.Set("mod", "1")
 	}
-	if needTicket {
+	if needTicket || refresh {
+		// Renewal is needTicket=1, the portal's own renewal form: needTicket=0 only
+		// checks validity and does not ask the portal to refresh the session
+		// material. The ticket in the answer feeds the in-memory login state; a
+		// password-free restore uses the separate sidTicket from ticketExchange.
 		params.Set("needTicket", "1")
-	} else if refresh {
-		params.Set("needTicket", "0")
 	}
 
 	u := s.baseURL + "/passport/v1/public/authConfig"
@@ -68,7 +70,7 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 		return 0, nil, err
 	}
 	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("x-csrf-token", s.csrfToken)
+	req.Header.Set("x-csrf-token", s.CSRFToken())
 	req.Header.Set("x-sdp-rid", s.rid)
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
@@ -90,7 +92,7 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 	if err != nil {
 		return 0, nil, err
 	}
-	log.DebugPrintf("Received auth config: %s", string(body))
+	log.DebugPrintf("Received auth config: %s", log.RedactSecrets(string(body)))
 
 	var re struct {
 		Code *int `json:"code"`
@@ -104,6 +106,7 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 			PubKey         string             `json:"pubKey"`
 			PubKeyExp      string             `json:"pubKeyExp"`
 			AntiReplayRand string             `json:"antiReplayRand"`
+			Ticket         string             `json:"ticket"`
 			AntiMITM       antiMITMAttackData `json:"antiMITMAttackData"`
 		} `json:"data"`
 	}
@@ -112,10 +115,11 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 		return 0, nil, err
 	}
 	if re.Code != nil && *re.Code != 0 {
-		if *re.Code == 10000004 || *re.Code == 75500002 {
-			return 0, nil, fmt.Errorf("%w: authConfig code %d", ErrSessionInvalid, *re.Code)
+		coded := &PortalCodeError{Op: "authConfig", Code: *re.Code}
+		if IsSessionDeathCode(*re.Code) {
+			coded.Kind = ErrSessionInvalid
 		}
-		return 0, nil, fmt.Errorf("authConfig failed with code %d", *re.Code)
+		return 0, nil, coded
 	}
 	if refresh && (re.Code == nil || re.Data.IsLogin == nil) {
 		return 0, nil, fmt.Errorf("authConfig response missing code or isLogin")
@@ -138,11 +142,17 @@ func (s *Session) authConfigContext(ctx context.Context, mod, needTicket, refres
 		return 0, nil, err
 	}
 
+	s.stateMu.Lock()
+	if re.Data.Ticket != "" {
+		// A response may omit the ticket; that must not throw away a good one.
+		s.ticket = re.Data.Ticket
+	}
 	s.csrfToken = responseCSRFToken
 	s.pubKey = re.Data.PubKey
 	s.pubKeyExp = re.Data.PubKeyExp
 	s.antiReplayRand = re.Data.AntiReplayRand
 	s.signKey = sangforSignatureKey(re.Data.AntiMITM)
+	s.stateMu.Unlock()
 
 	isLogin := 0
 	if re.Data.IsLogin != nil {
@@ -628,18 +638,34 @@ func (s *Session) secondarySMSCheckCodeImpl(step authStep, code string, skipSeco
 	return authStepFromData(re.Data), nil
 }
 
+// onlineInfoResult is the part of the onlineInfo answer the client acts on. A
+// missing Online means the portal did not say (the answer of a live login does
+// not always carry the flag), which is not the same as "not online".
+type onlineInfoResult struct {
+	Username string
+	Online   *bool
+}
+
 func (s *Session) onlineInfo() (string, error) {
+	info, err := s.onlineInfoContext(context.Background())
+	return info.Username, err
+}
+
+func (s *Session) onlineInfoContext(ctx context.Context) (onlineInfoResult, error) {
 	log.Println("Perform GET /passport/v1/user/onlineInfo")
 
 	u := s.baseURL + "/passport/v1/user/onlineInfo"
-	req, _ := http.NewRequest("GET", u+"?"+WithSharedParams(nil).Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u+"?"+WithSharedParams(nil).Encode(), nil)
+	if err != nil {
+		return onlineInfoResult{}, err
+	}
 	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("x-csrf-token", s.csrfToken)
+	req.Header.Set("x-csrf-token", s.CSRFToken())
 	req.Header.Set("x-sdp-traceid", s.randSdpId())
 
 	resp, err := s.request(req)
 	if err != nil {
-		return "", err
+		return onlineInfoResult{}, err
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -650,22 +676,33 @@ func (s *Session) onlineInfo() (string, error) {
 	var re struct {
 		Code int `json:"code"`
 		Data struct {
-			Username string `json:"username"`
-		}
+			Username   string `json:"username"`
+			IsOnline   *bool  `json:"isOnline"`
+			OnlineInfo *struct {
+				IsOnline *bool `json:"isOnline"`
+			} `json:"onlineInfo"`
+		} `json:"data"`
 	}
 
 	err = json.Unmarshal(body, &re)
 	if err != nil {
-		return "", err
+		return onlineInfoResult{}, err
 	}
 	log.DebugPrintf("Parsed online info: %+v", re)
 
 	if re.Code != 0 {
+		if sessionDeathCodes[re.Code] {
+			return onlineInfoResult{}, fmt.Errorf("%w: onlineInfo code %d (%s)", ErrSessionInvalid, re.Code, string(body))
+		}
 		log.Printf("onlineInfo failed with code %d: %s", re.Code, string(body))
-		return "", fmt.Errorf("onlineInfo failed with code %d", re.Code)
+		return onlineInfoResult{}, fmt.Errorf("onlineInfo failed with code %d", re.Code)
 	}
 
-	return re.Data.Username, nil
+	online := re.Data.IsOnline
+	if online == nil && re.Data.OnlineInfo != nil {
+		online = re.Data.OnlineInfo.IsOnline
+	}
+	return onlineInfoResult{Username: re.Data.Username, Online: online}, nil
 }
 
 func (s *Session) ClientResource() ([]byte, error) {

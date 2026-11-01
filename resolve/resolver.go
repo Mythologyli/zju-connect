@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/log"
 	"github.com/mythologyli/zju-connect/stack"
@@ -424,7 +425,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 	var err error
 	resolver.IPPool, err = ippool.NewIPPool[[]client.DomainResource]("198.18.0.0/16")
 	if err != nil {
-		log.Fatalf("Create Fake IP Pool failed: %v", err)
+		hook_func.Fatalf("Create Fake IP Pool failed: %v", err)
 	}
 
 	return resolver
